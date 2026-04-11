@@ -143,12 +143,12 @@ def create_app():
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' cdn.tailwindcss.com cdn.jsdelivr.net "
-                "'unsafe-inline'; "   # required for inline Tailwind config block
+                "'unsafe-inline' 'unsafe-eval'; "   # unsafe-eval required by MediaPipe WASM
             "style-src 'self' fonts.googleapis.com 'unsafe-inline'; "
             "font-src fonts.gstatic.com data:; "
-            "img-src 'self' data: blob:; "
+            "img-src 'self' data: blob: https://*.supabase.co; "   # Supabase Storage signed URLs
             "media-src 'self' blob:; "
-            "connect-src 'self'; "
+            "connect-src 'self' cdn.jsdelivr.net; "   # MediaPipe loads .binarypb/.data assets via fetch
             "frame-ancestors 'none'"
         )
         response.headers["X-Content-Type-Options"] = "nosniff"

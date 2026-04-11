@@ -672,7 +672,7 @@ def biometrics():
             try:
                 signed = supabase_admin.storage.from_("face-images") \
                     .create_signed_url(path, expires_in=3600)
-                r["face_image_url"] = signed.get("signedURL") or signed.get("signed_url") or path
+                r["face_image_url"] = signed.get("signedURL") or signed.get("signed_url") or None
             except Exception:
                 r["face_image_url"] = None
 

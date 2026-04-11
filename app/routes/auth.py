@@ -103,11 +103,49 @@ def login():
         session["csrf_token"]   = secrets.token_hex(32)
         session.modified        = True
 
+        # A6: force password change on first login after CSV import
+        if user.get("must_change_password"):
+            return redirect(url_for("auth.change_password"))
+
         return _redirect_by_role(user["role"])
 
     except Exception as e:
         flash("อีเมลหรือรหัสผ่านไม่ถูกต้อง", "danger")
         return redirect(url_for("auth.login"))
+
+
+@auth_bp.route("/change-password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    """Force password change — ต้องทำก่อนเข้าระบบครั้งแรกหลัง CSV import"""
+    if request.method == "GET":
+        return render_template("auth/change_password.html")
+
+    new_pw      = request.form.get("new_password", "")
+    confirm_pw  = request.form.get("confirm_password", "")
+
+    if len(new_pw) < 8:
+        flash("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร", "danger")
+        return render_template("auth/change_password.html")
+
+    if new_pw != confirm_pw:
+        flash("รหัสผ่านทั้งสองช่องไม่ตรงกัน", "danger")
+        return render_template("auth/change_password.html")
+
+    try:
+        user_id = session["user_id"]
+        # Update password via Supabase Auth admin API
+        supabase_admin.auth.admin.update_user_by_id(user_id, {"password": new_pw})
+        # Clear the force-change flag
+        supabase_admin.table("users") \
+            .update({"must_change_password": False}) \
+            .eq("id", user_id).execute()
+        flash("เปลี่ยนรหัสผ่านสำเร็จ — กรุณาเข้าสู่ระบบอีกครั้ง", "success")
+        session.clear()
+        return redirect(url_for("auth.login"))
+    except Exception as e:
+        flash(f"เปลี่ยนรหัสผ่านไม่สำเร็จ: {e}", "danger")
+        return render_template("auth/change_password.html")
 
 
 @auth_bp.route("/register")

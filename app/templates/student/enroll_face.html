@@ -231,8 +231,13 @@
         </div>
 
         <div id="checkingSection" style="display:none;text-align:center;padding:1rem 0">
-            <div class="spinner"></div>
-            <p id="checkingMsg" class="text-sm text-slate-500">กำลังตรวจสอบ...</p>
+            <div class="spinner" style="margin:0 auto 0.75rem"></div>
+            <p id="checkingMsg" class="text-sm text-slate-500 mb-3">กำลังตรวจสอบ...</p>
+            <!-- B1: fake progress bar -->
+            <div class="w-full max-w-xs mx-auto bg-slate-100 rounded-full h-2 overflow-hidden">
+                <div id="enrollProgressBar" class="h-2 bg-indigo-500 rounded-full transition-all duration-500" style="width:0%"></div>
+            </div>
+            <p id="enrollProgressLabel" class="text-xs text-slate-400 mt-2"></p>
         </div>
     </div>
 
@@ -480,7 +485,8 @@ window.addEventListener('beforeunload', _stopAllStreams);
 function _setSpoofLabel(labelId, isReal, confidence) {
     const el = document.getElementById(labelId);
     if (!el) return;
-    el.textContent       = isReal ? `REAL ${confidence.toFixed(2)}` : `SPOOF ${confidence.toFixed(2)}`;
+    console.log(`[spoof] ${labelId}: ${isReal ? 'REAL' : 'SPOOF'} ${confidence.toFixed(3)}`);
+    el.textContent       = isReal ? 'REAL ✓' : '⚠️ SPOOF';
     el.style.background  = isReal ? 'rgba(34,197,94,0.85)' : 'rgba(239,68,68,0.85)';
     el.style.color       = '#fff';
     el.style.display     = 'block';
@@ -1318,9 +1324,15 @@ function startCaptureWithDetection() {
     }).catch(e => alert('ไม่สามารถเปิดกล้องได้: ' + e.message));
 }
 
+// ─── B5: Double-submit guard ──────────────────────────────────────────────────
+let _enrollSubmitting = false;
+
 // ─── Send 5 frontal frames to /api/enroll ────────────────────────────────────
 async function _sendToEnroll() {
-    _showChecking('กำลังตรวจสอบ embedding...');
+    if (_enrollSubmitting) return;
+    _enrollSubmitting = true;
+    _showChecking('กำลังส่งข้อมูล...');
+    _startProgress(_PROGRESS_MSGS_ENROLL);
     try {
         const res  = await fetch("{{ url_for('student.api_enroll') }}", {
             method: 'POST',
@@ -1333,6 +1345,7 @@ async function _sendToEnroll() {
                 baseline_ear: baselineEAR,
             }),
         });
+        _finishProgress();
         const json = await res.json();
         _hideChecking();
 
@@ -1384,6 +1397,8 @@ async function _sendToEnroll() {
     } catch (e) {
         _hideChecking();
         _showResult('error', 'ไม่สามารถเชื่อมต่อ server ได้');
+    } finally {
+        _enrollSubmitting = false;
     }
 }
 
@@ -1457,7 +1472,10 @@ function _startSelfVerify() {
 }
 
 async function _sendSelfVerify(faceImage) {
+    if (_enrollSubmitting) return;
+    _enrollSubmitting = true;
     _showChecking('กำลังยืนยันตัวตน...');
+    _startProgress(_PROGRESS_MSGS_VERIFY);
     try {
         const res  = await fetch("{{ url_for('student.api_self_verify') }}", {
             method: 'POST',
@@ -1470,6 +1488,7 @@ async function _sendSelfVerify(faceImage) {
                 device_fingerprint: _deviceFingerprint(),   // Sprint 1B
             }),
         });
+        _finishProgress();
         const json = await res.json();
         _hideChecking();
 
@@ -1505,7 +1524,60 @@ async function _sendSelfVerify(faceImage) {
     } catch (e) {
         _hideChecking();
         _showResult('error', 'ไม่สามารถเชื่อมต่อ server ได้');
+    } finally {
+        _enrollSubmitting = false;
     }
+}
+
+// ─── B1: Progress feedback helpers ───────────────────────────────────────────
+let _progressTimers = [];
+let _progressAnimFrame = null;
+const _PROGRESS_MSGS_ENROLL = [
+    { at: 0,    pct: 5,  msg: 'กำลังส่งรูปภาพ...' },
+    { at: 4000, pct: 25, msg: 'ตรวจสอบ anti-spoofing...' },
+    { at: 10000,pct: 45, msg: 'วิเคราะห์ใบหน้า...' },
+    { at: 18000,pct: 62, msg: 'คำนวณ face embedding...' },
+    { at: 28000,pct: 78, msg: 'บันทึกลงฐานข้อมูล...' },
+    { at: 45000,pct: 88, msg: 'ใกล้เสร็จแล้ว...' },
+];
+const _PROGRESS_MSGS_VERIFY = [
+    { at: 0,    pct: 8,  msg: 'กำลังส่งรูปยืนยัน...' },
+    { at: 3000, pct: 30, msg: 'ตรวจสอบ anti-spoofing...' },
+    { at: 8000, pct: 55, msg: 'เปรียบเทียบใบหน้า...' },
+    { at: 15000,pct: 78, msg: 'บันทึกผลลัพธ์...' },
+    { at: 25000,pct: 90, msg: 'ใกล้เสร็จแล้ว...' },
+];
+
+function _startProgress(msgs) {
+    _clearProgress();
+    const bar   = document.getElementById('enrollProgressBar');
+    const label = document.getElementById('enrollProgressLabel');
+    if (!bar) return;
+    bar.style.width = '0%';
+    msgs.forEach(({ at, pct, msg }) => {
+        const t = setTimeout(() => {
+            bar.style.width = pct + '%';
+            if (label) label.textContent = msg;
+        }, at);
+        _progressTimers.push(t);
+    });
+}
+
+function _finishProgress() {
+    _clearProgress();
+    const bar   = document.getElementById('enrollProgressBar');
+    const label = document.getElementById('enrollProgressLabel');
+    if (bar)   { bar.style.width = '100%'; bar.style.background = '#22c55e'; }
+    if (label) label.textContent = 'เสร็จสิ้น';
+}
+
+function _clearProgress() {
+    _progressTimers.forEach(t => clearTimeout(t));
+    _progressTimers = [];
+    const bar   = document.getElementById('enrollProgressBar');
+    const label = document.getElementById('enrollProgressLabel');
+    if (bar)   { bar.style.width = '0%'; bar.style.background = ''; }
+    if (label) label.textContent = '';
 }
 
 function _showChecking(msg) {
@@ -1516,9 +1588,12 @@ function _showChecking(msg) {
 }
 function _hideChecking() {
     document.getElementById('checkingSection').style.display = 'none';
+    _clearProgress();
 }
 
 function _showResult(type, msg) {
+    // B6: always stop camera streams when reaching terminal state
+    _stopAllStreams();
     goToStep(5);
     if (type === 'success') {
         document.getElementById('successView').style.display = 'block';
@@ -1544,6 +1619,7 @@ function fullRestart() {
     calibrating         = false;
     step4SpoofFailConsecutive = 0;
     step4SpoofFailTotal       = 0;
+    _enrollSubmitting   = false;   // B5: release double-submit lock on full restart
 
     // ล้าง liveness embeddings ที่ server (session["liveness_embeddings"])
     fetch("{{ url_for('student.api_reset_liveness') }}", {
@@ -1575,6 +1651,7 @@ function restartCapture() {
     capturePaused             = false;
     step4SpoofFailConsecutive = 0;
     step4SpoofFailTotal       = 0;
+    _enrollSubmitting   = false;   // B5: release double-submit lock on capture restart
 
     stopStream(captureStream);
     captureStream = null;

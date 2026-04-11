@@ -245,7 +245,8 @@ def api_enroll():
             return jsonify({"status": "error", "message": "กรุณายอมรับข้อตกลงก่อนลงทะเบียน"}), 400
     except Exception as consent_err:
         _log(user_id, "enroll_consent", "db_error", str(consent_err)[:80])
-        # Fail-open: if DB check errors, fall back to session flag (already checked above)
+        # Fail-close: DB error → deny enrollment to prevent bypassing consent requirement
+        return jsonify({"status": "error", "message": "ไม่สามารถตรวจสอบความยินยอมได้ กรุณาลองใหม่"}), 500
 
     if not data:
         return jsonify({"status": "error", "message": "ไม่พบข้อมูล"}), 400
@@ -499,34 +500,50 @@ def api_enroll():
     _log(user_id, "continuity", "pass",
          f"all {len(embeddings)} frames passed liveness_count={len(liveness_embeddings)}")
 
-    # ── 9. Duplicate face check (A6: gray-zone logging) ──────────────────────
-    all_bio = (
-        supabase_admin.table("student_biometrics")
-        .select("user_id, face_embeddings")
-        .not_.is_("face_embeddings", "null")
-        .neq("user_id", user_id)
-        .execute()
-        .data or []
-    )
-    for bio in all_bio:
-        stored = bio.get("face_embeddings") or []
-        if not stored:
-            continue
-        for emb in embeddings:
-            sim = max_similarity_multi(emb, stored)
-            if sim >= DUPLICATE_THRESHOLD:
-                _log(user_id, "duplicate_check", "blocked",
-                     f"sim={sim:.4f} other_user={bio['user_id']}")
-                return jsonify({
-                    "status":  "error",
-                    "message": "ใบหน้านี้ถูกลงทะเบียนในระบบแล้ว",
-                }), 400
-            # A6: log gray-zone matches for future threshold tuning
-            if DUPLICATE_GRAY_ZONE[0] <= sim < DUPLICATE_THRESHOLD:
-                _audit.info(
-                    f"[DUPLICATE_GRAY_ZONE] student={user_id} "
-                    f"other={bio['user_id']} sim={sim:.4f}"
-                )
+    # ── 9. Duplicate face check — batch pagination + early exit (A7) ─────────
+    # ดึงทีละ 50 rows แทน full table scan เพื่อ O(batch) แทน O(N)
+    BATCH_SIZE  = 50
+    dup_offset  = 0
+    dup_blocked = False
+    while not dup_blocked:
+        batch = (
+            supabase_admin.table("student_biometrics")
+            .select("user_id, face_embeddings")
+            .not_.is_("face_embeddings", "null")
+            .neq("user_id", user_id)
+            .range(dup_offset, dup_offset + BATCH_SIZE - 1)
+            .execute()
+            .data or []
+        )
+        if not batch:
+            break
+        for bio in batch:
+            stored = bio.get("face_embeddings") or []
+            if not stored:
+                continue
+            for emb in embeddings:
+                sim = max_similarity_multi(emb, stored)
+                if sim >= DUPLICATE_THRESHOLD:
+                    _log(user_id, "duplicate_check", "blocked",
+                         f"sim={sim:.4f} other_user={bio['user_id']}")
+                    dup_blocked = True
+                    break
+                if DUPLICATE_GRAY_ZONE[0] <= sim < DUPLICATE_THRESHOLD:
+                    _audit.info(
+                        f"[DUPLICATE_GRAY_ZONE] student={user_id} "
+                        f"other={bio['user_id']} sim={sim:.4f}"
+                    )
+            if dup_blocked:
+                break
+        if len(batch) < BATCH_SIZE:
+            break   # last page
+        dup_offset += BATCH_SIZE
+
+    if dup_blocked:
+        return jsonify({
+            "status":  "error",
+            "message": "ใบหน้านี้ถูกลงทะเบียนในระบบแล้ว",
+        }), 400
 
     _log(user_id, "duplicate_check", "pass")
 
@@ -674,7 +691,7 @@ def api_self_verify():
         remaining = MAX_VERIFY_ATTEMPTS - new_attempts
         return jsonify({
             "status":             "retry",
-            "message":            f"ยืนยันไม่ผ่าน (คะแนน {best_sim:.2f}) — กรุณาลองอีกครั้ง (เหลืออีก {remaining} ครั้ง)",
+            "message":            f"ยืนยันไม่ผ่าน — กรุณาลองอีกครั้ง (เหลืออีก {remaining} ครั้ง)",
             "remaining_attempts": remaining,
         })
 
@@ -700,16 +717,19 @@ def api_self_verify():
         }).eq("user_id", user_id).execute()
 
         # Upload self-verify shot as profile image (non-fatal)
+        # PDPA: bucket must be set to PRIVATE in Supabase Dashboard → Storage → face-images
+        # Access is via signed URL generated at render time (1-hour expiry)
         try:
             import base64 as _b64
             raw = verify_img.split(",")[1] if "," in verify_img else verify_img
+            face_path = f"{user_id}.jpg"
             supabase_admin.storage.from_("face-images").upload(
-                f"{user_id}.jpg", _b64.b64decode(raw),
+                face_path, _b64.b64decode(raw),
                 file_options={"content-type": "image/jpeg", "upsert": "true"},
             )
-            url = supabase_admin.storage.from_("face-images").get_public_url(f"{user_id}.jpg")
+            # Store path only (not a public URL) — signed URL generated on demand
             supabase_admin.table("student_biometrics") \
-                .update({"face_image_url": url}).eq("user_id", user_id).execute()
+                .update({"face_image_url": face_path}).eq("user_id", user_id).execute()
         except Exception as upload_err:
             _log(user_id, "image_upload", "warning", str(upload_err)[:80])
 

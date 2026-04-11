@@ -83,7 +83,7 @@ def check_anti_spoof(base64_image: str) -> bool:
 
     is_real = faces[0].get("is_real", False)
     score   = faces[0].get("antispoof_score", 0.0)
-    print(f"[ANTISPOOF] is_real={is_real} score={score:.4f}")
+    _audit.debug(f"[ANTISPOOF] is_real={is_real} score={score:.4f}")
     return bool(is_real)
 
 
@@ -108,7 +108,7 @@ def check_anti_spoof_with_score(base64_image: str) -> tuple:
 
     is_real = bool(faces[0].get("is_real", False))
     score   = float(faces[0].get("antispoof_score", 0.0))
-    print(f"[ANTISPOOF] is_real={is_real} score={score:.4f}")
+    _audit.debug(f"[ANTISPOOF] is_real={is_real} score={score:.4f}")
     return is_real, score
 
 
@@ -146,7 +146,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
 
     is_real = bool(faces[0].get("is_real", False))
     score   = float(faces[0].get("antispoof_score", 0.0))
-    print(f"[SPOOF_CHECK] is_real={is_real} score={score:.4f}")
+    _audit.debug(f"[SPOOF_CHECK] is_real={is_real} score={score:.4f}")
 
     if not is_real:
         return {
@@ -167,7 +167,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
         )
         embedding = rep[0]["embedding"] if rep else None
     except Exception as e:
-        print(f"[SPOOF_CHECK] embedding extraction failed (non-fatal): {e}")
+        _audit.warning(f"[SPOOF_CHECK] embedding extraction failed (non-fatal): {e}")
         embedding = None
 
     return {
@@ -222,17 +222,50 @@ def max_similarity_multi(live_emb: list, stored_embeddings: list) -> float:
     return max(cosine_similarity(live_emb, emb) for emb in stored_embeddings)
 
 
-def detect_screen_moire(frames: list, threshold: float = MOIRE_THRESHOLD) -> dict:
+def _adaptive_moire_threshold(frames: list, base: float = MOIRE_THRESHOLD) -> float:
+    """
+    B8: Adjust Moiré threshold based on average frame brightness.
+
+    Dark frames (<60 mean) → raise threshold by up to +0.05 to avoid false positives
+    from JPEG compression noise amplified in low light.
+    Bright frames (>180 mean) → lower threshold by up to -0.03 (screens glow brighter).
+    """
+    if not frames:
+        return base
+    brightness_vals = []
+    for frame in frames:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        brightness_vals.append(float(np.mean(gray)))
+    avg_brightness = sum(brightness_vals) / len(brightness_vals)
+
+    if avg_brightness < 60:
+        # Very dark — loosen threshold proportionally (max +0.05)
+        adjust = 0.05 * (1.0 - avg_brightness / 60.0)
+    elif avg_brightness > 180:
+        # Very bright / screen-like — tighten threshold proportionally (max -0.03)
+        adjust = -0.03 * ((avg_brightness - 180.0) / 75.0)
+    else:
+        adjust = 0.0
+
+    result = round(max(0.50, min(0.75, base + adjust)), 4)
+    if adjust != 0.0:
+        _audit.debug(f"[MOIRE] adaptive threshold: brightness={avg_brightness:.1f} adjust={adjust:+.4f} threshold={result}")
+    return result
+
+
+def detect_screen_moire(frames: list, threshold: float | None = None) -> dict:
     """
     Detect screen replay attacks via FFT-based moiré analysis.
     Real faces have smooth frequency spectra; screens have periodic peaks from pixel grids.
 
     Args:
         frames: list of BGR numpy arrays (3-5 frames from enrollment or 1 from check-in)
-        threshold: high-freq energy ratio above which the image is flagged as a screen
+        threshold: override threshold (None → use adaptive threshold based on brightness)
     Returns:
         { is_screen: bool, avg_score: float, per_frame: list[float] }
     """
+    effective_threshold = threshold if threshold is not None else _adaptive_moire_threshold(frames)
+
     scores = []
     for frame in frames:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -260,11 +293,12 @@ def detect_screen_moire(frames: list, threshold: float = MOIRE_THRESHOLD) -> dic
 
     avg_score = sum(scores) / len(scores)
     if MOIRE_LOG_RANGE[0] <= avg_score <= MOIRE_LOG_RANGE[1]:
-        _audit.info(f"[MOIRE] near-threshold avg_score={avg_score:.4f} threshold={threshold}")
+        _audit.info(f"[MOIRE] near-threshold avg_score={avg_score:.4f} threshold={effective_threshold}")
     return {
-        "is_screen": avg_score > threshold,
-        "avg_score": round(avg_score, 4),
-        "per_frame": [round(s, 4) for s in scores],
+        "is_screen":  avg_score > effective_threshold,
+        "avg_score":  round(avg_score, 4),
+        "per_frame":  [round(s, 4) for s in scores],
+        "threshold":  effective_threshold,
     }
 
 

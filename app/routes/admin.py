@@ -4,7 +4,7 @@ import secrets
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
-from app.services.security_service import log_audit_event, csrf_protect
+from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -32,6 +32,7 @@ def _friendly_error(e: Exception) -> str:
 @admin_bp.route("/dashboard")
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def dashboard():
     users_res = supabase_admin.table("users").select("*", count="exact").execute()
     beacons_res = supabase_admin.table("beacons").select("*", count="exact").execute()
@@ -54,6 +55,7 @@ def dashboard():
 @admin_bp.route("/users")
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def users():
     role_filter = request.args.get("role", "")
     query = supabase_admin.table("users").select("*").order("created_at", desc=True)
@@ -68,6 +70,7 @@ def users():
 @admin_bp.route("/import-csv", methods=["GET", "POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def import_csv():
     if request.method == "GET":
         return render_template("admin/import_csv.html")
@@ -108,11 +111,12 @@ def import_csv():
             uid = str(auth_res.user.id)
 
             supabase_admin.table("users").insert({
-                "id": uid,
-                "email": email,
-                "full_name": full_name,
-                "role": role,
-                "student_id": student_id,
+                "id":                   uid,
+                "email":                email,
+                "full_name":            full_name,
+                "role":                 role,
+                "student_id":           student_id,
+                "must_change_password": True,   # A6: force change on first login
             }).execute()
 
             if role == "student":
@@ -150,6 +154,7 @@ def import_csv():
 @admin_bp.route("/beacons")
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def beacons():
     beacons_data = (
         supabase_admin.table("beacons").select("*").order("room_name").execute().data or []
@@ -160,6 +165,7 @@ def beacons():
 @admin_bp.route("/beacons/add", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def beacon_add():
     try:
         supabase_admin.table("beacons").insert({
@@ -179,6 +185,7 @@ def beacon_add():
 @admin_bp.route("/beacons/<beacon_id>/edit", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def beacon_edit(beacon_id):
     try:
         supabase_admin.table("beacons").update({
@@ -198,6 +205,7 @@ def beacon_edit(beacon_id):
 @admin_bp.route("/beacons/<beacon_id>/delete", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def beacon_delete(beacon_id):
     try:
         supabase_admin.table("beacons").delete().eq("id", beacon_id).execute()
@@ -212,6 +220,7 @@ def beacon_delete(beacon_id):
 @admin_bp.route("/sessions")
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def sessions():
     sessions_data = (
         supabase_admin.table("sessions")
@@ -252,6 +261,7 @@ def sessions():
 @admin_bp.route("/sessions/create", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def session_create():
     course_id = request.form.get("course_id")
     beacon_id = request.form.get("beacon_id")
@@ -285,6 +295,7 @@ def session_create():
 @admin_bp.route("/sessions/<session_id>/delete", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def session_delete(session_id):
     try:
         supabase_admin.table("sessions").delete().eq("id", session_id).execute()
@@ -301,6 +312,7 @@ def session_delete(session_id):
 @admin_bp.route("/courses")
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def courses():
     courses_data = (
         supabase_admin.table("courses")
@@ -336,6 +348,7 @@ def courses():
 @admin_bp.route("/courses/add", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def course_add():
     code       = request.form.get("code", "").strip()
     name       = request.form.get("name", "").strip()
@@ -366,6 +379,7 @@ def course_add():
 @admin_bp.route("/courses/<course_id>/add-section", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def section_add(course_id):
     # ดึง course ต้นแบบ
     parent = (
@@ -419,6 +433,7 @@ def section_add(course_id):
 @admin_bp.route("/courses/<course_id>")
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def course_detail(course_id):
     course = (
         supabase_admin.table("courses")
@@ -470,6 +485,7 @@ def course_detail(course_id):
 @admin_bp.route("/courses/<course_id>/enroll", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def course_enroll(course_id):
     student_ids = request.form.getlist("student_ids")
     if not student_ids:
@@ -489,6 +505,7 @@ def course_enroll(course_id):
 @admin_bp.route("/courses/<course_id>/unenroll/<student_id>", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def course_unenroll(course_id, student_id):
     try:
         supabase_admin.table("course_enrollments") \
@@ -508,6 +525,7 @@ def course_unenroll(course_id, student_id):
 @admin_bp.route("/courses/<course_id>/import-csv", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def course_import_csv(course_id):
     file = request.files.get("csv_file")
     if not file or not file.filename.endswith(".csv"):
@@ -554,6 +572,7 @@ def course_import_csv(course_id):
                     "id": uid, "email": email,
                     "full_name": full_name, "role": "student",
                     "student_id": student_id,
+                    "must_change_password": True,   # A6: force change on first login
                 }).execute()
                 supabase_admin.table("student_biometrics").insert({"user_id": uid}).execute()
                 success_count += 1
@@ -593,6 +612,7 @@ def course_import_csv(course_id):
 @admin_bp.route("/courses/<course_id>/schedules/add", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def schedule_add(course_id):
     day_of_week = request.form.get("day_of_week")
     start_time  = request.form.get("start_time")
@@ -619,6 +639,7 @@ def schedule_add(course_id):
 @admin_bp.route("/courses/<course_id>/schedules/<schedule_id>/delete", methods=["POST"])
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def schedule_delete(course_id, schedule_id):
     try:
         supabase_admin.table("schedules").delete().eq("id", schedule_id).execute()
@@ -634,6 +655,7 @@ def schedule_delete(course_id, schedule_id):
 @admin_bp.route("/biometrics")
 @login_required
 @role_required("admin")
+@csrf_protect_form
 def biometrics():
     res = (
         supabase_admin.table("student_biometrics")
@@ -642,6 +664,17 @@ def biometrics():
         .execute()
     )
     records = res.data or []
+
+    # Generate signed URLs for face images (1-hour expiry — bucket is private)
+    for r in records:
+        path = r.get("face_image_url")
+        if path and not path.startswith("http"):
+            try:
+                signed = supabase_admin.storage.from_("face-images") \
+                    .create_signed_url(path, expires_in=3600)
+                r["face_image_url"] = signed.get("signedURL") or signed.get("signed_url") or path
+            except Exception:
+                r["face_image_url"] = None
 
     # Fetch latest consent_logs entry per student for PDPA status column
     consent_map = {}

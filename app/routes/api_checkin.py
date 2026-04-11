@@ -1,8 +1,11 @@
+import logging
 from datetime import datetime, timezone
 from dateutil import parser as dtparser
 from flask import Blueprint, request, jsonify, session, current_app
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
+
+_log = logging.getLogger("smartcheck.checkin")
 from app.services.face_service import (
     extract_embedding, verify_face_multi,
     check_anti_spoof, check_anti_spoof_with_score,
@@ -52,7 +55,7 @@ def checkin():
     # ─── 0b. Zero-trust frame validation (Sprint 2A) ─────────────────────────
     frame_check = server_validate_frame(face_image)
     if not frame_check["valid"]:
-        print(f"[FRAME_VALIDATE] fail reason={frame_check['reason']} meta={frame_check['metadata']}")
+        _log.info(f"[FRAME_VALIDATE] fail reason={frame_check['reason']} meta={frame_check['metadata']}")
         return jsonify({
             "ok":        False,
             "error":     "รูปภาพไม่ถูกต้อง — กรุณาถ่ายใหม่อีกครั้ง",
@@ -94,7 +97,7 @@ def checkin():
     try:
         raw_frame   = _decode_image(face_image)
         moire       = detect_screen_moire([raw_frame])
-        print(f"[MOIRE] avg_score={moire['avg_score']} is_screen={moire['is_screen']}")
+        _log.info(f"[MOIRE] avg_score={moire['avg_score']} is_screen={moire['is_screen']} threshold={moire.get('threshold')}")
         if moire["is_screen"]:
             return jsonify({
                 "ok":    False,
@@ -103,7 +106,7 @@ def checkin():
                 "retry_face": True,
             }), 400
     except Exception as moire_err:
-        print(f"[MOIRE] check error (fail-close): {moire_err}")
+        _log.error(f"[MOIRE] check error (fail-close): {moire_err}")
         return jsonify({
             "ok": False,
             "error": "ไม่สามารถตรวจสอบภาพได้ — กรุณาถ่ายใหม่อีกครั้ง",
@@ -121,7 +124,7 @@ def checkin():
                 "retry_face": True,
             }), 400
     except Exception as e:
-        print(f"[ANTISPOOF] check error (fail-close): {e}")
+        _log.error(f"[ANTISPOOF] check error (fail-close): {e}")
         return jsonify({
             "ok": False,
             "error": "ไม่สามารถตรวจสอบใบหน้าได้ — กรุณาถ่ายใหม่อีกครั้ง",
@@ -171,10 +174,10 @@ def checkin():
         student_id, stored_embeddings, stored_hash,
         current_app.config["EMBEDDING_INTEGRITY_SALT"],
     ):
-        print(f"[INTEGRITY] VIOLATION student={student_id}")
+        _log.warning(f"[INTEGRITY] VIOLATION student={student_id}")
         return jsonify({
             "ok":   False,
-            "error": "ข้อมูลชีวมาตรไม่สมบูรณ์ — กรุณาติดต่อผู้ดูแลระบบ",
+            "error": "ข้อมูลชีวมาตรไม่สมบูรณ์ — กรุณาลงทะเบียนใบหน้าใหม่อีกครั้ง",
         }), 403
 
     try:
@@ -184,13 +187,13 @@ def checkin():
 
     verify_result = verify_face_multi(live_embedding, stored_embeddings, face_threshold)
     score = verify_result["best_similarity"]
-    print(f"[FACE] best={score:.4f} avg={verify_result['avg_similarity']:.4f} "
-          f"threshold={face_threshold} trusted={device_trusted} pass={verify_result['verified']}")
+    _log.info(f"[FACE] best={score:.4f} avg={verify_result['avg_similarity']:.4f} "
+              f"threshold={face_threshold} trusted={device_trusted} pass={verify_result['verified']}")
 
     if not verify_result["verified"]:
         return jsonify({
             "ok": False,
-            "error": f"ใบหน้าไม่ตรง (score: {score:.3f}) — กรุณาถ่ายรูปใหม่",
+            "error": "ใบหน้าไม่ตรง — กรุณาถ่ายรูปใหม่",
             "retry_face": True,
         }), 400
 
@@ -231,7 +234,7 @@ def checkin():
     }).execute()
 
     status_label = "มาเรียน" if status == "present" else "มาสาย"
-    return jsonify({"ok": True, "message": f"เช็คชื่อสำเร็จ — {status_label} (score: {score:.3f})"})
+    return jsonify({"ok": True, "message": f"เช็คชื่อสำเร็จ — {status_label}"})
 
 
 # ─── Passive anti-spoof (hybrid liveness) ────────────────────────────────────
@@ -248,7 +251,7 @@ def antispoof_passive():
         is_real, score = check_anti_spoof_with_score(face_image)
         return jsonify({"ok": True, "real": is_real, "score": round(score, 4)})
     except Exception as e:
-        print(f"[ANTISPOOF-PASSIVE] error: {e}")
+        _log.error(f"[ANTISPOOF-PASSIVE] error: {e}")
         # Fail-close: exception → treat as spoof, not real
         return jsonify({"ok": False, "real": False, "score": 0.0,
                         "message": "ไม่สามารถตรวจสอบได้ กรุณาลองใหม่"}), 500

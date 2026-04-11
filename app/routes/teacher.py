@@ -5,7 +5,7 @@ from flask import (Blueprint, render_template, request, redirect,
                    url_for, flash, session, jsonify, Response)
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
-from app.services.security_service import log_audit_event, csrf_protect
+from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
 
 teacher_bp = Blueprint("teacher", __name__)
 
@@ -15,6 +15,7 @@ teacher_bp = Blueprint("teacher", __name__)
 @teacher_bp.route("/history")
 @login_required
 @role_required("teacher")
+@csrf_protect_form
 def history():
     teacher_id  = session["user_id"]
     course_filter = request.args.get("course_id", "")
@@ -78,6 +79,7 @@ def history():
 @teacher_bp.route("/dashboard")
 @login_required
 @role_required("teacher")
+@csrf_protect_form
 def dashboard():
     teacher_id = session["user_id"]
 
@@ -139,6 +141,7 @@ def dashboard():
 @teacher_bp.route("/session/create", methods=["POST"])
 @login_required
 @role_required("teacher")
+@csrf_protect_form
 def session_create():
     teacher_id = session["user_id"]
     course_id  = request.form.get("course_id")
@@ -187,6 +190,7 @@ def session_create():
 @teacher_bp.route("/session/<session_id>")
 @login_required
 @role_required("teacher")
+@csrf_protect_form
 def session_view(session_id):
     teacher_id = session["user_id"]
 
@@ -237,6 +241,7 @@ def session_view(session_id):
 @teacher_bp.route("/session/<session_id>/toggle", methods=["POST"])
 @login_required
 @role_required("teacher")
+@csrf_protect_form
 def session_toggle(session_id):
     teacher_id = session["user_id"]
 
@@ -311,6 +316,7 @@ def session_toggle(session_id):
 @teacher_bp.route("/session/<session_id>/override", methods=["POST"])
 @login_required
 @role_required("teacher")
+@csrf_protect_form
 def override_attendance(session_id):
     teacher_id   = session["user_id"]
     student_id   = request.form.get("student_id")
@@ -390,6 +396,7 @@ def override_attendance(session_id):
 @teacher_bp.route("/session/<session_id>/export")
 @login_required
 @role_required("teacher")
+@csrf_protect_form
 def export_csv(session_id):
     teacher_id = session["user_id"]
 

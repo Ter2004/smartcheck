@@ -1,28 +1,57 @@
+import logging
 import os
+import sys
 import tempfile
 from dotenv import load_dotenv
 
+_log = logging.getLogger("smartcheck.config")
+
 load_dotenv()
+
+_IS_PRODUCTION = os.getenv("FLASK_ENV") == "production" or os.getenv("FLASK_DEBUG", "1") == "0"
+
+
+def _require_env(key: str, fallback: str) -> str:
+    """
+    ใน production: raise RuntimeError ถ้าไม่ set env var
+    ใน dev: ใช้ fallback แต่ print warning ชัดเจน
+    """
+    value = os.getenv(key)
+    if value:
+        return value
+    if _IS_PRODUCTION:
+        raise RuntimeError(
+            f"[SmartCheck] CRITICAL: environment variable '{key}' is not set. "
+            f"Application cannot start in production without it."
+        )
+    _log.warning(
+        f"[SmartCheck] '{key}' not set — using insecure dev fallback. "
+        f"DO NOT use in production."
+    )
+    return fallback
 
 
 class Config:
-    SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "dev-fallback-key")
+    SECRET_KEY = _require_env("FLASK_SECRET_KEY", "dev-fallback-key-not-for-production")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
     SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
     # Embedding integrity HMAC salt (Sprint 2B)
-    EMBEDDING_INTEGRITY_SALT = os.getenv(
+    EMBEDDING_INTEGRITY_SALT = _require_env(
         "EMBEDDING_INTEGRITY_SALT",
-        "smartcheck-integrity-salt-change-in-production",
+        "dev-integrity-salt-not-for-production",
     )
 
+    # Redis URL for rate limiter (production)
+    REDIS_URL = os.getenv("REDIS_URL", "")
+
     # ── Flask-Session: server-side filesystem sessions (Sprint 1A) ──
-    SESSION_TYPE             = "filesystem"
-    SESSION_FILE_DIR         = os.path.join(tempfile.gettempdir(), "smartcheck_sessions")
-    SESSION_PERMANENT        = True
+    SESSION_TYPE               = "filesystem"
+    SESSION_FILE_DIR           = os.path.join(tempfile.gettempdir(), "smartcheck_sessions")
+    SESSION_PERMANENT          = True
     PERMANENT_SESSION_LIFETIME = 3600          # 1 hour
-    SESSION_COOKIE_HTTPONLY  = True             # JS cannot read the session cookie
-    SESSION_COOKIE_SAMESITE  = "Strict"         # CSRF layer 1
-    SESSION_COOKIE_SECURE    = False            # Set True when TLS is enabled
-    SESSION_FILE_THRESHOLD   = 500             # max cached session files on disk
+    SESSION_COOKIE_HTTPONLY    = True           # JS cannot read the session cookie
+    SESSION_COOKIE_SAMESITE    = "Strict"       # CSRF layer 1
+    SESSION_COOKIE_SECURE      = _IS_PRODUCTION  # True in production (TLS required)
+    SESSION_FILE_THRESHOLD     = 500            # max cached session files on disk

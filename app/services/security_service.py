@@ -124,7 +124,7 @@ def verify_embedding_integrity(
     Constant-time comparison — returns False if embeddings have been tampered with.
     """
     if not stored_hash:
-        return True  # Legacy rows (before hash column existed) — pass through
+        return False  # No hash = unverifiable — reject and require re-enrollment
     expected = compute_embedding_integrity_hash(user_id, embeddings, integrity_salt)
     return hmac.compare_digest(expected, stored_hash)
 
@@ -150,6 +150,24 @@ def csrf_protect(f):
         expected = session.get("csrf_token", "")
         if not expected or not hmac.compare_digest(token, expected):
             return jsonify({"ok": False, "error": "CSRF validation failed"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
+def csrf_protect_form(f):
+    """
+    CSRF protection for HTML form endpoints (admin/teacher pages).
+    Only validates on state-changing methods (POST/PUT/DELETE/PATCH).
+    Requires a hidden <input name="csrf_token"> in every form.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            token    = request.form.get("csrf_token", "")
+            expected = session.get("csrf_token", "")
+            if not expected or not hmac.compare_digest(token, expected):
+                from flask import abort
+                abort(403)
         return f(*args, **kwargs)
     return decorated
 

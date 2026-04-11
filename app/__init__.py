@@ -1,9 +1,12 @@
+import logging
 from flask import Flask
 from supabase import create_client, Client
 from app.config import Config
 from flask_session import Session
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+
+_log = logging.getLogger("smartcheck.app")
 
 # Supabase clients (initialized in create_app)
 supabase: Client = None          # ใช้ anon key — เรียกผ่าน RLS
@@ -26,12 +29,25 @@ def get_rate_limit_key():
     return f"ip:{get_remote_address()}"
 
 
+def _limiter_storage_uri() -> str:
+    """ใช้ Redis ถ้ามี REDIS_URL — มิฉะนั้น fallback เป็น in-memory (single-process only)"""
+    from app.config import Config
+    redis_url = getattr(Config, "REDIS_URL", "") or ""
+    if redis_url:
+        return redis_url
+    _log.warning(
+        "[SmartCheck] REDIS_URL not set — using in-memory rate limiter. "
+        "Multi-worker deployments (gunicorn) will have per-process counters."
+    )
+    return "memory://"
+
+
 # Rate limiter — created at module level so blueprints can import it before create_app().
 # init_app(app) is called inside create_app() to bind it to the Flask instance.
 limiter = Limiter(
     key_func=get_rate_limit_key,
     default_limits=["200 per hour"],
-    storage_uri="memory://",   # Redis in production
+    storage_uri=_limiter_storage_uri(),
 )
 
 
@@ -45,6 +61,16 @@ def _refresh_clients():
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+
+    # --- Structured logging (B10) ---
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    )
+    # Suppress noisy third-party loggers
+    logging.getLogger("apscheduler").setLevel(logging.WARNING)
+    logging.getLogger("deepface").setLevel(logging.WARNING)
 
     # --- Server-side sessions — Sprint 1A ---
     Session(app)
@@ -109,6 +135,26 @@ def create_app():
         from flask import flash, redirect, url_for
         flash("คำขอมากเกินไป กรุณารอสักครู่แล้วลองใหม่", "warning")
         return redirect(url_for("auth.login"))
+
+    # --- Security headers (A9) ---
+    @app.after_request
+    def add_security_headers(response):
+        # Content-Security-Policy — adjust CDN allowlist as needed
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' cdn.tailwindcss.com cdn.jsdelivr.net "
+                "'unsafe-inline'; "   # required for inline Tailwind config block
+            "style-src 'self' fonts.googleapis.com 'unsafe-inline'; "
+            "font-src fonts.gstatic.com data:; "
+            "img-src 'self' data: blob:; "
+            "media-src 'self' blob:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"]         = "DENY"
+        response.headers["Referrer-Policy"]          = "strict-origin-when-cross-origin"
+        return response
 
     # --- Start Scheduler ---
     from app.scheduler import start_scheduler

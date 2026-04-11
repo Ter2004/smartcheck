@@ -262,6 +262,20 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('#flash-data span').forEach(el => {
         showToast(el.dataset.message, el.dataset.category);
     });
+
+    // Auto-inject CSRF token into every HTML form (A5: CSRF protection for form POST)
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    if (csrfToken) {
+        document.querySelectorAll('form').forEach(form => {
+            if (!form.querySelector('input[name="csrf_token"]')) {
+                const input = document.createElement('input');
+                input.type  = 'hidden';
+                input.name  = 'csrf_token';
+                input.value = csrfToken;
+                form.appendChild(input);
+            }
+        });
+    }
 });
 </script>
 

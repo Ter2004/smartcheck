@@ -4,9 +4,12 @@ scheduler.py — Auto create/close sessions ตาม schedules table
   - สร้าง session อัตโนมัติสำหรับทุก schedule ที่ตรงกับวันนี้ (ถ้ายังไม่มี)
   - ปิด session ถ้าเลยเวลาจบแล้ว
 """
+import logging
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
+
+_log = logging.getLogger("smartcheck.scheduler")
 
 TZ_THAI = ZoneInfo("Asia/Bangkok")
 
@@ -81,7 +84,7 @@ def auto_manage_sessions():
                     "end_time":   None,
                     "is_open":    False,
                 }).execute()
-                print(f"[SCHEDULER] Auto-created: {title}")
+                _log.info(f"[SCHEDULER] Auto-created: {title}")
 
             # ─── Auto-close: เลยเวลาจบ ────────────────────────────────
             if now_time >= end_time:
@@ -103,10 +106,10 @@ def auto_manage_sessions():
                         "is_open":  False,
                         "end_time": now.isoformat(),
                     }).eq("id", sess["id"]).execute()
-                    print(f"[SCHEDULER] Auto-closed: {sess['title']}")
+                    _log.info(f"[SCHEDULER] Auto-closed: {sess['title']}")
 
     except Exception as e:
-        print(f"[SCHEDULER] Error: {e}")
+        _log.error(f"[SCHEDULER] Error: {e}", exc_info=True)
 
 
 def _parse_time(time_str: str):
@@ -123,7 +126,7 @@ def keep_alive():
     except Exception:
         from app import _refresh_clients
         _refresh_clients()
-        print("[KEEP-ALIVE] Reconnected to Supabase")
+        _log.info("[KEEP-ALIVE] Reconnected to Supabase")
 
 
 def start_scheduler():
@@ -131,5 +134,5 @@ def start_scheduler():
     scheduler.add_job(auto_manage_sessions, "interval", minutes=1, id="session_manager")
     scheduler.add_job(keep_alive, "interval", minutes=3, id="keep_alive")
     scheduler.start()
-    print("[SCHEDULER] Started — checking every minute")
+    _log.info("[SCHEDULER] Started — checking every minute")
     return scheduler

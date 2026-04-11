@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}BLE Beacons — SmartCheck{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-8">
+    <div>
+        <h1 class="text-xl font-semibold text-slate-900">BLE Beacons</h1>
+        <p class="text-sm text-slate-500 mt-0.5">จัดการ Bluetooth Beacon ประจำห้องเรียน</p>
+    </div>
+    <button onclick="showModal('addModal')"
+            class="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        เพิ่ม Beacon
+    </button>
+</div>
+
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-left text-xs font-medium text-slate-500 px-5 py-3">ห้อง</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">UUID</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">Major / Minor</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">RSSI</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">สถานะ</th>
+                    <th class="px-4 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+            {% for b in beacons %}
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-5 py-3.5">
+                        <span class="text-sm font-medium text-slate-800">{{ b.room_name }}</span>
+                    </td>
+                    <td class="px-4 py-3.5 max-w-[200px]">
+                        <span class="font-mono text-xs text-slate-500 truncate block">{{ b.uuid }}</span>
+                    </td>
+                    <td class="px-4 py-3.5">
+                        <span class="font-mono text-sm text-slate-700">{{ b.major }} / {{ b.minor }}</span>
+                    </td>
+                    <td class="px-4 py-3.5">
+                        <span class="font-mono text-sm text-slate-700">{{ b.rssi_threshold }} dBm</span>
+                    </td>
+                    <td class="px-4 py-3.5">
+                        {% if b.is_active %}
+                        <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                            <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>เปิดใช้งาน
+                        </span>
+                        {% else %}
+                        <span class="text-xs font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">ปิดใช้งาน</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3.5">
+                        <div class="flex items-center gap-2">
+                            <button onclick="openEditModal({{ b | tojson }})"
+                                    class="text-xs text-slate-500 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition-colors">
+                                แก้ไข
+                            </button>
+                            <form method="POST" action="{{ url_for('admin.beacon_delete', beacon_id=b.id) }}"
+                                  onsubmit="return confirm('ยืนยันการลบ Beacon ห้อง {{ b.room_name }}?')">
+                                <button type="submit"
+                                        class="text-xs text-rose-500 hover:text-rose-700 border border-rose-200 hover:border-rose-300 px-2.5 py-1 rounded-lg transition-colors">
+                                    ลบ
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            {% else %}
+                <tr>
+                    <td colspan="6" class="px-5 py-12 text-center text-sm text-slate-400">ยังไม่มี Beacon</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Add Modal -->
+<div class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4" id="addModal">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div class="px-6 py-5 border-b border-slate-100">
+            <h3 class="text-base font-semibold text-slate-900">เพิ่ม Beacon ใหม่</h3>
+        </div>
+        <form method="POST" action="{{ url_for('admin.beacon_add') }}" class="px-6 py-5 space-y-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">ชื่อห้อง</label>
+                <input type="text" name="room_name"
+                       class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       placeholder="เช่น IT-405" required>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">UUID</label>
+                <input type="text" name="uuid"
+                       class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" required>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">Major</label>
+                    <input type="number" name="major" value="1" min="0" max="65535"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">Minor</label>
+                    <input type="number" name="minor" value="1" min="0" max="65535"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">RSSI</label>
+                    <input type="number" name="rssi_threshold" value="-75" min="-100" max="0"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+            </div>
+            <div class="flex gap-2.5 pt-1">
+                <button type="button" onclick="hideModal('addModal')"
+                        class="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium rounded-xl transition-colors">
+                    ยกเลิก
+                </button>
+                <button type="submit"
+                        class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors">
+                    เพิ่ม
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4" id="editModal">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div class="px-6 py-5 border-b border-slate-100">
+            <h3 class="text-base font-semibold text-slate-900">แก้ไข Beacon</h3>
+        </div>
+        <form method="POST" id="editForm" class="px-6 py-5 space-y-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">ชื่อห้อง</label>
+                <input type="text" name="room_name" id="edit_room_name"
+                       class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">UUID</label>
+                <input type="text" name="uuid" id="edit_uuid"
+                       class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">Major</label>
+                    <input type="number" name="major" id="edit_major" min="0" max="65535"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">Minor</label>
+                    <input type="number" name="minor" id="edit_minor" min="0" max="65535"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">RSSI</label>
+                    <input type="number" name="rssi_threshold" id="edit_rssi" min="-100" max="0"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" name="is_active" id="edit_is_active" class="w-4 h-4 accent-indigo-600">
+                <span class="text-sm text-slate-700">เปิดใช้งาน</span>
+            </label>
+            <div class="flex gap-2.5 pt-1">
+                <button type="button" onclick="hideModal('editModal')"
+                        class="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium rounded-xl transition-colors">
+                    ยกเลิก
+                </button>
+                <button type="submit"
+                        class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors">
+                    บันทึก
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showModal(id) {
+    const el = document.getElementById(id);
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+}
+function hideModal(id) {
+    const el = document.getElementById(id);
+    el.classList.add('hidden');
+    el.classList.remove('flex');
+}
+function openEditModal(b) {
+    document.getElementById('edit_room_name').value = b.room_name;
+    document.getElementById('edit_uuid').value = b.uuid;
+    document.getElementById('edit_major').value = b.major;
+    document.getElementById('edit_minor').value = b.minor;
+    document.getElementById('edit_rssi').value = b.rssi_threshold;
+    document.getElementById('edit_is_active').checked = b.is_active;
+    document.getElementById('editForm').action = '/admin/beacons/' + b.id + '/edit';
+    showModal('editModal');
+}
+document.querySelectorAll('[id$="Modal"]').forEach(o =>
+    o.addEventListener('click', e => { if (e.target === o) hideModal(o.id) }));
+</script>
+{% endblock %}

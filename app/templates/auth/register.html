@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}สมัครสมาชิก — SmartCheck{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+<div class="auth-card">
+    <div class="brand">SmartCheck</div>
+    <h1>สมัครสมาชิก</h1>
+    <p class="subtitle">สร้างบัญชีใหม่</p>
+
+    <form method="POST" action="{{ url_for('auth.register') }}">
+        <div class="form-group">
+            <label class="form-label" for="full_name">ชื่อ-นามสกุล</label>
+            <input class="form-control" type="text" id="full_name" name="full_name" required placeholder="สมชาย ใจดี">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="email">อีเมล</label>
+            <input class="form-control" type="email" id="email" name="email" required placeholder="email@example.com">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="password">รหัสผ่าน</label>
+            <input class="form-control" type="password" id="password" name="password" required minlength="6" placeholder="อย่างน้อย 6 ตัวอักษร">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="role">บทบาท</label>
+            <select class="form-control" id="role" name="role" onchange="toggleStudentId()">
+                <option value="student">นักศึกษา</option>
+                <option value="teacher">อาจารย์</option>
+            </select>
+        </div>
+        <div class="form-group" id="student-id-group">
+            <label class="form-label" for="student_id">รหัสนักศึกษา</label>
+            <input class="form-control" type="text" id="student_id" name="student_id" placeholder="6630600000">
+        </div>
+        <button type="submit" class="btn btn-primary btn-full" style="margin-top:0.5rem">สมัครสมาชิก</button>
+    </form>
+
+    <p class="auth-link">มีบัญชีแล้ว? <a href="{{ url_for('auth.login') }}">เข้าสู่ระบบ</a></p>
+</div>
+</div>
+
+<script>
+function toggleStudentId() {
+    const role = document.getElementById('role').value;
+    document.getElementById('student-id-group').style.display = role === 'student' ? 'block' : 'none';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}ประวัติคาบเรียน — SmartCheck{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="mb-8">
+    <h1 class="text-xl font-semibold text-slate-900">ประวัติคาบเรียน</h1>
+    <p class="text-sm text-slate-500 mt-0.5">ย้อนดูคาบเรียนทั้งหมดและผลการเช็คชื่อ</p>
+</div>
+
+<!-- Filter card -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 mb-6">
+    <form method="GET" action="{{ url_for('teacher.history') }}" class="flex flex-wrap items-end gap-3">
+        <div class="flex-1 min-w-36">
+            <label class="block text-xs font-medium text-slate-600 mb-1.5">วิชา</label>
+            <select name="course_id"
+                    class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                <option value="">— ทุกวิชา —</option>
+                {% for c in courses %}
+                <option value="{{ c.id }}" {% if course_filter == c.id %}selected{% endif %}>
+                    {{ c.code }}{% if c.section %} sec {{ c.section }}{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1.5">จากวันที่</label>
+            <input type="date" name="date_from" value="{{ date_from }}"
+                   class="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1.5">ถึงวันที่</label>
+            <input type="date" name="date_to" value="{{ date_to }}"
+                   class="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+        <div class="flex gap-2">
+            <button type="submit"
+                    class="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                กรอง
+            </button>
+            <a href="{{ url_for('teacher.history') }}"
+               class="inline-flex items-center text-sm font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg transition-colors">
+                ล้าง
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Table -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-left text-xs font-medium text-slate-500 px-5 py-3">วิชา</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden md:table-cell">ชื่อคาบ</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">วันที่</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">เวลา</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">เข้าเรียน</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">สถานะ</th>
+                    <th class="px-4 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+            {% for s in sessions %}
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-5 py-3.5">
+                    <span class="text-sm font-medium text-slate-800">{{ s.courses.code }}</span>
+                    {% if s.courses.section %}
+                    <span class="ml-1.5 text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">sec {{ s.courses.section }}</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3.5 hidden md:table-cell">
+                    <span class="text-xs text-slate-500 max-w-48 truncate block">{{ s.title }}</span>
+                </td>
+                <td class="px-4 py-3.5">
+                    <span class="font-mono text-xs text-slate-600">{{ s.start_time | thai_time('%d/%m/%y') }}</span>
+                </td>
+                <td class="px-4 py-3.5 hidden sm:table-cell">
+                    <span class="font-mono text-xs text-slate-600">{{ s.start_time | thai_time('%H:%M') }}</span>
+                    {% if s.end_time %}
+                    <span class="text-slate-400 text-xs">→ {{ s.end_time | thai_time('%H:%M') }}</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3.5 hidden sm:table-cell">
+                    <span class="text-sm font-semibold text-indigo-600">{{ s.present_count }}</span>
+                    <span class="text-xs text-slate-400"> คน</span>
+                </td>
+                <td class="px-4 py-3.5">
+                    {% if s.is_open %}
+                    <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full">
+                        <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                        เปิดอยู่
+                    </span>
+                    {% elif s.end_time %}
+                    <span class="text-xs font-medium bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full">เสร็จแล้ว</span>
+                    {% else %}
+                    <span class="text-xs font-medium bg-amber-50 text-amber-600 border border-amber-200 px-2.5 py-1 rounded-full">ยังไม่เริ่ม</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3.5 text-right">
+                    <a href="{{ url_for('teacher.session_view', session_id=s.id) }}"
+                       class="text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors">
+                        ดูผล →
+                    </a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7" class="px-5 py-14 text-center">
+                    <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                        <svg class="w-5 h-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <p class="text-sm text-slate-400">ไม่พบข้อมูลคาบเรียน</p>
+                    {% if course_filter or date_from or date_to %}
+                    <a href="{{ url_for('teacher.history') }}" class="text-xs text-indigo-600 hover:text-indigo-700 mt-1 inline-block">ล้างตัวกรอง</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}{{ course.code }} — SmartCheck{% endblock %}
+
+{% block content %}
+<div class="flex items-start justify-between mb-8">
+    <div>
+        <a href="{{ url_for('admin.courses') }}"
+           class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 mb-2 transition-colors">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            วิชาเรียน
+        </a>
+        <h1 class="text-xl font-semibold text-slate-900">{{ course.code }} — {{ course.name }}</h1>
+        <p class="text-sm text-slate-500 mt-0.5">อาจารย์: {{ course.users.full_name if course.users else '—' }} &nbsp;·&nbsp; เทอม {{ course.semester }}</p>
+    </div>
+    <div class="flex gap-2 flex-shrink-0">
+        <button onclick="showModal('scheduleModal')"
+                class="text-sm text-slate-600 border border-slate-200 hover:bg-slate-50 px-3.5 py-2 rounded-xl transition-colors">
+            + ตารางเรียน
+        </button>
+        <button onclick="showModal('importModal')"
+                class="text-sm text-slate-600 border border-slate-200 hover:bg-slate-50 px-3.5 py-2 rounded-xl transition-colors">
+            Import CSV
+        </button>
+        {% if available %}
+        <button onclick="showModal('addModal')"
+                class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl transition-colors">
+            + นักศึกษา
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+{% set day_names = ['จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์','อาทิตย์'] %}
+
+<!-- Schedules card -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-5">
+    <div class="px-5 py-4 border-b border-slate-100">
+        <h2 class="text-sm font-semibold text-slate-800">ตารางเรียน</h2>
+    </div>
+    <table class="w-full">
+        <thead>
+            <tr class="bg-slate-50">
+                <th class="text-left text-xs font-medium text-slate-500 px-5 py-2.5">วัน</th>
+                <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">เวลาเริ่ม</th>
+                <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">เวลาจบ</th>
+                <th class="px-4 py-2.5"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+        {% for s in schedules %}
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-5 py-3 text-sm text-slate-700">{{ day_names[s.day_of_week] }}</td>
+                <td class="px-4 py-3 font-mono text-sm text-slate-600">{{ s.start_time[:5] }}</td>
+                <td class="px-4 py-3 font-mono text-sm text-slate-600">{{ s.end_time[:5] }}</td>
+                <td class="px-4 py-3 text-right">
+                    <form method="POST" action="{{ url_for('admin.schedule_delete', course_id=course.id, schedule_id=s.id) }}"
+                          onsubmit="return confirm('ลบตารางนี้?')">
+                        <button type="submit"
+                                class="text-xs text-rose-500 hover:text-rose-700 border border-rose-200 hover:border-rose-300 px-2.5 py-1 rounded-lg transition-colors">
+                            ลบ
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        {% else %}
+            <tr>
+                <td colspan="4" class="px-5 py-8 text-center text-sm text-slate-400">ยังไม่มีตารางเรียน</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Enrolled students card -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-slate-100">
+        <h2 class="text-sm font-semibold text-slate-800">นักศึกษาที่ลงทะเบียน
+            <span class="ml-1.5 text-xs font-normal text-slate-400">({{ enrolled|length }} คน)</span>
+        </h2>
+    </div>
+    <table class="w-full">
+        <thead>
+            <tr class="bg-slate-50">
+                <th class="text-left text-xs font-medium text-slate-500 px-5 py-2.5">รหัสนักศึกษา</th>
+                <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">ชื่อ-นามสกุล</th>
+                <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5 hidden sm:table-cell">อีเมล</th>
+                <th class="px-4 py-2.5"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+        {% for e in enrolled %}
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-5 py-3.5">
+                    <span class="font-mono text-xs text-slate-500">{{ e.users.student_id or '—' }}</span>
+                </td>
+                <td class="px-4 py-3.5">
+                    <span class="text-sm font-medium text-slate-800">{{ e.users.full_name }}</span>
+                </td>
+                <td class="px-4 py-3.5 hidden sm:table-cell">
+                    <span class="text-xs text-slate-400">{{ e.users.email }}</span>
+                </td>
+                <td class="px-4 py-3.5 text-right">
+                    <form method="POST" action="{{ url_for('admin.course_unenroll', course_id=course.id, student_id=e.student_id) }}"
+                          onsubmit="return confirm('ลบ {{ e.users.full_name }} ออกจากวิชานี้?')">
+                        <button type="submit"
+                                class="text-xs text-rose-500 hover:text-rose-700 border border-rose-200 hover:border-rose-300 px-2.5 py-1 rounded-lg transition-colors">
+                            ลบออก
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        {% else %}
+            <tr>
+                <td colspan="4" class="px-5 py-12 text-center text-sm text-slate-400">ยังไม่มีนักศึกษา</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Add Schedule Modal -->
+<div class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4" id="scheduleModal">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+        <div class="px-6 py-5 border-b border-slate-100">
+            <h3 class="text-base font-semibold text-slate-900">เพิ่มตารางเรียน — {{ course.code }}</h3>
+        </div>
+        <form method="POST" action="{{ url_for('admin.schedule_add', course_id=course.id) }}" class="px-6 py-5 space-y-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">วัน</label>
+                <select name="day_of_week"
+                        class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                    <option value="0">จันทร์</option>
+                    <option value="1">อังคาร</option>
+                    <option value="2">พุธ</option>
+                    <option value="3">พฤหัส</option>
+                    <option value="4">ศุกร์</option>
+                    <option value="5">เสาร์</option>
+                    <option value="6">อาทิตย์</option>
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">เวลาเริ่ม</label>
+                    <input type="time" name="start_time"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">เวลาจบ</label>
+                    <input type="time" name="end_time"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+            </div>
+            <div class="flex gap-2.5 pt-1">
+                <button type="button" onclick="hideModal('scheduleModal')"
+                        class="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium rounded-xl transition-colors">
+                    ยกเลิก
+                </button>
+                <button type="submit"
+                        class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors">
+                    เพิ่ม
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Students Modal -->
+<div class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4" id="addModal">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+        <div class="px-6 py-5 border-b border-slate-100">
+            <h3 class="text-base font-semibold text-slate-900">เพิ่มนักศึกษาเข้าวิชา {{ course.code }}</h3>
+        </div>
+        <form method="POST" action="{{ url_for('admin.course_enroll', course_id=course.id) }}" class="px-6 py-5 space-y-4">
+            <p class="text-xs text-slate-400">เลือกได้หลายคน (กด Ctrl/Cmd ค้างไว้)</p>
+            <select name="student_ids" multiple
+                    class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 h-48" required>
+                {% for s in available %}
+                <option value="{{ s.id }}">{{ s.full_name }} ({{ s.student_id or s.email }})</option>
+                {% endfor %}
+            </select>
+            <div class="flex gap-2.5">
+                <button type="button" onclick="hideModal('addModal')"
+                        class="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium rounded-xl transition-colors">
+                    ยกเลิก
+                </button>
+                <button type="submit"
+                        class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors">
+                    เพิ่ม
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Import CSV Modal -->
+<div class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4" id="importModal">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div class="px-6 py-5 border-b border-slate-100">
+            <h3 class="text-base font-semibold text-slate-900">Import นักศึกษาจาก CSV</h3>
+        </div>
+        <div class="px-6 py-5 space-y-4">
+            <p class="text-xs text-slate-400">
+                ระบบจะสร้าง account และ enroll เข้า section นี้อัตโนมัติ<br>
+                ถ้า email มีในระบบแล้ว จะ enroll เข้า section โดยไม่สร้าง account ใหม่
+            </p>
+            <div class="bg-slate-900 rounded-lg px-4 py-3 font-mono text-xs text-emerald-400">
+                student_id,full_name,email<br>
+                6401001,สมชาย ใจดี,somchai@example.com<br>
+                6401002,สมหญิง รักเรียน,somying@example.com
+            </div>
+            <form method="POST" action="{{ url_for('admin.course_import_csv', course_id=course.id) }}" enctype="multipart/form-data" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">ไฟล์ CSV</label>
+                    <input type="file" name="csv_file" accept=".csv"
+                           class="w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                           required>
+                </div>
+                <div class="flex gap-2.5">
+                    <button type="button" onclick="hideModal('importModal')"
+                            class="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium rounded-xl transition-colors">
+                        ยกเลิก
+                    </button>
+                    <button type="submit"
+                            class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors">
+                        Import
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showModal(id) {
+    const el = document.getElementById(id);
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+}
+function hideModal(id) {
+    const el = document.getElementById(id);
+    el.classList.add('hidden');
+    el.classList.remove('flex');
+}
+document.querySelectorAll('[id$="Modal"]').forEach(o =>
+    o.addEventListener('click', e => { if (e.target === o) hideModal(o.id) }));
+</script>
+{% endblock %}

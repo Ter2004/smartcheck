@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}ผู้ใช้ — SmartCheck{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="flex items-center justify-between mb-8">
+    <div>
+        <h1 class="text-xl font-semibold text-slate-900">ผู้ใช้</h1>
+        <p class="text-sm text-slate-500 mt-0.5">รายชื่อผู้ใช้ทั้งหมดในระบบ</p>
+    </div>
+    <a href="{{ url_for('admin.import_csv') }}"
+       class="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        นำเข้า CSV
+    </a>
+</div>
+
+<!-- Role filter tabs -->
+<div class="flex items-center gap-1.5 mb-5">
+    <a href="{{ url_for('admin.users') }}"
+       class="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors {% if not role_filter %}bg-indigo-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+        ทั้งหมด
+    </a>
+    <a href="{{ url_for('admin.users', role='student') }}"
+       class="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors {% if role_filter=='student' %}bg-indigo-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+        นักศึกษา
+    </a>
+    <a href="{{ url_for('admin.users', role='teacher') }}"
+       class="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors {% if role_filter=='teacher' %}bg-indigo-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+        อาจารย์
+    </a>
+    <a href="{{ url_for('admin.users', role='admin') }}"
+       class="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors {% if role_filter=='admin' %}bg-indigo-600 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+        Admin
+    </a>
+</div>
+
+<!-- Table -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <!-- Search -->
+    <div class="px-5 py-3.5 border-b border-slate-100 flex items-center gap-3">
+        <svg class="w-4 h-4 text-slate-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="ค้นหาชื่อหรืออีเมล..."
+               class="flex-1 text-sm text-slate-700 placeholder-slate-400 focus:outline-none bg-transparent"
+               oninput="filterUsers(this.value)">
+        <span class="text-xs text-slate-400" id="userCount">{{ users|length }} คน</span>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-left text-xs font-medium text-slate-500 px-5 py-3">ชื่อ-นามสกุล</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">Email</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden md:table-cell">รหัสนักศึกษา</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">Role</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden lg:table-cell">สร้างเมื่อ</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100" id="userTableBody">
+            {% for u in users %}
+            <tr class="hover:bg-slate-50 transition-colors" data-search="{{ u.full_name|lower }} {{ u.email|lower }}">
+                <td class="px-5 py-3.5">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0
+                            {% if u.role == 'admin' %}bg-rose-100 text-rose-700
+                            {% elif u.role == 'teacher' %}bg-sky-100 text-sky-700
+                            {% else %}bg-indigo-100 text-indigo-700{% endif %}">
+                            {{ u.full_name[0]|upper if u.full_name else '?' }}
+                        </div>
+                        <span class="text-sm font-medium text-slate-800">{{ u.full_name }}</span>
+                    </div>
+                </td>
+                <td class="px-4 py-3.5 hidden sm:table-cell">
+                    <span class="text-xs text-slate-500">{{ u.email }}</span>
+                </td>
+                <td class="px-4 py-3.5 hidden md:table-cell">
+                    {% if u.student_id %}
+                    <span class="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded-md">{{ u.student_id }}</span>
+                    {% else %}
+                    <span class="text-xs text-slate-300">—</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3.5">
+                    {% if u.role == 'admin' %}
+                    <span class="inline-flex items-center text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-full">Admin</span>
+                    {% elif u.role == 'teacher' %}
+                    <span class="inline-flex items-center text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200 px-2.5 py-1 rounded-full">Teacher</span>
+                    {% else %}
+                    <span class="inline-flex items-center text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-full">Student</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3.5 hidden lg:table-cell">
+                    <span class="font-mono text-xs text-slate-400">{{ u.created_at[:10] if u.created_at else '—' }}</span>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" class="px-5 py-14 text-center">
+                    <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                        <svg class="w-5 h-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                    </div>
+                    <p class="text-sm text-slate-400">ไม่พบผู้ใช้</p>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterUsers(q) {
+    const rows = document.querySelectorAll('#userTableBody tr[data-search]');
+    q = q.toLowerCase();
+    let visible = 0;
+    rows.forEach(r => {
+        const show = r.dataset.search.includes(q);
+        r.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+    document.getElementById('userCount').textContent = visible + ' คน';
+}
+</script>
+{% endblock %}

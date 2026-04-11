@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}เช็คชื่อเข้าเรียน — SmartCheck{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<style>
+    /* ── Step indicators ───────────────────── */
+    .ci-dot {
+        width: 28px; height: 28px; border-radius: 50%;
+        background: #e2e8f0; color: #94a3b8;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.8rem; font-weight: 600; flex-shrink: 0;
+        transition: background 0.3s, color 0.3s;
+    }
+    .ci-dot.active { background: #4f46e5; color: #fff; }
+    .ci-dot.done   { background: #22c55e; color: #fff; }
+
+    /* ── Camera box ────────────────────────── */
+    .camera-box {
+        position: relative; width: 100%; aspect-ratio: 4/3;
+        background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 0.75rem;
+    }
+    .camera-box video,
+    .camera-box canvas { width: 100%; height: 100%; object-fit: cover; }
+    .camera-box canvas { position: absolute; top: 0; left: 0; }
+
+    .face-guide {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: 55%; aspect-ratio: 3/4;
+        border: 3px dashed rgba(255,255,255,0.5); border-radius: 50%;
+        pointer-events: none; transition: border-color 0.3s, border-style 0.3s;
+    }
+    .face-guide.ok   { border-color: #4ade80; border-style: solid; }
+    .face-guide.fail { border-color: #f87171; border-style: solid; }
+
+    .countdown-badge {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 4rem; font-weight: 900;
+        color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+        pointer-events: none; display: none;
+    }
+
+    /* ── Spinner ───────────────────────────── */
+    .spinner {
+        width: 40px; height: 40px;
+        border: 4px solid #e2e8f0; border-top-color: #4f46e5;
+        border-radius: 50%; animation: _spin 0.8s linear infinite; margin: 1rem auto;
+    }
+    @keyframes _spin { to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto">
+
+    <a href="{{ url_for('student.dashboard') }}"
+       class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 mb-4 transition-colors">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        กลับหน้าหลัก
+    </a>
+    <h1 class="text-xl font-semibold text-slate-900 mb-6">เช็คชื่อเข้าเรียน</h1>
+
+    {% if not session_data %}
+    <div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3">
+        <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <p class="text-sm text-amber-800">ไม่พบ Session ที่เปิดอยู่ในขณะนี้ กรุณารอให้อาจารย์เปิด Session ก่อน</p>
+    </div>
+
+    {% elif already_checked %}
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+        <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h3 class="text-base font-semibold text-slate-800 mb-1">เช็คชื่อเสร็จแล้ว</h3>
+        <p class="text-sm text-slate-500 mb-6">
+            คุณเช็คชื่อคาบ <strong class="text-slate-700">{{ session_data.courses.code }} — {{ session_data.courses.name }}</strong> ไปแล้ว
+        </p>
+        <a href="{{ url_for('student.dashboard') }}"
+           class="inline-flex items-center justify-center w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
+            กลับหน้าหลัก
+        </a>
+    </div>
+
+    {% else %}
+
+    <!-- Step indicator (Final 1: 2 ขั้น) -->
+    <div class="flex items-center gap-2 mb-6">
+        <div class="ci-dot active" id="dot1">1</div>
+        <div class="flex-1 h-0.5 bg-slate-200"></div>
+        <div class="ci-dot" id="dot2">2</div>
+    </div>
+
+    <p class="text-xs text-slate-500 mb-4">
+        วิชา: <strong class="text-slate-700">{{ session_data.courses.code }} — {{ session_data.courses.name }}</strong>
+        &nbsp;·&nbsp; {{ session_data.title }}
+    </p>
+
+    <!-- ─── Step 1: BLE (ซ่อนไว้ Phase 3/4) ─── -->
+    <div id="stepBLE" style="display:none"></div>
+
+    <!-- ─── Step 1: Verify ─── -->
+    <div id="stepVerify" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5" style="display:none">
+        <h3 class="text-sm font-semibold text-slate-800 mb-3">🧬 ขั้นที่ 2 — ยืนยันตัวตน</h3>
+        <div class="camera-box">
+            <video id="videoVerify" autoplay playsinline muted></video>
+            <canvas id="canvasVerify"></canvas>
+            <div class="face-guide" id="faceGuideVerify"></div>
+            <div class="countdown-badge" id="countdownBadge"></div>
+        </div>
+        <p class="text-sm text-center text-slate-400 min-h-[1.4em]" id="verifyStatus">กำลังเปิดกล้อง...</p>
+    </div>
+
+    <!-- ─── Step 3: Result ─── -->
+    <div id="stepDone" class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center" style="display:none">
+        <div id="doneLoadingView">
+            <div class="spinner"></div>
+            <p class="text-sm text-slate-500">กำลังตรวจสอบ...</p>
+        </div>
+        <div id="doneResultView" style="display:none">
+            <div class="text-5xl mb-3" id="doneIcon"></div>
+            <h3 class="text-base font-semibold text-slate-800" id="doneTitle"></h3>
+            <p id="doneMsg" class="text-sm text-slate-500 mt-1 mb-5"></p>
+            <a href="{{ url_for('student.dashboard') }}"
+               class="inline-flex items-center justify-center w-full border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium py-2.5 rounded-xl transition-colors mb-2">
+                กลับหน้าหลัก
+            </a>
+            <button id="doneRetry" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors hidden"
+                    onclick="flow._startVerify()">ลองใหม่</button>
+        </div>
+    </div>
+
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if session_data %}
+<script src="{{ url_for('static', filename='js/ble_scanner.js') }}"></script>
+<script src="{{ url_for('static', filename='js/mediapipe_liveness.js') }}"></script>
+<script src="{{ url_for('static', filename='js/checkin_flow.js') }}"></script>
+<script>
+    const flow = new CheckinFlow({
+        sessionId:     "{{ session_data.id }}",
+        beaconUUID:    "{{ session_data.beacons.uuid }}",
+        rssiThreshold: {{ session_data.beacons.rssi_threshold }},
+        baselineEAR:   {{ baseline_ear }},
+        apiUrl:        "{{ url_for('api_checkin.checkin') }}",
+    });
+    document.addEventListener('DOMContentLoaded', () => flow.start());
+</script>
+{% endif %}
+{% endblock %}

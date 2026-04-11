@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}ผลการนำเข้า — SmartCheck{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-xl font-semibold text-slate-900">ผลการนำเข้าข้อมูล</h1>
+    <p class="text-sm text-slate-500 mt-0.5">นำเข้าสำเร็จ {{ created_users|length }} คน — บันทึกรหัสผ่านเหล่านี้ก่อนออกจากหน้า</p>
+</div>
+
+<!-- Warning banner -->
+<div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3 mb-6">
+    <svg class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <div>
+        <p class="text-sm font-medium text-amber-800">รหัสผ่านจะแสดงครั้งเดียวเท่านั้น</p>
+        <p class="text-xs text-amber-600 mt-0.5">กด "ดาวน์โหลด CSV" เพื่อบันทึกไว้ก่อนออกจากหน้านี้ ไม่สามารถดูรหัสผ่านอีกครั้งได้</p>
+    </div>
+    <button onclick="downloadCSV()"
+            class="ml-auto flex-shrink-0 inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        ดาวน์โหลด CSV
+    </button>
+</div>
+
+<!-- Password table -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+    <div class="overflow-x-auto">
+        <table class="w-full" id="pwTable">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-left text-xs font-medium text-slate-500 px-5 py-3">ชื่อ-นามสกุล</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">Email</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">รหัสนักศึกษา</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">Role</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">รหัสผ่านชั่วคราว</th>
+                    <th class="px-4 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+            {% for u in created_users %}
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-5 py-3.5">
+                    <span class="text-sm font-medium text-slate-800">{{ u.full_name }}</span>
+                </td>
+                <td class="px-4 py-3.5">
+                    <span class="text-xs text-slate-500">{{ u.email }}</span>
+                </td>
+                <td class="px-4 py-3.5 hidden sm:table-cell">
+                    <span class="font-mono text-xs text-slate-500">{{ u.student_id }}</span>
+                </td>
+                <td class="px-4 py-3.5 hidden sm:table-cell">
+                    {% if u.role == 'teacher' %}
+                    <span class="text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-full">Teacher</span>
+                    {% else %}
+                    <span class="text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full">Student</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3.5">
+                    <span class="font-mono text-sm font-medium text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg select-all">{{ u.temp_password }}</span>
+                </td>
+                <td class="px-4 py-3.5">
+                    <button onclick="copyText('{{ u.temp_password }}', this)"
+                            class="text-xs text-slate-400 hover:text-indigo-600 transition-colors">
+                        คัดลอก
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Error rows (if any) -->
+{% if error_rows %}
+<div class="bg-white rounded-xl border border-rose-200 shadow-sm p-5 mb-6">
+    <h3 class="text-sm font-semibold text-rose-700 mb-3">แถวที่นำเข้าไม่สำเร็จ ({{ error_rows|length }} รายการ)</h3>
+    <ul class="space-y-1">
+        {% for err in error_rows %}
+        <li class="text-xs text-rose-600 font-mono">{{ err }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<!-- Actions -->
+<div class="flex gap-3">
+    <a href="{{ url_for('admin.users') }}"
+       class="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors">
+        ดูรายชื่อผู้ใช้ →
+    </a>
+    <a href="{{ url_for('admin.import_csv') }}"
+       class="inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium px-4 py-2.5 rounded-xl transition-colors">
+        นำเข้าเพิ่มเติม
+    </a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyText(text, btn) {
+    navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'คัดลอกแล้ว ✓';
+        btn.classList.add('text-emerald-600');
+        setTimeout(() => {
+            btn.textContent = 'คัดลอก';
+            btn.classList.remove('text-emerald-600');
+        }, 2000);
+    });
+}
+
+function downloadCSV() {
+    const rows = [['ชื่อ-นามสกุล','email','รหัสนักศึกษา','role','รหัสผ่านชั่วคราว']];
+    {% for u in created_users %}
+    rows.push(['{{ u.full_name }}','{{ u.email }}','{{ u.student_id }}','{{ u.role }}','{{ u.temp_password }}']);
+    {% endfor %}
+    const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'smartcheck_passwords.csv';
+    a.click();
+}
+</script>
+{% endblock %}

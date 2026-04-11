@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}เข้าสู่ระบบ — SmartCheck{% endblock %}
+
+{% block head %}
+<style>
+    @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+    .fade-up { animation: fadeUp 0.5s ease forwards; }
+    .fade-up-delay { animation: fadeUp 0.5s ease 0.15s both; }
+    .fade-up-delay2 { animation: fadeUp 0.5s ease 0.3s both; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex">
+
+    <!-- Left: Branding panel -->
+    <div class="hidden lg:flex lg:w-[55%] bg-gradient-to-br from-indigo-600 to-indigo-900 flex-col justify-between p-12 relative overflow-hidden">
+        <!-- Geometric decorations -->
+        <div class="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+        <div class="absolute bottom-0 left-0 w-64 h-64 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2"></div>
+        <div class="absolute top-1/2 left-1/3 w-32 h-32 bg-white/5 rounded-full"></div>
+
+        <!-- Logo -->
+        <div class="relative z-10 fade-up">
+            <div class="flex items-center gap-3 mb-2">
+                <div class="w-10 h-10 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center">
+                    <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <span class="text-white font-bold text-2xl tracking-tight">SmartCheck</span>
+            </div>
+            <p class="text-indigo-200 text-base mt-4">ระบบเช็คชื่ออัจฉริยะสำหรับสถาบันการศึกษา</p>
+        </div>
+
+        <!-- Feature pills -->
+        <div class="relative z-10 space-y-3 fade-up-delay">
+            <div class="flex items-center gap-3 bg-white/10 backdrop-blur rounded-xl px-4 py-3">
+                <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                </div>
+                <div>
+                    <p class="text-white text-sm font-medium">BLE ตรวจตำแหน่ง</p>
+                    <p class="text-indigo-200 text-xs">ยืนยันว่านักศึกษาอยู่ในห้องเรียนจริง</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 bg-white/10 backdrop-blur rounded-xl px-4 py-3">
+                <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
+                </div>
+                <div>
+                    <p class="text-white text-sm font-medium">AI จดจำใบหน้า</p>
+                    <p class="text-indigo-200 text-xs">FaceNet512 ความแม่นยำสูง</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 bg-white/10 backdrop-blur rounded-xl px-4 py-3">
+                <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div>
+                    <p class="text-white text-sm font-medium">ป้องกันการโกง</p>
+                    <p class="text-indigo-200 text-xs">Anti-spoof + Liveness Detection</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <p class="relative z-10 text-indigo-300 text-xs fade-up-delay2">Digital Engineering Project · 2026</p>
+    </div>
+
+    <!-- Right: Login form -->
+    <div class="flex-1 flex items-center justify-center px-6 py-12 bg-slate-50">
+        <div class="w-full max-w-sm">
+
+            <!-- Mobile logo -->
+            <div class="flex items-center gap-2 mb-8 lg:hidden">
+                <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <span class="font-bold text-slate-900 text-lg">SmartCheck</span>
+            </div>
+
+            <h1 class="text-2xl font-semibold text-slate-900 mb-1">เข้าสู่ระบบ</h1>
+            <p class="text-sm text-slate-500 mb-8">ยินดีต้อนรับกลับ กรุณาใส่ข้อมูลของคุณ</p>
+
+            <!-- Flash error display -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div class="flex items-center gap-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-xl px-4 py-3 mb-5">
+                <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                {{ message }}
+            </div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="{{ url_for('auth.login') }}" id="loginForm">
+                <!-- Email -->
+                <div class="mb-4">
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5" for="email">อีเมล</label>
+                    <div class="relative">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        <input type="email" id="email" name="email" required autocomplete="email"
+                               class="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400
+                                      focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                               placeholder="email@example.com">
+                    </div>
+                </div>
+
+                <!-- Password -->
+                <div class="mb-6">
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5" for="password">รหัสผ่าน</label>
+                    <div class="relative">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        <input type="password" id="password" name="password" required autocomplete="current-password"
+                               class="w-full pl-9 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400
+                                      focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                               placeholder="••••••••">
+                        <button type="button" id="togglePw"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">
+                            <svg id="eyeIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit" id="submitBtn"
+                        class="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium text-sm
+                               py-2.5 rounded-xl transition-all duration-150 flex items-center justify-center gap-2">
+                    <span id="btnText">เข้าสู่ระบบ</span>
+                    <svg id="btnSpinner" class="w-4 h-4 animate-spin hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" stroke-dasharray="56" stroke-dashoffset="56"/></svg>
+                </button>
+            </form>
+
+            <p class="text-xs text-slate-400 text-center mt-6">
+                ยังไม่มีบัญชี? กรุณาติดต่อผู้ดูแลระบบ
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Password toggle
+document.getElementById('togglePw').addEventListener('click', function() {
+    const pw = document.getElementById('password');
+    const icon = document.getElementById('eyeIcon');
+    if (pw.type === 'password') {
+        pw.type = 'text';
+        icon.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>';
+    } else {
+        pw.type = 'password';
+        icon.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    }
+});
+// Loading state on submit
+document.getElementById('loginForm').addEventListener('submit', function() {
+    const btn = document.getElementById('submitBtn');
+    const txt = document.getElementById('btnText');
+    const sp  = document.getElementById('btnSpinner');
+    btn.disabled = true;
+    btn.classList.add('opacity-75');
+    txt.textContent = 'กำลังเข้าสู่ระบบ...';
+    sp.classList.remove('hidden');
+});
+</script>
+{% endblock %}

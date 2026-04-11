@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Biometrics — SmartCheck{% endblock %}
+
+{% block content %}
+{% set enrolled = records | selectattr('face_embeddings') | list | length %}
+
+<div class="flex items-center justify-between mb-8">
+    <div>
+        <h1 class="text-xl font-semibold text-slate-900">Biometrics</h1>
+        <p class="text-sm text-slate-500 mt-0.5">ลงทะเบียนแล้ว {{ enrolled }} / {{ records|length }} คน</p>
+    </div>
+    <!-- Progress bar -->
+    <div class="hidden sm:block w-48">
+        <div class="flex justify-between text-xs text-slate-500 mb-1">
+            <span>ความคืบหน้า</span>
+            <span>{% if records|length > 0 %}{{ (enrolled / records|length * 100) | int }}%{% else %}0%{% endif %}</span>
+        </div>
+        <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div class="h-full bg-indigo-500 rounded-full transition-all"
+                 style="width: {% if records|length > 0 %}{{ (enrolled / records|length * 100) | int }}%{% else %}0%{% endif %}"></div>
+        </div>
+    </div>
+</div>
+
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-left text-xs font-medium text-slate-500 px-5 py-3">นักศึกษา</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">รหัส</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden md:table-cell">Email</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">Face</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">PDPA Consent</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden lg:table-cell">ลงทะเบียนเมื่อ</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+            {% for r in records %}
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-5 py-3.5">
+                        <div class="flex items-center gap-3">
+                            {% if r.face_image_url %}
+                            <img src="{{ r.face_image_url }}" alt="face"
+                                 class="w-9 h-9 rounded-full object-cover border border-slate-200 cursor-pointer hover:opacity-80 transition-opacity flex-shrink-0"
+                                 onclick="openFaceModal(this.src)">
+                            {% else %}
+                            <div class="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0">
+                                <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
+                            </div>
+                            {% endif %}
+                            <span class="text-sm font-medium text-slate-800">{{ r.users.full_name if r.users else '—' }}</span>
+                        </div>
+                    </td>
+                    <td class="px-4 py-3.5 hidden sm:table-cell">
+                        <span class="font-mono text-xs text-slate-500">{{ r.users.student_id if r.users else '—' }}</span>
+                    </td>
+                    <td class="px-4 py-3.5 hidden md:table-cell">
+                        <span class="text-xs text-slate-400">{{ r.users.email if r.users else '—' }}</span>
+                    </td>
+                    <td class="px-4 py-3.5">
+                        {% if r.face_embeddings %}
+                        <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>ลงทะเบียนแล้ว
+                        </span>
+                        {% else %}
+                        <span class="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">ยังไม่ได้ลง</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3.5 hidden sm:table-cell">
+                        {% set cl = consent_map.get(r.user_id) %}
+                        {% if cl and cl.consent_given %}
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-full w-fit">ยินยอม v{{ cl.consent_version or '1.0' }}</span>
+                            <span class="text-[10px] text-slate-400 font-mono">{{ cl.created_at[:10] if cl.created_at else '' }}</span>
+                        </div>
+                        {% elif cl and not cl.consent_given %}
+                        <span class="text-xs font-medium bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full">ถอนความยินยอม</span>
+                        {% else %}
+                        <span class="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">ยังไม่มีบันทึก</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3.5 hidden lg:table-cell">
+                        <span class="text-xs text-slate-400 font-mono">{{ r.enrolled_at[:10] if r.enrolled_at else '—' }}</span>
+                    </td>
+                </tr>
+            {% else %}
+                <tr>
+                    <td colspan="6" class="px-5 py-12 text-center text-sm text-slate-400">ไม่พบข้อมูล</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Face image lightbox -->
+<div id="faceModal" onclick="closeFaceModal()"
+     class="fixed inset-0 bg-black/80 z-50 hidden items-center justify-center flex-col gap-4 p-4">
+    <img id="faceModalImg" src="" alt="face"
+         class="max-w-xs max-h-[70vh] rounded-2xl object-contain shadow-2xl"
+         onclick="event.stopPropagation()">
+    <button onclick="closeFaceModal()"
+            class="text-white/70 hover:text-white text-sm border border-white/20 hover:border-white/40 px-4 py-2 rounded-xl transition-colors">
+        ปิด
+    </button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openFaceModal(src) {
+    document.getElementById('faceModalImg').src = src;
+    const modal = document.getElementById('faceModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+function closeFaceModal() {
+    const modal = document.getElementById('faceModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+</script>
+{% endblock %}

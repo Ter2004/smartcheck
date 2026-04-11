@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}วิชาเรียน — SmartCheck{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-8">
+    <div>
+        <h1 class="text-xl font-semibold text-slate-900">วิชาเรียน</h1>
+        <p class="text-sm text-slate-500 mt-0.5">จัดการรายวิชาและนักศึกษา</p>
+    </div>
+    <button onclick="showModal('addModal')"
+            class="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        เพิ่มวิชา
+    </button>
+</div>
+
+<div class="space-y-4">
+{% for g in course_groups %}
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <div>
+            <div class="flex items-center gap-2.5">
+                <span class="text-sm font-semibold text-slate-900">{{ g.code }}</span>
+                <span class="text-sm text-slate-500">{{ g.name }}</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-0.5">
+                อ.{{ g.teacher.full_name if g.teacher else '—' }} &nbsp;·&nbsp; เทอม {{ g.semester }}
+            </p>
+        </div>
+        <form method="POST" action="{{ url_for('admin.section_add', course_id=g.sections[0].id) }}">
+            <button type="submit"
+                    class="text-xs text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 px-3 py-1.5 rounded-lg transition-colors">
+                + เพิ่ม Sec
+            </button>
+        </form>
+    </div>
+    <table class="w-full">
+        <thead>
+            <tr class="bg-slate-50">
+                <th class="text-left text-xs font-medium text-slate-500 px-5 py-2.5">Sec</th>
+                <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">นักศึกษา</th>
+                <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5 hidden sm:table-cell">ตารางเรียน</th>
+                <th class="px-4 py-2.5"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+        {% for c in g.sections | sort(attribute='section') %}
+        <tr class="hover:bg-slate-50 transition-colors">
+            <td class="px-5 py-3">
+                {% if c.section %}
+                    <span class="text-xs font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">sec {{ c.section }}</span>
+                {% else %}
+                    <span class="text-slate-400 text-sm">—</span>
+                {% endif %}
+            </td>
+            <td class="px-4 py-3 text-sm text-slate-600">
+                {{ c.enrollment_count if c.enrollment_count is defined else '—' }} คน
+            </td>
+            <td class="px-4 py-3 text-sm text-slate-400 hidden sm:table-cell">—</td>
+            <td class="px-4 py-3 text-right">
+                <a href="{{ url_for('admin.course_detail', course_id=c.id) }}"
+                   class="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition-colors">
+                    จัดการ →
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-12 text-center">
+    <svg class="w-8 h-8 text-slate-300 mx-auto mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+    <p class="text-sm text-slate-400">ยังไม่มีวิชา</p>
+</div>
+{% endfor %}
+</div>
+
+<!-- Add Course Modal -->
+<div class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4" id="addModal">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div class="px-6 py-5 border-b border-slate-100">
+            <h3 class="text-base font-semibold text-slate-900">เพิ่มวิชาใหม่</h3>
+        </div>
+        <form method="POST" action="{{ url_for('admin.course_add') }}" class="px-6 py-5 space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">รหัสวิชา</label>
+                    <input type="text" name="code"
+                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                           placeholder="เช่น CS101" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1.5">เทอม</label>
+                    <select name="semester"
+                            class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">ชื่อวิชา</label>
+                <input type="text" name="name"
+                       class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       placeholder="เช่น Introduction to Computer Science" required>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">อาจารย์ผู้สอน</label>
+                <select name="teacher_id"
+                        class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                    <option value="">— เลือกอาจารย์ —</option>
+                    {% for t in teachers %}
+                    <option value="{{ t.id }}">{{ t.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <p class="text-xs text-slate-400">หลังเพิ่มวิชาแล้วสามารถกด "เพิ่ม Sec" เพื่อสร้าง section เพิ่มเติมได้</p>
+            <div class="flex gap-2.5 pt-1">
+                <button type="button" onclick="hideModal('addModal')"
+                        class="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium rounded-xl transition-colors">
+                    ยกเลิก
+                </button>
+                <button type="submit"
+                        class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors">
+                    เพิ่มวิชา
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showModal(id) {
+    const el = document.getElementById(id);
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+}
+function hideModal(id) {
+    const el = document.getElementById(id);
+    el.classList.add('hidden');
+    el.classList.remove('flex');
+}
+document.querySelectorAll('[id$="Modal"]').forEach(o =>
+    o.addEventListener('click', e => { if (e.target === o) hideModal(o.id) }));
+</script>
+{% endblock %}

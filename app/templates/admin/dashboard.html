@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Overview — SmartCheck{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="mb-8">
+    <h1 class="text-xl font-semibold text-slate-900">Overview</h1>
+    <p class="text-sm text-slate-500 mt-0.5">ยินดีต้อนรับ {{ session.get('user_name') }}</p>
+</div>
+
+<!-- Stat cards -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-5">
+        <div class="flex items-center justify-between mb-3">
+            <div class="w-9 h-9 bg-indigo-50 rounded-lg flex items-center justify-center">
+                <svg class="w-4 h-4 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+        </div>
+        <p class="text-2xl font-semibold text-slate-900">{{ stats.total_users }}</p>
+        <p class="text-xs text-slate-500 mt-0.5">ผู้ใช้ทั้งหมด</p>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-5">
+        <div class="flex items-center justify-between mb-3">
+            <div class="w-9 h-9 bg-sky-50 rounded-lg flex items-center justify-center">
+                <svg class="w-4 h-4 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            </div>
+        </div>
+        <p class="text-2xl font-semibold text-slate-900">{{ stats.total_beacons }}</p>
+        <p class="text-xs text-slate-500 mt-0.5">BLE Beacons</p>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-5">
+        <div class="flex items-center justify-between mb-3">
+            <div class="w-9 h-9 bg-emerald-50 rounded-lg flex items-center justify-center">
+                <svg class="w-4 h-4 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </div>
+        </div>
+        <p class="text-2xl font-semibold text-slate-900">{{ stats.enrolled_biometrics }}</p>
+        <p class="text-xs text-slate-500 mt-0.5">ลงทะเบียนใบหน้าแล้ว</p>
+    </div>
+</div>
+
+<!-- Quick-access grid -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+    <a href="{{ url_for('admin.users') }}"
+       class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group">
+        <div class="w-9 h-9 bg-indigo-50 group-hover:bg-indigo-100 rounded-lg flex items-center justify-center mb-4 transition-colors">
+            <svg class="w-4 h-4 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-800 mb-1">จัดการผู้ใช้</h3>
+        <p class="text-xs text-slate-400">ดูรายชื่อและนำเข้านักศึกษา/อาจารย์</p>
+    </a>
+
+    <a href="{{ url_for('admin.import_csv') }}"
+       class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group">
+        <div class="w-9 h-9 bg-violet-50 group-hover:bg-violet-100 rounded-lg flex items-center justify-center mb-4 transition-colors">
+            <svg class="w-4 h-4 text-violet-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-800 mb-1">นำเข้าข้อมูล CSV</h3>
+        <p class="text-xs text-slate-400">นำเข้านักศึกษา วิชา และตารางเรียน</p>
+    </a>
+
+    <a href="{{ url_for('admin.beacons') }}"
+       class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group">
+        <div class="w-9 h-9 bg-sky-50 group-hover:bg-sky-100 rounded-lg flex items-center justify-center mb-4 transition-colors">
+            <svg class="w-4 h-4 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-800 mb-1">BLE Beacons</h3>
+        <p class="text-xs text-slate-400">เพิ่ม แก้ไข Beacon ประจำห้องเรียน</p>
+    </a>
+
+    <a href="{{ url_for('admin.courses') }}"
+       class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group">
+        <div class="w-9 h-9 bg-amber-50 group-hover:bg-amber-100 rounded-lg flex items-center justify-center mb-4 transition-colors">
+            <svg class="w-4 h-4 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 0 3-3h7z"/></svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-800 mb-1">วิชาเรียน</h3>
+        <p class="text-xs text-slate-400">เพิ่มวิชาและจัดการนักศึกษาในแต่ละวิชา</p>
+    </a>
+
+    <a href="{{ url_for('admin.sessions') }}"
+       class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group">
+        <div class="w-9 h-9 bg-rose-50 group-hover:bg-rose-100 rounded-lg flex items-center justify-center mb-4 transition-colors">
+            <svg class="w-4 h-4 text-rose-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-800 mb-1">คาบเรียน</h3>
+        <p class="text-xs text-slate-400">สร้างและมอบหมายคาบเรียนให้อาจารย์</p>
+    </a>
+
+    <a href="{{ url_for('admin.biometrics') }}"
+       class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group">
+        <div class="w-9 h-9 bg-emerald-50 group-hover:bg-emerald-100 rounded-lg flex items-center justify-center mb-4 transition-colors">
+            <svg class="w-4 h-4 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-800 mb-1">Biometrics</h3>
+        <p class="text-xs text-slate-400">ดูสถานะการลงทะเบียนใบหน้าของนักศึกษา</p>
+    </a>
+
+</div>
+{% endblock %}

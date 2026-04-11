@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}{{ sess.title }} — SmartCheck{% endblock %}
+
+{% block content %}
+
+{% set present_count  = attendance | selectattr('status', 'in', ['present','late','manual']) | list | length %}
+{% set late_count     = attendance | selectattr('status', 'equalto', 'late')   | list | length %}
+{% set manual_count   = attendance | selectattr('status', 'equalto', 'manual') | list | length %}
+{% set absent_count   = all_students|length - present_count %}
+
+<!-- Back + header -->
+<div class="mb-6">
+    <a href="{{ url_for('teacher.dashboard') }}"
+       class="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors mb-4">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        กลับ Dashboard
+    </a>
+
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div>
+            <h1 class="text-xl font-semibold text-slate-900 leading-tight">{{ sess.title }}</h1>
+            <p class="text-sm text-slate-500 mt-1">
+                {{ sess.courses.code }}{% if sess.courses.section %} sec {{ sess.courses.section }}{% endif %}
+                &nbsp;·&nbsp; {{ sess.courses.name }}
+                &nbsp;·&nbsp; ห้อง {{ sess.beacons.room_name if sess.beacons else '—' }}
+                &nbsp;·&nbsp; <span class="font-mono">{{ sess.start_time | thai_time }}</span>
+            </p>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <a href="{{ url_for('teacher.export_csv', session_id=sess.id) }}"
+               class="inline-flex items-center gap-1.5 text-xs font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-3 py-2 rounded-lg transition-colors">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export CSV
+            </a>
+            <button onclick="location.reload()"
+                    class="inline-flex items-center gap-1.5 text-xs font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-3 py-2 rounded-lg transition-colors">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                รีเฟรช
+            </button>
+            <form method="POST" action="{{ url_for('teacher.session_toggle', session_id=sess.id) }}" class="flex items-center gap-2">
+                {% if sess.is_open %}
+                    {% if sess.checkin_duration %}
+                    <span class="text-xs text-slate-400">รับ {{ sess.checkin_duration }} นาที</span>
+                    {% endif %}
+                    <button type="submit" onclick="return confirm('ปิดการเช็คชื่อ?')"
+                            class="inline-flex items-center gap-1.5 text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-lg transition-colors">
+                        ปิดคาบเรียน
+                    </button>
+                {% else %}
+                    <input type="number" name="checkin_duration" min="1" max="120" placeholder="นาที"
+                           class="w-20 text-xs border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center">
+                    <button type="submit"
+                            class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg transition-colors">
+                        เปิดคาบเรียน
+                    </button>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Status badge -->
+{% if sess.is_open %}
+<div class="flex items-center gap-2 mb-6 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+    <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+    <span class="text-sm font-medium text-emerald-700">คาบเรียนเปิดอยู่ — กำลังรับเช็คชื่อ</span>
+    <span class="ml-auto text-xs text-emerald-600">รีเฟรชอัตโนมัติทุก 30 วินาที</span>
+</div>
+{% endif %}
+
+<!-- Stats row -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-4 text-center">
+        <p class="text-2xl font-semibold text-emerald-600">{{ present_count }}</p>
+        <p class="text-xs text-slate-500 mt-0.5">เข้าเรียน</p>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-4 text-center">
+        <p class="text-2xl font-semibold text-amber-500">{{ late_count }}</p>
+        <p class="text-xs text-slate-500 mt-0.5">มาสาย</p>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-4 text-center">
+        <p class="text-2xl font-semibold text-rose-500">{{ absent_count }}</p>
+        <p class="text-xs text-slate-500 mt-0.5">ขาดเรียน</p>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-4 text-center">
+        <p class="text-2xl font-semibold text-slate-700">{{ all_students|length }}</p>
+        <p class="text-xs text-slate-500 mt-0.5">ทั้งหมด</p>
+    </div>
+</div>
+
+<!-- Attendance table -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <!-- Search bar -->
+    <div class="px-5 py-3.5 border-b border-slate-100 flex items-center gap-3">
+        <svg class="w-4 h-4 text-slate-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="searchInput" type="text" placeholder="ค้นหาชื่อหรือรหัสนักศึกษา..."
+               class="flex-1 text-sm text-slate-700 placeholder-slate-400 focus:outline-none bg-transparent"
+               oninput="filterTable(this.value)">
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full" id="attendTable">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-left text-xs font-medium text-slate-500 px-5 py-3">รหัสนักศึกษา</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">ชื่อ-นามสกุล</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">สถานะ</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">เวลา</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden md:table-cell">Face Score</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden lg:table-cell">RSSI</th>
+                    <th class="px-4 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100" id="attendBody">
+            {% for s in all_students %}
+                {% set u = s.users %}
+                {% set a = att_map.get(u.id) %}
+                <tr class="hover:bg-slate-50 transition-colors" data-search="{{ u.full_name|lower }} {{ u.student_id or '' }}">
+                    <td class="px-5 py-3.5">
+                        <span class="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded-md">{{ u.student_id or '—' }}</span>
+                    </td>
+                    <td class="px-4 py-3.5">
+                        <span class="text-sm font-medium text-slate-800">{{ u.full_name }}</span>
+                    </td>
+                    <td class="px-4 py-3.5">
+                        {% if a %}
+                            {% if a.status == 'present' %}
+                            <span class="inline-flex items-center text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full">มาเรียน</span>
+                            {% elif a.status == 'late' %}
+                            <span class="inline-flex items-center text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full">มาสาย</span>
+                            {% elif a.status == 'manual' %}
+                            <span class="inline-flex items-center text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-full">Manual</span>
+                            {% else %}
+                            <span class="inline-flex items-center text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{{ a.status }}</span>
+                            {% endif %}
+                        {% else %}
+                        <span class="inline-flex items-center text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-full">ขาด</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3.5 hidden sm:table-cell">
+                        <span class="font-mono text-xs text-slate-500">{{ a.check_in_at | thai_time('%H:%M') if a and a.check_in_at else '—' }}</span>
+                    </td>
+                    <td class="px-4 py-3.5 hidden md:table-cell">
+                        {% if a and a.face_score %}
+                        <span class="font-mono text-xs {% if a.face_score >= 0.75 %}text-emerald-600{% else %}text-rose-500{% endif %}">
+                            {{ "%.3f"|format(a.face_score) }}
+                        </span>
+                        {% else %}
+                        <span class="text-xs text-slate-400">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3.5 hidden lg:table-cell">
+                        <span class="font-mono text-xs text-slate-400">{{ a.ble_rssi ~ ' dBm' if a and a.ble_rssi else '—' }}</span>
+                    </td>
+                    <td class="px-4 py-3.5 text-right">
+                        <button onclick="openOverride('{{ u.id }}','{{ u.full_name }}')"
+                                class="text-xs font-medium text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 px-2.5 py-1.5 rounded-lg transition-all">
+                            แก้ไข
+                        </button>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="7" class="px-5 py-12 text-center text-sm text-slate-400">ไม่มีนักศึกษาในวิชานี้</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ─── Override Modal ─────────────────────────────────────────── -->
+<div id="overrideModal"
+     class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 opacity-0 pointer-events-none transition-all duration-200"
+     onclick="if(event.target===this)hideModal()">
+    <div id="overrideCard"
+         class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-95 transition-all duration-200">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-semibold text-slate-900">แก้ไขสถานะ</h3>
+            <button onclick="hideModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <p id="overrideName" class="text-sm text-slate-500 mb-5 -mt-2"></p>
+        <form method="POST" action="{{ url_for('teacher.override_attendance', session_id=sess.id) }}">
+            <input type="hidden" name="student_id" id="overrideStudentId">
+            <div class="mb-4">
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">สถานะใหม่</label>
+                <select name="status" required
+                        class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                    <option value="present">มาเรียน</option>
+                    <option value="late">มาสาย</option>
+                    <option value="absent">ขาดเรียน</option>
+                    <option value="manual">Manual (อาจารย์เช็คชื่อให้)</option>
+                </select>
+            </div>
+            <div class="mb-5">
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">เหตุผล</label>
+                <input type="text" name="reason" placeholder="ระบุเหตุผล (ถ้ามี)"
+                       class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div class="flex gap-2">
+                <button type="button" onclick="hideModal()"
+                        class="flex-1 text-sm font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 py-2.5 rounded-xl transition-colors">
+                    ยกเลิก
+                </button>
+                <button type="submit"
+                        class="flex-1 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl transition-colors">
+                    บันทึก
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if sess.is_open %}
+<script>setTimeout(()=>location.reload(), 30000);</script>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openOverride(id, name) {
+    document.getElementById('overrideStudentId').value = id;
+    document.getElementById('overrideName').textContent = name;
+    const modal = document.getElementById('overrideModal');
+    const card  = document.getElementById('overrideCard');
+    modal.classList.remove('opacity-0','pointer-events-none');
+    card.classList.remove('scale-95');
+}
+function hideModal() {
+    const modal = document.getElementById('overrideModal');
+    const card  = document.getElementById('overrideCard');
+    modal.classList.add('opacity-0','pointer-events-none');
+    card.classList.add('scale-95');
+}
+function filterTable(q) {
+    const rows = document.querySelectorAll('#attendBody tr[data-search]');
+    q = q.toLowerCase();
+    rows.forEach(r => {
+        r.style.display = r.dataset.search.includes(q) ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}หน้าหลัก — SmartCheck{% endblock %}
+
+{% block content %}
+<!-- Page header -->
+<div class="mb-8">
+    <h1 class="text-xl font-semibold text-slate-900">สวัสดี, {{ session.get('user_name', '').split()[0] }}</h1>
+    <p class="text-sm text-slate-500 mt-0.5">ยินดีต้อนรับกลับสู่ SmartCheck</p>
+</div>
+
+<!-- Enrollment status banner -->
+{% if not enrolled %}
+<div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-4 mb-8">
+    <div class="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+        <svg class="w-4 h-4 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </div>
+    <div class="flex-1">
+        <p class="text-sm font-medium text-amber-800">ยังไม่ได้ลงทะเบียนใบหน้า</p>
+        <p class="text-xs text-amber-600 mt-0.5">ลงทะเบียนใบหน้าเพื่อเริ่มใช้งานระบบเช็คชื่อ</p>
+    </div>
+    <a href="{{ url_for('student.enroll_face') }}"
+       class="flex-shrink-0 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+        เริ่มลงทะเบียน
+    </a>
+</div>
+{% endif %}
+
+<!-- Action cards -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+
+    <!-- Check-in card -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col {% if not enrolled %}opacity-60{% endif %}">
+        <div class="flex items-center justify-between mb-4">
+            <div class="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                <svg class="w-5 h-5 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </div>
+            {% if enrolled %}
+            <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-full">
+                <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                พร้อมใช้งาน
+            </span>
+            {% else %}
+            <span class="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full">ยังไม่พร้อม</span>
+            {% endif %}
+        </div>
+        <h2 class="text-sm font-semibold text-slate-900 mb-1">เช็คชื่อเข้าเรียน</h2>
+        <p class="text-xs text-slate-500 mb-4 flex-1">สแกน Bluetooth ยืนยันตัวตนด้วยใบหน้าและ Liveness Detection</p>
+        {% if enrolled %}
+        <a href="{{ url_for('student.checkin') }}"
+           class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-150">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            เช็คชื่อเลย
+        </a>
+        {% else %}
+        <button disabled class="inline-flex items-center justify-center gap-2 bg-slate-200 text-slate-400 text-sm font-medium py-2.5 px-4 rounded-xl cursor-not-allowed">
+            เช็คชื่อ
+        </button>
+        {% endif %}
+    </div>
+
+    <!-- Enrollment card -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+            <div class="w-10 h-10 bg-{% if enrolled %}emerald{% else %}slate{% endif %}-50 rounded-xl flex items-center justify-center">
+                <svg class="w-5 h-5 text-{% if enrolled %}emerald{% else %}slate{% endif %}-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
+            </div>
+            {% if enrolled %}
+            <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-full">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                ลงทะเบียนแล้ว
+            </span>
+            {% endif %}
+        </div>
+        <h2 class="text-sm font-semibold text-slate-900 mb-1">ลงทะเบียนใบหน้า</h2>
+        <p class="text-xs text-slate-500 mb-4 flex-1">บันทึก Face Embedding สำหรับยืนยันตัวตนเมื่อเช็คชื่อ</p>
+        <a href="{{ url_for('student.enroll_face') }}"
+           class="inline-flex items-center justify-center gap-2 {% if enrolled %}bg-white border border-slate-200 hover:bg-slate-50 text-slate-700{% else %}bg-indigo-600 hover:bg-indigo-700 text-white{% endif %} text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-150 active:scale-95">
+            {% if enrolled %}ลงทะเบียนใหม่{% else %}เริ่มลงทะเบียน{% endif %}
+        </a>
+    </div>
+</div>
+
+<!-- Info section -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+    <h3 class="text-sm font-semibold text-slate-700 mb-3">วิธีการเช็คชื่อ</h3>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="flex items-start gap-3">
+            <div class="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span class="text-xs font-bold text-indigo-600">1</span>
+            </div>
+            <div>
+                <p class="text-xs font-medium text-slate-700">ยืนยันตำแหน่ง</p>
+                <p class="text-xs text-slate-400 mt-0.5">สแกน BLE Beacon ในห้องเรียน</p>
+            </div>
+        </div>
+        <div class="flex items-start gap-3">
+            <div class="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span class="text-xs font-bold text-indigo-600">2</span>
+            </div>
+            <div>
+                <p class="text-xs font-medium text-slate-700">ยืนยันตัวตน</p>
+                <p class="text-xs text-slate-400 mt-0.5">ตรวจ Liveness + ใบหน้า</p>
+            </div>
+        </div>
+        <div class="flex items-start gap-3">
+            <div class="w-7 h-7 bg-emerald-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg class="w-3.5 h-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div>
+                <p class="text-xs font-medium text-slate-700">เช็คชื่อสำเร็จ</p>
+                <p class="text-xs text-slate-400 mt-0.5">บันทึกเวลาอัตโนมัติ</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

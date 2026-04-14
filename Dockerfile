@@ -7,6 +7,11 @@ RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/li
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# deepface pulls in opencv-python (non-headless) as a transitive dep.
+# Replace with headless BEFORE model download so libGL.so.1 is not required.
+RUN pip uninstall -y opencv-python opencv-python-headless && \
+    pip install --no-cache-dir "opencv-python-headless>=4.8.0"
+
 # Pre-download DeepFace models so they're baked into the image (no runtime download needed)
 RUN python - <<'EOF'
 import os
@@ -26,11 +31,6 @@ except Exception as e:
 EOF
 
 COPY . .
-
-# deepface pulls in opencv-python (non-headless) as a transitive dep.
-# Force-replace with headless after all deps are installed.
-RUN pip uninstall -y opencv-python opencv-python-headless && \
-    pip install --no-cache-dir "opencv-python-headless>=4.8.0"
 
 RUN printf '#!/bin/sh\nexec gunicorn "app:create_app()" --bind "0.0.0.0:${PORT:-8080}" --workers 1 --timeout 300\n' > /start.sh && chmod +x /start.sh
 ENTRYPOINT ["/start.sh"]

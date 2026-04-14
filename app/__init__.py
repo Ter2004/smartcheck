@@ -1,5 +1,7 @@
 import logging
+import os
 from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
 from supabase import create_client, Client
 from app.config import Config
 from flask_session import Session
@@ -11,6 +13,9 @@ _log = logging.getLogger("smartcheck.app")
 # Supabase clients (initialized in create_app)
 supabase: Client = None          # ใช้ anon key — เรียกผ่าน RLS
 supabase_admin: Client = None    # ใช้ service key — bypass RLS (สำหรับ admin operations)
+
+# SQLAlchemy instance for Flask-Session (SQLAlchemy backend)
+db = SQLAlchemy()
 
 
 def get_rate_limit_key():
@@ -72,7 +77,14 @@ def create_app():
     logging.getLogger("apscheduler").setLevel(logging.WARNING)
     logging.getLogger("deepface").setLevel(logging.WARNING)
 
+    # --- SQLAlchemy (Flask-Session backend) ---
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
+    db.init_app(app)
+    app.config["SESSION_SQLALCHEMY"] = db
+
     # --- Server-side sessions — Sprint 1A ---
+    with app.app_context():
+        db.create_all()
     Session(app)
 
     # --- Rate limiter — Sprint 1C ---

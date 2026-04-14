@@ -1,7 +1,6 @@
 import logging
 import os
 import sys
-import tempfile
 from dotenv import load_dotenv
 
 _log = logging.getLogger("smartcheck.config")
@@ -46,12 +45,11 @@ class Config:
     # Redis URL for rate limiter (production)
     REDIS_URL = os.getenv("REDIS_URL", "")
 
-    # ── Flask-Session: server-side filesystem sessions (Sprint 1A) ──
-    SESSION_TYPE               = "filesystem"
-    SESSION_FILE_DIR           = os.path.join(tempfile.gettempdir(), "smartcheck_sessions")
+    # ── Flask-Session: server-side SQLAlchemy sessions (Railway deployment) ──
+    SESSION_TYPE               = "sqlalchemy"
+    SESSION_SQLALCHEMY_TABLE   = "flask_sessions"
     SESSION_PERMANENT          = True
     PERMANENT_SESSION_LIFETIME = 3600          # 1 hour
     SESSION_COOKIE_HTTPONLY    = True           # JS cannot read the session cookie
     SESSION_COOKIE_SAMESITE    = "Strict"       # CSRF layer 1
     SESSION_COOKIE_SECURE      = _IS_PRODUCTION  # True in production (TLS required)
-    SESSION_FILE_THRESHOLD     = 500            # max cached session files on disk

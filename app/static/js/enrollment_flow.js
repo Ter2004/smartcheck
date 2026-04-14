@@ -101,8 +101,8 @@ function _dismissStepModal() {
 }
 
 // ─── Blink micro-check constants (Step 2 pre-calibration) ────────────────────
-const BLINK_DROP_RATIO    = 0.55;   // EAR must drop below openEAR × 0.55 to count as closing
-const BLINK_RECOVER_RATIO = 0.75;   // EAR must recover above openEAR × 0.75 to complete cycle
+const BLINK_DROP_RATIO    = 0.70;   // EAR must drop below openEAR × 0.70 to count as closing
+const BLINK_RECOVER_RATIO = 0.65;   // EAR must recover above openEAR × 0.65 to complete cycle
 const BLINK_TIMEOUT_MS    = 10000;  // 10 s to complete one blink
 const MAX_BLINK_ATTEMPTS  = 3;      // hard block after 3 timeouts
 const EAR_OPEN_THRESHOLD  = 0.15;   // below this = eyes not fully open (skip as baseline ref)
@@ -262,6 +262,8 @@ function _showSpoofWarn() {
 // Client ไม่เก็บหรือตรวจ embedding อีกต่อไป
 
 async function goToCalibration() {
+    const btn = document.getElementById('btnConsent');
+    if (btn) btn.disabled = true;   // prevent double-click during async consent fetch
     // A5: record PDPA consent server-side before proceeding
     try {
         await fetch(ENROLL_CONFIG.consentUrl, {
@@ -1151,8 +1153,9 @@ async function _sendToEnroll() {
 
         } else if (json.status === 'continuity_fail') {
             // Server ตรวจพบว่า capture frames ไม่ตรงกับ liveness embeddings
-            _showResult('error', json.message || 'ตรวจพบใบหน้าไม่ตรงกับ Liveness Check');
-            setTimeout(() => fullRestart(), 3000);
+            // ใช้ restartCapture() แทน fullRestart() — เก็บ baseline+liveness ไว้ แค่ถ่ายรูปใหม่
+            _showResult('error', json.message || 'ใบหน้าไม่ตรงกัน กรุณาถ่ายรูปใหม่');
+            setTimeout(() => restartCapture(), 3000);
 
         } else if (json.status === 'duplicate') {
             _showResult('error', json.message || 'ใบหน้านี้ถูกลงทะเบียนในระบบแล้ว กรุณาติดต่ออาจารย์');
@@ -1413,6 +1416,13 @@ function fullRestart() {
     _clearSpoofLabel('spoofLabelCalib');
     _clearSpoofLabel('spoofLabelLiveness');
     _clearSpoofLabel('spoofLabelCapture');
+
+    // Reset calibration button states so user can start calibration again
+    const btnStart = document.getElementById('btnStartCalib');
+    if (btnStart) { btnStart.disabled = false; btnStart.style.display = 'block'; }
+    document.getElementById('btnRetryBlink').style.display  = 'none';
+    document.getElementById('btnBlinkGiveUp').style.display = 'none';
+    document.getElementById('calibProgressWrap').style.display = 'none';
 
     _updateCaptureDots();
     goToStep(2);

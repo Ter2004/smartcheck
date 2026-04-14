@@ -473,7 +473,7 @@ async function _onBlinkSuccess(blinkFrame) {
         status.textContent = 'กำลังวัดค่า Baseline EAR... เปิดตาตามปกติ';
         calibEARValues = [];
         _startEARMeasurement();
-    }, 1000);
+    }, 300);
 }
 
 function _onBlinkTimeout() {
@@ -507,7 +507,7 @@ function _startEARMeasurement() {
     const guide       = document.getElementById('faceGuideCalib');
     const progressBar = document.getElementById('calibProgressBar');
 
-    const DURATION_MS         = 3000;
+    const DURATION_MS         = 2000;
     const EAR_BLINK_THRESHOLD = 0.15;   // C1: discard frames where eyes are closing
     let startTime = null;
     let calibDone = false;
@@ -1153,6 +1153,10 @@ async function _sendToEnroll() {
             // Server ตรวจพบว่า capture frames ไม่ตรงกับ liveness embeddings
             _showResult('error', json.message || 'ตรวจพบใบหน้าไม่ตรงกับ Liveness Check');
             setTimeout(() => fullRestart(), 3000);
+
+        } else if (json.status === 'duplicate') {
+            _showResult('error', json.message || 'ใบหน้านี้ถูกลงทะเบียนในระบบแล้ว กรุณาติดต่ออาจารย์');
+            setTimeout(() => { window.location.href = ENROLL_CONFIG.dashboardUrl; }, 2500);
 
         } else if (json.status === 'blocked' || res.status === 403) {
             // เกินจำนวนครั้งที่อนุญาต — ปิดการลงทะเบียน ไม่แสดงปุ่ม retry

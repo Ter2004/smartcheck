@@ -541,7 +541,7 @@ def api_enroll():
 
     if dup_blocked:
         return jsonify({
-            "status":  "error",
+            "status":  "duplicate",
             "message": "ใบหน้านี้ถูกลงทะเบียนในระบบแล้ว",
         }), 400
 

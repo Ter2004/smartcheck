@@ -624,8 +624,7 @@ async function startLivenessChallenge() {
     const actions = randomChallengeActions(2);
 
     _buildChallengePills(actions, 0);
-    document.getElementById('challengeInstruction').style.display = 'block';
-    document.getElementById('challengeActionLabel').textContent = CHALLENGE_ACTION_LABELS[actions[0]] || actions[0];
+    document.getElementById('challengeInstruction').style.display = 'none';  // hidden until pre-spoof check passes
     document.getElementById('livenessStatus').textContent = 'กำลังเปิดกล้อง...';
 
     try {
@@ -689,11 +688,16 @@ async function startLivenessChallenge() {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    // Show challenge instruction only AFTER pre-spoof check completes to avoid
+    // user performing the gesture during the check and needing to repeat it
+    document.getElementById('challengeInstruction').style.display = 'block';
+    document.getElementById('challengeActionLabel').textContent = CHALLENGE_ACTION_LABELS[actions[0]] || actions[0];
+
     const detector = new InteractiveChallengeDetector(
         document.getElementById('videoLiveness'),
         document.getElementById('canvasLiveness'),
         baselineEAR,
-        (actionIdx, total, statusText) => {
+        (actionIdx, _total, statusText) => {
             _buildChallengePills(actions, actionIdx);
             document.getElementById('challengeActionLabel').textContent =
                 CHALLENGE_ACTION_LABELS[actions[actionIdx]] || actions[actionIdx];

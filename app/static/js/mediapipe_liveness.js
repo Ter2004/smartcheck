@@ -267,6 +267,24 @@ class LivenessDetector {
                 }
 
                 const lm = results.multiFaceLandmarks[0];
+
+                // Real-time Moiré + edge check (defined in enrollment_flow.js)
+                if (typeof _rtAnalyzeFrame === 'function') {
+                    const rt = _rtAnalyzeFrame(this.video, lm);
+                    if (rt) {
+                        if (rt.blocked && !resolved) {
+                            resolved = true;
+                            this.stop();
+                            resolve({ pass: false, action, error: rt.reason });
+                            return;
+                        }
+                        if (rt.moireAlert || rt.edgeAlert) {
+                            onStatus(rt.moireAlert ? '⚠️ ตรวจพบลักษณะหน้าจอ...' : '⚠️ ตรวจพบขอบวัตถุแปลกปลอม...');
+                            return;
+                        }
+                    }
+                }
+
                 const guardResult = guard.check(lm);
                 if (guardResult.spoof && !resolved) {
                     resolved = true;
@@ -399,6 +417,19 @@ class InteractiveChallengeDetector {
                 }
 
                 const lm = results.multiFaceLandmarks[0];
+
+                // Real-time Moiré + edge check (defined in enrollment_flow.js)
+                if (typeof _rtAnalyzeFrame === 'function') {
+                    const rt = _rtAnalyzeFrame(this.video, lm);
+                    if (rt) {
+                        if (rt.blocked) { fail(rt.reason); return; }
+                        if (rt.moireAlert || rt.edgeAlert) {
+                            this.onProgress(currentIdx, actions.length,
+                                rt.moireAlert ? '⚠️ ตรวจพบลักษณะหน้าจอ...' : '⚠️ ตรวจพบขอบวัตถุแปลกปลอม...');
+                            return;
+                        }
+                    }
+                }
 
                 const guardResult = guard.check(lm);
                 if (guardResult.spoof) { fail(guardResult.reason); return; }

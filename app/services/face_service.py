@@ -10,7 +10,8 @@ SAME_DEVICE_THRESHOLD    = 0.70   # check-in, trusted device
 NEW_DEVICE_THRESHOLD     = 0.80   # check-in, new / unbound device
 CONSISTENCY_THRESHOLD    = 0.80   # pairwise consistency during enrollment
 DUPLICATE_THRESHOLD      = 0.65   # reject if another student matches this closely
-MOIRE_THRESHOLD          = 0.60   # high-freq energy ratio; above = likely screen replay
+MOIRE_THRESHOLD          = 0.50   # high-freq energy ratio; above = likely screen replay (was 0.60 — tightened for modern OLED phones)
+TEMPORAL_VAR_THRESHOLD   = 8.0   # mean per-pixel temporal std-dev; below = static photo
 DUPLICATE_GRAY_ZONE      = (0.60, 0.70)  # log matches in this range for future tuning
 MOIRE_LOG_RANGE          = (0.45, 0.75)  # log FFT scores near the threshold
 
@@ -385,6 +386,30 @@ def server_validate_frame(frame_b64: str) -> dict:
     result["valid"] = True
     result["reason"] = "passed"
     return result
+
+
+def detect_static_image(frames: list, threshold: float = TEMPORAL_VAR_THRESHOLD) -> dict:
+    """
+    Detect static photo/replay by measuring pixel variance across the time axis.
+    Real faces: breathing + micro-movements → temporal std-dev ~15–40.
+    Static photo on phone/print: only JPEG noise → temporal std-dev ~0.5–3.
+    Returns { is_static: bool, temporal_variance: float }
+    """
+    if len(frames) < 2:
+        return {"is_static": False, "temporal_variance": 0.0}
+
+    resized = [
+        cv2.resize(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY), (64, 64)).astype(np.float32)
+        for f in frames
+    ]
+    stack = np.stack(resized, axis=0)          # shape (N, 64, 64)
+    mean_var = float(np.mean(np.std(stack, axis=0)))
+
+    _audit.info(f"[TEMPORAL] temporal_variance={mean_var:.3f} threshold={threshold}")
+    return {
+        "is_static":         mean_var < threshold,
+        "temporal_variance": round(mean_var, 3),
+    }
 
 
 def check_embedding_consistency(embeddings: list, threshold: float = CONSISTENCY_THRESHOLD) -> dict:

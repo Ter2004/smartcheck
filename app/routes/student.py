@@ -1,4 +1,6 @@
 import logging
+import cv2
+import numpy as np
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
@@ -216,7 +218,7 @@ def api_enroll():
     from app.services.face_service import (
         extract_embedding, check_embedding_consistency,
         max_similarity_multi, detect_screen_moire, detect_screen_texture,
-        check_anti_spoof, _decode_image, server_validate_frame,
+        detect_static_image, check_anti_spoof, _decode_image, server_validate_frame,
         DUPLICATE_THRESHOLD, DUPLICATE_GRAY_ZONE,
     )
 
@@ -360,7 +362,7 @@ def api_enroll():
 
     # ── 5. Screen Texture Detection (A3, all 5 frames) — fail-close ──────────
     try:
-        screen_count = sum(1 for f in raw_frames if detect_screen_texture(f))
+        screen_count = sum(1 for f in raw_frames if detect_screen_texture(f, min_peaks=30))
         _log(user_id, "screen_texture", "screen" if screen_count >= 2 else "pass",
              f"screen_frames={screen_count}/5")
         if screen_count >= 2:
@@ -374,6 +376,33 @@ def api_enroll():
         return jsonify({
             "status":  "error",
             "message": "ไม่สามารถตรวจสอบภาพได้ กรุณาลองใหม่อีกครั้ง",
+        }), 400
+
+    # ── 5b. Temporal variance — detect static photo / phone screen ───────────
+    try:
+        temporal = detect_static_image(raw_frames)
+        _log(user_id, "temporal_var", "static" if temporal["is_static"] else "pass",
+             f"variance={temporal['temporal_variance']}")
+        if temporal["is_static"]:
+            return jsonify({
+                "status":  "spoof_detected",
+                "message": "ตรวจพบภาพนิ่ง — กรุณาใช้ใบหน้าจริงต่อหน้ากล้อง",
+            }), 400
+    except Exception as e:
+        _log(user_id, "temporal_var", "error", str(e)[:80])
+        return jsonify({
+            "status":  "error",
+            "message": "ไม่สามารถตรวจสอบภาพได้ กรุณาลองใหม่อีกครั้ง",
+        }), 400
+
+    # ── 5c. EAR temporal variance — client-reported (defence-in-depth) ───────
+    ear_std = float(data.get("ear_std") or 0)
+    _log(user_id, "ear_std", "static" if ear_std < 0.003 else "pass",
+         f"ear_std={ear_std:.5f}")
+    if ear_std < 0.003:
+        return jsonify({
+            "status":  "spoof_detected",
+            "message": "ตรวจพบใบหน้านิ่งผิดปกติ — กรุณาใช้ใบหน้าจริงต่อหน้ากล้อง",
         }), 400
 
     # ── 6. MiniFASNet Anti-Spoof (A2: all 5 frames) — fail-close ─────────────
@@ -780,7 +809,11 @@ def api_spoof_check():
     ถ้า is_real=True → เก็บ embedding ลง session["liveness_embeddings"] (server-side)
     Response: { is_real, confidence, message } — ไม่ส่ง embedding กลับ client
     """
-    from app.services.face_service import spoof_check_with_embedding, server_validate_frame
+    import base64 as _b64
+    from app.services.face_service import (
+        spoof_check_with_embedding, server_validate_frame,
+        detect_screen_moire, detect_screen_texture, _decode_image,
+    )
 
     user_id = session["user_id"]
     data    = request.get_json()
@@ -790,13 +823,76 @@ def api_spoof_check():
         return jsonify({"is_real": False, "confidence": 0.0,
                         "message": "ไม่พบรูปภาพ"}), 400
 
-    # ตรวจ frame ขั้นต้นก่อนส่งให้ DeepFace
+    # ── 1. Zero-trust frame validation ───────────────────────────────────────
     v = server_validate_frame(img_b64)
     if not v["valid"]:
         _log(user_id, "spoof_check", "frame_invalid", v["reason"])
         return jsonify({"is_real": False, "confidence": 0.0,
                         "message": "รูปภาพไม่ถูกต้อง"}), 400
 
+    # ── 2. Decode once — shared by all checks below ───────────────────────────
+    try:
+        raw = _decode_image(img_b64)
+    except Exception as e:
+        return jsonify({"is_real": False, "confidence": 0.0,
+                        "message": "อ่านรูปภาพไม่ได้"}), 400
+
+    # ── 3. Single-frame Moiré FFT (screen pixel grid) ────────────────────────
+    try:
+        moire = detect_screen_moire([raw])
+        _log(user_id, "liveness_moire", "screen" if moire["is_screen"] else "pass",
+             f"score={moire['avg_score']}")
+        if moire["is_screen"]:
+            return jsonify({"is_real": False, "confidence": 0.0,
+                            "message": "ตรวจพบหน้าจอ — กรุณาใช้ใบหน้าจริงต่อหน้ากล้องโดยตรง"})
+    except Exception as e:
+        _log(user_id, "liveness_moire", "error", str(e)[:80])
+
+    # ── 4. Single-frame screen texture (spectral peaks) ───────────────────────
+    try:
+        is_screen_tex = detect_screen_texture(raw, min_peaks=30)
+        _log(user_id, "liveness_texture", "screen" if is_screen_tex else "pass", "")
+        if is_screen_tex:
+            return jsonify({"is_real": False, "confidence": 0.0,
+                            "message": "ตรวจพบภาพจากหน้าจอ — กรุณาใช้ใบหน้าจริงต่อหน้ากล้องโดยตรง"})
+    except Exception as e:
+        _log(user_id, "liveness_texture", "error", str(e)[:80])
+
+    # ── 5. Accumulated temporal variance (สะสม thumbnail ใน session) ─────────
+    # เก็บ 64×64 grayscale PNG (~1-2 KB ต่อเฟรม) เพื่อเช็ค inter-frame variance
+    try:
+        gray_small = cv2.resize(
+            cv2.cvtColor(raw, cv2.COLOR_BGR2GRAY), (64, 64)
+        )
+        _, buf = cv2.imencode(".png", gray_small)
+        thumb_b64 = _b64.b64encode(buf.tobytes()).decode("utf-8")
+
+        acc = session.get("spoof_check_acc", [])
+        acc.append(thumb_b64)
+        acc = acc[-6:]   # สะสมไม่เกิน 6 เฟรม (Steps 2–3–4 รวมกัน)
+        session["spoof_check_acc"] = acc
+
+        if len(acc) >= 3:
+            frames_gray = []
+            for tb in acc:
+                arr = np.frombuffer(_b64.b64decode(tb), dtype=np.uint8)
+                g = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+                if g is not None:
+                    frames_gray.append(g.astype(np.float32))
+
+            if len(frames_gray) >= 3:
+                stack    = np.stack(frames_gray, axis=0)
+                mean_var = float(np.mean(np.std(stack, axis=0)))
+                _log(user_id, "liveness_temporal", "static" if mean_var < 6.0 else "pass",
+                     f"variance={mean_var:.3f} frames={len(frames_gray)}")
+                if mean_var < 6.0:
+                    session.pop("spoof_check_acc", None)
+                    return jsonify({"is_real": False, "confidence": 0.0,
+                                    "message": "ตรวจพบภาพนิ่ง — กรุณาใช้ใบหน้าจริงต่อหน้ากล้องโดยตรง"})
+    except Exception as e:
+        _log(user_id, "liveness_temporal", "error", str(e)[:80])
+
+    # ── 6. DeepFace face detection + embedding ────────────────────────────────
     try:
         result = spoof_check_with_embedding(img_b64)
     except Exception as e:
@@ -833,8 +929,9 @@ def api_spoof_check():
 @_limiter.limit("10 per minute")
 @csrf_protect
 def api_reset_liveness():
-    """ล้าง session['liveness_embeddings'] — เรียกเมื่อ user เริ่มลงทะเบียนใหม่ตั้งแต่ Step 2"""
+    """ล้าง session['liveness_embeddings'] และ spoof_check_acc — เรียกเมื่อ user เริ่มลงทะเบียนใหม่ตั้งแต่ Step 2"""
     session.pop("liveness_embeddings", None)
+    session.pop("spoof_check_acc", None)
     _log(session.get("user_id", ""), "reset_liveness", "cleared")
     return jsonify({"status": "cleared"})
 

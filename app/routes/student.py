@@ -813,6 +813,7 @@ def api_spoof_check():
     from app.services.face_service import (
         spoof_check_with_embedding, server_validate_frame,
         detect_screen_moire, detect_screen_texture, _decode_image,
+        MOIRE_THRESHOLD_SINGLE,
     )
 
     user_id = session["user_id"]
@@ -839,9 +840,9 @@ def api_spoof_check():
 
     # ── 3. Single-frame Moiré FFT (screen pixel grid) ────────────────────────
     try:
-        moire = detect_screen_moire([raw])
+        moire = detect_screen_moire([raw], threshold=MOIRE_THRESHOLD_SINGLE)
         _log(user_id, "liveness_moire", "screen" if moire["is_screen"] else "pass",
-             f"score={moire['avg_score']}")
+             f"score={moire['avg_score']} threshold={MOIRE_THRESHOLD_SINGLE}")
         if moire["is_screen"]:
             return jsonify({"is_real": False, "confidence": 0.0,
                             "message": "ตรวจพบหน้าจอ — กรุณาใช้ใบหน้าจริงต่อหน้ากล้องโดยตรง"})

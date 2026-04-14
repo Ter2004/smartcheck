@@ -5,6 +5,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+
+# Change CACHE_BUST value to force re-run of all layers below (pip install + model download)
+ARG CACHE_BUST=20260415b
 RUN pip install --no-cache-dir -r requirements.txt
 
 # deepface pulls in opencv-python (non-headless) as a transitive dep.

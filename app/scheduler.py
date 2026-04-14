@@ -5,6 +5,7 @@ scheduler.py — Auto create/close sessions ตาม schedules table
   - ปิด session ถ้าเลยเวลาจบแล้ว
 """
 import logging
+import os
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -129,10 +130,12 @@ def keep_alive():
         _log.info("[KEEP-ALIVE] Reconnected to Supabase")
 
 
-def start_scheduler():
+def start_scheduler(app):
     scheduler = BackgroundScheduler(timezone="Asia/Bangkok")
     scheduler.add_job(auto_manage_sessions, "interval", minutes=1, id="session_manager")
     scheduler.add_job(keep_alive, "interval", minutes=3, id="keep_alive")
-    scheduler.start()
-    _log.info("[SCHEDULER] Started — checking every minute")
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        if not scheduler.running:
+            scheduler.start()
+            _log.info("[SCHEDULER] Started — checking every minute")
     return scheduler

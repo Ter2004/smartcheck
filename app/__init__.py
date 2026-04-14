@@ -170,6 +170,6 @@ def create_app():
 
     # --- Start Scheduler ---
     from app.scheduler import start_scheduler
-    start_scheduler()
+    start_scheduler(app)
 
     return app

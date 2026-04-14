@@ -142,6 +142,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
     except ValueError:
         return {"is_real": False, "confidence": 0.0, "embedding": None, "message": "ไม่พบใบหน้า"}
     except Exception as e:
+        _audit.error(f"[SPOOF_CHECK] anti-spoof model error: {e}", exc_info=True)
         return {"is_real": False, "confidence": 0.0, "embedding": None, "message": f"ตรวจสอบไม่สำเร็จ: {e}"}
 
     is_real = bool(faces[0].get("is_real", False))

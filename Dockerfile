@@ -7,6 +7,24 @@ RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/li
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-download DeepFace models so they're baked into the image (no runtime download needed)
+RUN python - <<'EOF'
+import os
+os.environ.setdefault("HOME", "/root")
+from deepface import DeepFace
+try:
+    DeepFace.build_model("Facenet512")
+    print("Facenet512 OK")
+except Exception as e:
+    print(f"Facenet512 warn: {e}")
+try:
+    from deepface.models.spoofing.FasNet import Fasnet
+    Fasnet()
+    print("MiniFASNet OK")
+except Exception as e:
+    print(f"MiniFASNet warn: {e}")
+EOF
+
 COPY . .
 
 # deepface pulls in opencv-python (non-headless) as a transitive dep.

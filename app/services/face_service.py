@@ -12,9 +12,8 @@ CONSISTENCY_THRESHOLD    = 0.80   # pairwise consistency during enrollment
 DUPLICATE_THRESHOLD      = 0.65   # reject if another student matches this closely
 MOIRE_THRESHOLD          = 0.60   # high-freq energy ratio; above = likely screen replay (multi-frame /api/enroll)
 MOIRE_THRESHOLD_SINGLE   = 0.72   # single-frame threshold for /api/spoof_check — more conservative (real face JPEG noise can score 0.50–0.58)
-TEMPORAL_VAR_THRESHOLD   = 4.0   # mean per-pixel temporal std-dev; below = static photo
-# Note: real face neutral pose scores ~5-7; static phone photo scores ~0.5-2.5
-# Threshold 4.0 gives safe margin: blocks photos (<2.5) while passing real faces (>5)
+TEMPORAL_VAR_THRESHOLD   = 8.0   # face-ROI temporal std-dev; below = static photo
+# Applied to face-crop only (not full frame) → real face ~15-25, static photo ~0.5-2.5
 DUPLICATE_GRAY_ZONE      = (0.60, 0.70)  # log matches in this range for future tuning
 MOIRE_LOG_RANGE          = (0.45, 0.75)  # log FFT scores near the threshold
 
@@ -394,21 +393,44 @@ def server_validate_frame(frame_b64: str) -> dict:
 def detect_static_image(frames: list, threshold: float = TEMPORAL_VAR_THRESHOLD) -> dict:
     """
     Detect static photo/replay by measuring pixel variance across the time axis.
-    Real faces: breathing + micro-movements → temporal std-dev ~15–40.
-    Static photo on phone/print: only JPEG noise → temporal std-dev ~0.5–3.
+    Crops face ROI first (Haar cascade) so background doesn't dilute the score.
+    Real faces (face-only): breathing + micro-movements → std-dev ~15–25.
+    Static photo (face-only): only JPEG noise → std-dev ~0.5–2.5.
+    Falls back to full frame if no face detected.
     Returns { is_static: bool, temporal_variance: float }
     """
     if len(frames) < 2:
         return {"is_static": False, "temporal_variance": 0.0}
 
-    resized = [
-        cv2.resize(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY), (64, 64)).astype(np.float32)
-        for f in frames
-    ]
-    stack = np.stack(resized, axis=0)          # shape (N, 64, 64)
+    # ── Detect face ROI from first frame (Haar cascade — bundled in OpenCV) ──
+    face_cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
+    first_gray = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
+    detected = face_cascade.detectMultiScale(
+        first_gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40)
+    )
+    crop = None
+    if len(detected) > 0:
+        x, y, w, h = detected[0]
+        pad = int(min(w, h) * 0.20)
+        h_img, w_img = frames[0].shape[:2]
+        x1 = max(0, x - pad);        y1 = max(0, y - pad)
+        x2 = min(w_img, x + w + pad); y2 = min(h_img, y + h + pad)
+        crop = (x1, y1, x2, y2)
+
+    resized = []
+    for f in frames:
+        gray = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
+        if crop:
+            x1, y1, x2, y2 = crop
+            gray = gray[y1:y2, x1:x2]
+        resized.append(cv2.resize(gray, (64, 64)).astype(np.float32))
+
+    stack = np.stack(resized, axis=0)
     mean_var = float(np.mean(np.std(stack, axis=0)))
 
-    _audit.info(f"[TEMPORAL] temporal_variance={mean_var:.3f} threshold={threshold}")
+    _audit.info(f"[TEMPORAL] temporal_variance={mean_var:.3f} threshold={threshold} face_crop={crop is not None}")
     return {
         "is_static":         mean_var < threshold,
         "temporal_variance": round(mean_var, 3),

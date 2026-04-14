@@ -15,9 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip uninstall -y opencv-python opencv-python-headless && \
     pip install --no-cache-dir "opencv-python-headless>=4.8.0"
 
-# Pre-download DeepFace models so they're baked into the image (no runtime download needed)
+# Pre-download Facenet512 model so it's baked into the image (no runtime download)
+# MiniFASNet anti-spoof is NOT pre-downloaded — requires PyTorch which is too large for Railway
 RUN python - <<'EOF'
-import os, numpy as np
+import os
 os.environ.setdefault("HOME", "/root")
 from deepface import DeepFace
 try:
@@ -25,13 +26,6 @@ try:
     print("Facenet512 OK")
 except Exception as e:
     print(f"Facenet512 warn: {e}")
-try:
-    dummy = np.zeros((200, 200, 3), dtype=np.uint8)
-    DeepFace.extract_faces(img_path=dummy, anti_spoofing=True,
-                           detector_backend="opencv", enforce_detection=False)
-    print("MiniFASNet+opencv OK")
-except Exception as e:
-    print(f"MiniFASNet warn: {e}")
 EOF
 
 COPY . .

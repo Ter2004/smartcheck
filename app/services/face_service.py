@@ -63,64 +63,51 @@ def extract_embedding(base64_image: str) -> list:
 
 def check_anti_spoof(base64_image: str) -> bool:
     """
-    Anti-spoofing via DeepFace MiniFASNet.
-    Returns True = real face, False = spoof.
-    Raises ValueError if image unreadable or no face detected.
+    Liveness check via face detection (MiniFASNet/PyTorch unavailable on Railway).
+    Returns True if a face is detected, False otherwise.
+    Liveness is enforced by the blink check in the frontend.
     """
     from deepface import DeepFace
 
     img = _decode_image(base64_image)
-
     faces = DeepFace.extract_faces(
         img_path=img,
-        anti_spoofing=True,
+        anti_spoofing=False,
         detector_backend="opencv",
         enforce_detection=True,
     )
-
-    if not faces:
-        raise ValueError("ตรวจไม่เจอใบหน้า")
-
-    is_real = faces[0].get("is_real", False)
-    score   = faces[0].get("antispoof_score", 0.0)
-    _audit.debug(f"[ANTISPOOF] is_real={is_real} score={score:.4f}")
-    return bool(is_real)
+    return bool(faces)
 
 
 def check_anti_spoof_with_score(base64_image: str) -> tuple:
     """
     Returns (is_real: bool, score: float).
-    score near 1.0 = real face, near 0.0 = spoof.
+    MiniFASNet unavailable (requires PyTorch); falls back to face detection.
     """
     from deepface import DeepFace
 
     img = _decode_image(base64_image)
-
     faces = DeepFace.extract_faces(
         img_path=img,
-        anti_spoofing=True,
+        anti_spoofing=False,
         detector_backend="opencv",
         enforce_detection=True,
     )
-
-    if not faces:
-        raise ValueError("ตรวจไม่เจอใบหน้า")
-
-    is_real = bool(faces[0].get("is_real", False))
-    score   = float(faces[0].get("antispoof_score", 0.0))
-    _audit.debug(f"[ANTISPOOF] is_real={is_real} score={score:.4f}")
-    return is_real, score
+    is_real = bool(faces)
+    _audit.debug(f"[ANTISPOOF] face_detected={is_real} (no MiniFASNet — PyTorch not available)")
+    return is_real, 1.0 if is_real else 0.0
 
 
 def spoof_check_with_embedding(base64_image: str) -> dict:
     """
-    Combined anti-spoof + embedding extraction for inline enrollment checks.
-    Runs MiniFASNet first; extracts FaceNet512 embedding only if face is real.
+    Face detection + FaceNet512 embedding extraction.
+    MiniFASNet anti-spoof removed: requires PyTorch (~700MB) which exceeds
+    Railway memory limit. Liveness is enforced by blink check in frontend.
     Returns:
         {
-            "is_real":    bool,
-            "confidence": float,        # antispoof_score (higher = more real)
-            "embedding":  list | None,  # 512-D vector if real, else None
+            "is_real":    bool,   # True if face detected
+            "confidence": float,  # 1.0 if face found, 0.0 if not
+            "embedding":  list | None,
             "message":    str,
         }
     """
@@ -131,35 +118,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
     except Exception as e:
         return {"is_real": False, "confidence": 0.0, "embedding": None, "message": str(e)}
 
-    # Anti-spoof (includes face detection + MiniFASNet)
-    try:
-        faces = DeepFace.extract_faces(
-            img_path=img,
-            anti_spoofing=True,
-            detector_backend="opencv",
-            enforce_detection=True,
-        )
-    except ValueError:
-        return {"is_real": False, "confidence": 0.0, "embedding": None, "message": "ไม่พบใบหน้า"}
-    except Exception as e:
-        _audit.error(f"[SPOOF_CHECK] anti-spoof model error: {e}", exc_info=True)
-        return {"is_real": False, "confidence": 0.0, "embedding": None, "message": f"ตรวจสอบไม่สำเร็จ: {e}"}
-
-    score   = float(faces[0].get("antispoof_score", 0.0))
-    # Use threshold 0.3 (more lenient than DeepFace default 0.5) to reduce
-    # false positives from webcam captures with varying lighting/angle.
-    is_real = score >= 0.30
-    _audit.info(f"[SPOOF_CHECK] raw_score={score:.4f} is_real={is_real} (threshold=0.30)")
-
-    if not is_real:
-        return {
-            "is_real":    False,
-            "confidence": round(score, 3),
-            "embedding":  None,
-            "message":    "ตรวจพบภาพปลอม กรุณาใช้ใบหน้าจริง",
-        }
-
-    # Extract FaceNet512 embedding (for face continuity check)
+    # Extract FaceNet512 embedding — raises ValueError if no face detected
     try:
         img_clahe = normalize_illumination(img)
         rep = DeepFace.represent(
@@ -169,15 +128,18 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
             detector_backend="opencv",
         )
         embedding = rep[0]["embedding"] if rep else None
+    except ValueError:
+        return {"is_real": False, "confidence": 0.0, "embedding": None, "message": "ไม่พบใบหน้า"}
     except Exception as e:
-        _audit.warning(f"[SPOOF_CHECK] embedding extraction failed (non-fatal): {e}")
-        embedding = None
+        _audit.error(f"[SPOOF_CHECK] embedding error: {e}", exc_info=True)
+        return {"is_real": False, "confidence": 0.0, "embedding": None, "message": f"ตรวจสอบไม่สำเร็จ: {e}"}
 
+    _audit.info(f"[SPOOF_CHECK] face detected, embedding extracted (no MiniFASNet)")
     return {
         "is_real":    True,
-        "confidence": round(score, 3),
+        "confidence": 1.0,
         "embedding":  embedding,
-        "message":    "ใบหน้าจริง",
+        "message":    "ใบหน้าตรวจพบ",
     }
 
 

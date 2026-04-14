@@ -80,6 +80,26 @@ const DEBUG = false;
 function _log(...args)  { if (DEBUG) console.log('[SmartCheck]', ...args); }
 function _warn(...args) { if (DEBUG) console.warn('[SmartCheck]', ...args); }
 
+// ─── T16: Step Transition Modal ───────────────────────────────────────────────
+let _modalResolve = null;
+
+function _showStepModal(icon, title, desc, btnText) {
+    return new Promise(resolve => {
+        _modalResolve = resolve;
+        document.getElementById('stepModalIcon').textContent  = icon;
+        document.getElementById('stepModalTitle').textContent = title;
+        document.getElementById('stepModalDesc').textContent  = desc;
+        document.getElementById('stepModalBtn').textContent   = btnText || 'เข้าใจแล้ว เริ่มเลย →';
+        const modal = document.getElementById('stepModal');
+        modal.style.display = 'flex';
+    });
+}
+
+function _dismissStepModal() {
+    document.getElementById('stepModal').style.display = 'none';
+    if (_modalResolve) { _modalResolve(); _modalResolve = null; }
+}
+
 // ─── Blink micro-check constants (Step 2 pre-calibration) ────────────────────
 const BLINK_DROP_RATIO    = 0.55;   // EAR must drop below openEAR × 0.55 to count as closing
 const BLINK_RECOVER_RATIO = 0.75;   // EAR must recover above openEAR × 0.75 to complete cycle
@@ -249,6 +269,14 @@ async function goToCalibration() {
             headers: { 'X-CSRF-Token': _csrfToken() },
         });
     } catch (e) { /* non-fatal — server will reject enroll if missing */ }
+
+    await _showStepModal(
+        '👁️',
+        'สอบเทียบการกะพริบตา',
+        'ระบบจะเปิดกล้อง แล้วให้คุณกะพริบตา 1 ครั้ง เพื่อยืนยันว่าเป็นคนจริง จากนั้นจะวัดค่า Baseline ของดวงตาอัตโนมัติ',
+        'พร้อมแล้ว เปิดกล้อง →'
+    );
+
     blinkAttempts      = 0;
     enrollmentSessionId = null;   // new session ID for spoof_check rate limiting
     goToStep(2);
@@ -526,7 +554,7 @@ function _startEARMeasurement() {
     cam.start();
 }
 
-function finishCalibration() {
+async function finishCalibration() {
     calibrating = false;
     if (calibEARValues.length === 0) {
         document.getElementById('calibStatus').textContent = 'วัดไม่สำเร็จ กรุณาลองใหม่';
@@ -549,11 +577,17 @@ function finishCalibration() {
     document.getElementById('calibStatus').textContent =
         `✓ Baseline EAR = ${median.toFixed(4)} — สำเร็จ!`;
 
-    setTimeout(() => {
-        stopStream(calibStream);
-        goToStep(3);
-        startLivenessChallenge();
-    }, 800);
+    stopStream(calibStream);
+
+    await _showStepModal(
+        '🎭',
+        'ยืนยันตัวตน',
+        'ระบบจะสุ่มท่าทาง 2 อย่าง เช่น กะพริบตา, ยิ้ม, หันซ้าย-ขวา — ทำตามลำดับเพื่อยืนยันว่าเป็นคนจริง',
+        'เข้าใจแล้ว เริ่มเลย →'
+    );
+
+    goToStep(3);
+    startLivenessChallenge();
 }
 
 // ─────────────────────────────────────────────
@@ -717,11 +751,15 @@ async function startLivenessChallenge() {
 
     if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());
 
-    // Challenge passed — proceed to step 4
-    setTimeout(() => {
-        goToStep(4);
-        startCaptureWithDetection();
-    }, 400);
+    await _showStepModal(
+        '📸',
+        'ถ่ายรูปใบหน้า 5 รูป',
+        'ระบบจะถ่ายรูปอัตโนมัติ 5 ครั้ง — มองตรงกล้อง ทำหน้าปกติ อยู่นิ่งๆ ในที่ที่มีแสงเพียงพอ',
+        'พร้อมถ่ายรูป →'
+    );
+
+    goToStep(4);
+    startCaptureWithDetection();
 }
 
 // ─────────────────────────────────────────────
@@ -1096,6 +1134,12 @@ async function _sendToEnroll() {
             restartCapture();
 
         } else if (json.status === 'pending_verify') {
+            await _showStepModal(
+                '✅',
+                'ยืนยันตัวตนครั้งสุดท้าย',
+                'ระบบจะถ่ายรูปอีก 1 รูป เพื่อเปรียบเทียบกับรูปที่ถ่ายไว้ มองตรงกล้องแล้วระบบจะถ่ายให้อัตโนมัติ',
+                'พร้อมยืนยัน →'
+            );
             _startSelfVerify();
 
         } else if (json.status === 'spoof_detected') {

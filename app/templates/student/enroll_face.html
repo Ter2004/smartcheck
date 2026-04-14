@@ -267,6 +267,36 @@
 
 </div>
 
+<!-- T16: Step Transition Notification Modal -->
+<div id="stepModal" style="display:none; position:fixed; inset:0; z-index:9999;
+     background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:16px; padding:2rem; max-width:360px; width:90%;
+         text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+        <div id="stepModalIcon" style="font-size:2.5rem; margin-bottom:0.75rem;">📸</div>
+        <h3 id="stepModalTitle" style="font-size:1.1rem; font-weight:700; color:#1e293b; margin-bottom:0.5rem;">
+            ขั้นตอนถัดไป
+        </h3>
+        <p id="stepModalDesc" style="font-size:0.875rem; color:#64748b; line-height:1.6; margin-bottom:1.5rem;">
+            คำอธิบาย
+        </p>
+        <button id="stepModalBtn" onclick="_dismissStepModal()"
+                style="width:100%; padding:0.7rem; background:#4f46e5; color:#fff; border:none;
+                border-radius:12px; font-size:0.9rem; font-weight:600; cursor:pointer;
+                transition:background 0.2s;">
+            เข้าใจแล้ว เริ่มเลย →
+        </button>
+    </div>
+</div>
+
+<style>
+@keyframes _modalIn {
+    from { opacity:0; transform:scale(0.9) translateY(10px); }
+    to   { opacity:1; transform:scale(1) translateY(0); }
+}
+#stepModal > div { animation: _modalIn 0.3s ease; }
+#stepModalBtn:hover { background: #4338ca; }
+</style>
+
 <canvas id="captureCanvas" style="display:none"></canvas>
 {% endblock %}
 

@@ -172,4 +172,9 @@ def create_app():
     from app.scheduler import start_scheduler
     start_scheduler(app)
 
+    # --- Health check ---
+    @app.route("/health")
+    def health():
+        return "ok", 200
+
     return app

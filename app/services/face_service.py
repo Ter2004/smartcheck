@@ -12,7 +12,9 @@ CONSISTENCY_THRESHOLD    = 0.80   # pairwise consistency during enrollment
 DUPLICATE_THRESHOLD      = 0.65   # reject if another student matches this closely
 MOIRE_THRESHOLD          = 0.60   # high-freq energy ratio; above = likely screen replay (multi-frame /api/enroll)
 MOIRE_THRESHOLD_SINGLE   = 0.72   # single-frame threshold for /api/spoof_check — more conservative (real face JPEG noise can score 0.50–0.58)
-TEMPORAL_VAR_THRESHOLD   = 8.0   # mean per-pixel temporal std-dev; below = static photo
+TEMPORAL_VAR_THRESHOLD   = 4.0   # mean per-pixel temporal std-dev; below = static photo
+# Note: real face neutral pose scores ~5-7; static phone photo scores ~0.5-2.5
+# Threshold 4.0 gives safe margin: blocks photos (<2.5) while passing real faces (>5)
 DUPLICATE_GRAY_ZONE      = (0.60, 0.70)  # log matches in this range for future tuning
 MOIRE_LOG_RANGE          = (0.45, 0.75)  # log FFT scores near the threshold
 

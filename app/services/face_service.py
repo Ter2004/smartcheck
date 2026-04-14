@@ -52,7 +52,7 @@ def extract_embedding(base64_image: str) -> list:
         img_path=img,
         model_name="Facenet512",
         enforce_detection=True,
-        detector_backend="retinaface",
+        detector_backend="opencv",
     )
 
     if not result:
@@ -74,7 +74,7 @@ def check_anti_spoof(base64_image: str) -> bool:
     faces = DeepFace.extract_faces(
         img_path=img,
         anti_spoofing=True,
-        detector_backend="retinaface",
+        detector_backend="opencv",
         enforce_detection=True,
     )
 
@@ -99,7 +99,7 @@ def check_anti_spoof_with_score(base64_image: str) -> tuple:
     faces = DeepFace.extract_faces(
         img_path=img,
         anti_spoofing=True,
-        detector_backend="retinaface",
+        detector_backend="opencv",
         enforce_detection=True,
     )
 
@@ -136,7 +136,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
         faces = DeepFace.extract_faces(
             img_path=img,
             anti_spoofing=True,
-            detector_backend="retinaface",
+            detector_backend="opencv",
             enforce_detection=True,
         )
     except ValueError:
@@ -164,7 +164,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
             img_path=img_clahe,
             model_name="Facenet512",
             enforce_detection=True,
-            detector_backend="retinaface",
+            detector_backend="opencv",
         )
         embedding = rep[0]["embedding"] if rep else None
     except Exception as e:

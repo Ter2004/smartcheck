@@ -1,3 +1,4 @@
+# cache-bust: 2026-04-15
 flask==3.1.0
 supabase==2.13.0
 python-dotenv==1.1.0

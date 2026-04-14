@@ -14,7 +14,7 @@ RUN pip uninstall -y opencv-python opencv-python-headless && \
 
 # Pre-download DeepFace models so they're baked into the image (no runtime download needed)
 RUN python - <<'EOF'
-import os
+import os, numpy as np
 os.environ.setdefault("HOME", "/root")
 from deepface import DeepFace
 try:
@@ -23,9 +23,10 @@ try:
 except Exception as e:
     print(f"Facenet512 warn: {e}")
 try:
-    from deepface.models.spoofing.FasNet import Fasnet
-    Fasnet()
-    print("MiniFASNet OK")
+    dummy = np.zeros((200, 200, 3), dtype=np.uint8)
+    DeepFace.extract_faces(img_path=dummy, anti_spoofing=True,
+                           detector_backend="opencv", enforce_detection=False)
+    print("MiniFASNet+opencv OK")
 except Exception as e:
     print(f"MiniFASNet warn: {e}")
 EOF

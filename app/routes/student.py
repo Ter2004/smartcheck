@@ -269,7 +269,7 @@ def api_enroll():
         }), 400
 
     # ── 1b. DB-level enrollment attempt check (ป้องกัน logout-bypass) ─────────
-    DB_MAX_ATTEMPTS = 5          # ครั้งสูงสุดรวมตลอดอายุ session (24 ชั่วโมง)
+    DB_MAX_ATTEMPTS = 999        # ปิด limit ชั่วคราวระหว่างทดสอบ (เดิม 5)
     from datetime import datetime, timezone, timedelta
     try:
         bio_row = (

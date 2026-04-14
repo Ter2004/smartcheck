@@ -72,20 +72,27 @@ function buildActionChecker(action, baselineEAR) {
     }
 
     if (action === 'smile') {
-        const SMILE_THRESHOLD = 0.42;
-        let smileFrames = 0;
+        // Require neutral → smile → neutral transition (static photo with smile cannot pass)
+        const SMILE_ON  = 0.42;   // ratio above this = smiling
+        const SMILE_OFF = 0.35;   // ratio below this = relaxed/neutral
+        let smileDetected = false;
         return {
             check(lm) {
                 const mouthW = dist2D(lm[61], lm[291]);
                 const faceW  = dist2D(lm[234], lm[454]);
                 const ratio  = faceW > 0 ? mouthW / faceW : 0;
-                if (ratio > SMILE_THRESHOLD) {
-                    smileFrames++;
-                    if (smileFrames >= 5) return { done: true, statusText: '✓ ยิ้มสำเร็จ!' };
-                    return { done: false, statusText: `กำลังยิ้ม... (${smileFrames}/5)` };
+                if (!smileDetected) {
+                    if (ratio > SMILE_ON) {
+                        smileDetected = true;
+                        return { done: false, statusText: '😊 ยิ้มแล้ว — ผ่อนคลายปากให้เป็นปกติ' };
+                    }
+                    return { done: false, statusText: `กรุณายิ้มให้กว้าง (${ratio.toFixed(3)})` };
                 }
-                smileFrames = 0;
-                return { done: false, statusText: `กรุณายิ้มให้กว้าง (ratio: ${ratio.toFixed(3)})` };
+                // Waiting for mouth to relax back to neutral
+                if (ratio < SMILE_OFF) {
+                    return { done: true, statusText: '✓ ยิ้มสำเร็จ!' };
+                }
+                return { done: false, statusText: `ผ่อนคลายปากให้เป็นปกติ (${ratio.toFixed(3)})` };
             }
         };
     }

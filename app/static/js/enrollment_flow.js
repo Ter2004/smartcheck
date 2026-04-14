@@ -1132,12 +1132,12 @@ async function _sendToEnroll() {
             capturedImages.forEach(b => _addThumbnail(b));
             _updateCaptureDots();
             document.getElementById('captureStatus').textContent = json.message;
-            restartCapture();
+            setTimeout(() => restartCapture(), 2500);
 
         } else if (json.status === 'restart_capture') {
             // ≥2 outliers — reset captured frames, keep liveness embeddings
             document.getElementById('captureStatus').textContent = json.message;
-            restartCapture();
+            setTimeout(() => restartCapture(), 2500);
 
         } else if (json.status === 'pending_verify') {
             await _showStepModal(

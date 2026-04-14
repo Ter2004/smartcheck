@@ -85,7 +85,7 @@ def create_app():
     # --- Server-side sessions — Sprint 1A ---
     with app.app_context():
         db.create_all()
-    Session(app)
+        Session(app)
 
     # --- Rate limiter — Sprint 1C ---
     limiter.init_app(app)

@@ -10,10 +10,11 @@ SAME_DEVICE_THRESHOLD    = 0.70   # check-in, trusted device
 NEW_DEVICE_THRESHOLD     = 0.80   # check-in, new / unbound device
 CONSISTENCY_THRESHOLD    = 0.80   # pairwise consistency during enrollment
 DUPLICATE_THRESHOLD      = 0.65   # reject if another student matches this closely
-MOIRE_THRESHOLD          = 0.60   # high-freq energy ratio; above = likely screen replay (multi-frame /api/enroll)
+MOIRE_THRESHOLD          = 0.60   # high-freq energy ratio; above = likely screen replay (multi-frame /api/enroll)  # TODO: If False Rejections occur in low light due to camera noise, consider increasing this to 0.65 - 0.70.
 MOIRE_THRESHOLD_SINGLE   = 0.72   # single-frame threshold for /api/spoof_check — more conservative (real face JPEG noise can score 0.50–0.58)
-TEMPORAL_VAR_THRESHOLD   = 8.0   # face-ROI temporal std-dev; below = static photo
+TEMPORAL_VAR_THRESHOLD   = 4.0   # face-ROI temporal std-dev; below = static photo
 # Applied to face-crop only (not full frame) → real face ~15-25, static photo ~0.5-2.5
+# Lowered from 8.0 → 4.0 to reduce FRR in passive 5-frame (1.25s) capture sessions.
 DUPLICATE_GRAY_ZONE      = (0.60, 0.70)  # log matches in this range for future tuning
 MOIRE_LOG_RANGE          = (0.45, 0.75)  # log FFT scores near the threshold
 

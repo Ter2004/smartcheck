@@ -396,14 +396,11 @@ def api_enroll():
         }), 400
 
     # ── 5c. EAR temporal variance — client-reported (defence-in-depth) ───────
+    # Blocking disabled: passive 5-frame (1.25s) capture does not guarantee blink,
+    # causing high FRR for real users. EAR is logged only for audit/future tuning.
     ear_std = float(data.get("ear_std") or 0)
-    _log(user_id, "ear_std", "static" if ear_std < 0.003 else "pass",
-         f"ear_std={ear_std:.5f}")
-    if ear_std < 0.003:
-        return jsonify({
-            "status":  "spoof_detected",
-            "message": "ตรวจพบใบหน้านิ่งผิดปกติ — กรุณาใช้ใบหน้าจริงต่อหน้ากล้อง",
-        }), 400
+    _log(user_id, "ear_std", "low_but_pass" if ear_std < 0.003 else "pass",
+         f"ear_std={ear_std:.5f} (blocking disabled for passive capture)")
 
     # ── 6. MiniFASNet Anti-Spoof (A2: all 5 frames) — fail-close ─────────────
     # Require MIN_SPOOF_PASS frames to pass; exception = fail, not skip

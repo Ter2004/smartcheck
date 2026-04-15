@@ -271,7 +271,7 @@ def api_enroll():
         }), 400
 
     # ── 1b. DB-level enrollment attempt check (ป้องกัน logout-bypass) ─────────
-    DB_MAX_ATTEMPTS = 999        # ปิด limit ชั่วคราวระหว่างทดสอบ (เดิม 5)
+    DB_MAX_ATTEMPTS = 5
     from datetime import datetime, timezone, timedelta
     try:
         bio_row = (
@@ -698,6 +698,13 @@ def api_self_verify():
     verify_attempts = session.get("verify_attempts", 0)
     MAX_VERIFY_ATTEMPTS = 2
 
+    # ── Check attempt limit BEFORE expensive DeepFace call ───────────────────
+    if verify_attempts >= MAX_VERIFY_ATTEMPTS:
+        return jsonify({
+            "status":  "error",
+            "message": "ยืนยันตัวตนเกินจำนวนครั้งที่กำหนด — กรุณาเริ่มลงทะเบียนใหม่",
+        }), 400
+
     # ── Load pending embeddings ───────────────────────────────────────────────
     bio_res = (
         supabase_admin.table("student_biometrics")
@@ -892,7 +899,9 @@ def api_spoof_check():
             return jsonify({"is_real": False, "confidence": 0.0,
                             "message": "ตรวจพบหน้าจอ — กรุณาใช้ใบหน้าจริงต่อหน้ากล้องโดยตรง"})
     except Exception as e:
-        _log(user_id, "liveness_moire", "error", str(e)[:80])
+        _log(user_id, "liveness_moire", "error_fail_closed", str(e)[:80])
+        return jsonify({"is_real": False, "confidence": 0.0,
+                        "message": "ไม่สามารถตรวจสอบได้ กรุณาลองใหม่อีกครั้ง"}), 500
 
     # ── 4. Single-frame screen texture (spectral peaks) ───────────────────────
     try:
@@ -902,7 +911,9 @@ def api_spoof_check():
             return jsonify({"is_real": False, "confidence": 0.0,
                             "message": "ตรวจพบภาพจากหน้าจอ — กรุณาใช้ใบหน้าจริงต่อหน้ากล้องโดยตรง"})
     except Exception as e:
-        _log(user_id, "liveness_texture", "error", str(e)[:80])
+        _log(user_id, "liveness_texture", "error_fail_closed", str(e)[:80])
+        return jsonify({"is_real": False, "confidence": 0.0,
+                        "message": "ไม่สามารถตรวจสอบได้ กรุณาลองใหม่อีกครั้ง"}), 500
 
     # ── 5. Accumulated temporal variance (สะสม thumbnail ใน session) ─────────
     # เก็บ 64×64 grayscale PNG (~1-2 KB ต่อเฟรม) เพื่อเช็ค inter-frame variance

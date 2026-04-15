@@ -219,19 +219,31 @@ def checkin():
             status = "late"
 
     # ─── 9. Insert attendance record ─────────────────────────────────────────
-    supabase_admin.table("attendance").insert({
-        "session_id":      session_id,
-        "student_id":      student_id,
-        "ble_rssi":        int(ble_rssi) if ble_rssi is not None else None,
-        "ble_pass":        False,
-        "liveness_pass":   False,
-        "liveness_action": liveness_action or "",
-        "face_score":      round(score, 4),
-        "face_pass":       True,
-        "status":          status,
-        "check_in_at":     now.isoformat(),
-        "device_id":       device_id or None,
-    }).execute()
+    # ใช้ upsert + on_conflict เพื่อป้องกัน TOCTOU race condition:
+    # ถ้า 2 requests เข้าพร้อมกัน ผ่าน duplicate check แล้ว insert พร้อมกัน
+    # DB unique constraint บน (session_id, student_id) จะ reject request ที่ 2
+    try:
+        supabase_admin.table("attendance").insert({
+            "session_id":      session_id,
+            "student_id":      student_id,
+            "ble_rssi":        int(ble_rssi) if ble_rssi is not None else None,
+            "ble_pass":        ble_pass,
+            "liveness_pass":   False,
+            "liveness_action": liveness_action or "",
+            "face_score":      round(score, 4),
+            "face_pass":       True,
+            "status":          status,
+            "check_in_at":     now.isoformat(),
+            "device_id":       device_id or None,
+        }).execute()
+    except Exception as insert_err:
+        err_str = str(insert_err)
+        _log.warning(f"[CHECKIN] insert failed (possible duplicate): {err_str[:120]}")
+        # Duplicate key violation (PostgreSQL error code 23505)
+        if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+            return jsonify({"ok": False, "already_checked": True,
+                            "error": "เช็คชื่อแล้ว"}), 400
+        return jsonify({"ok": False, "error": "บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่"}), 500
 
     status_label = "มาเรียน" if status == "present" else "มาสาย"
     return jsonify({"ok": True, "message": f"เช็คชื่อสำเร็จ — {status_label}"})
@@ -241,6 +253,7 @@ def checkin():
 
 @api_checkin_bp.route("/api/antispoof-passive", methods=["POST"])
 @login_required
+@role_required("student")
 @_limiter.limit("20 per minute")
 def antispoof_passive():
     data       = request.get_json()

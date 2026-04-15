@@ -1364,7 +1364,9 @@ async function _sendToEnroll() {
         }
     } catch (e) {
         _hideChecking();
-        _showResult('error', 'ไม่สามารถเชื่อมต่อ server ได้');
+        if (step4Timer) { clearTimeout(step4Timer); step4Timer = null; }
+        _showResult('error', 'ไม่สามารถเชื่อมต่อ server ได้ — กำลังเริ่มใหม่...');
+        setTimeout(() => restartCapture(), 3000);
     } finally {
         _enrollSubmitting = false;
     }
@@ -1491,7 +1493,8 @@ async function _sendSelfVerify(faceImage) {
         }
     } catch (e) {
         _hideChecking();
-        _showResult('error', 'ไม่สามารถเชื่อมต่อ server ได้');
+        _showResult('error', 'ไม่สามารถเชื่อมต่อ server ได้ — กำลังเริ่มใหม่...');
+        setTimeout(() => fullRestart(), 3000);
     } finally {
         _enrollSubmitting = false;
     }
@@ -1574,7 +1577,7 @@ function _showResult(type, msg) {
 }
 
 // Full restart — back to Step 2 (blink check), clears ALL state including liveness
-function fullRestart() {
+async function fullRestart() {
     if (step4Timer) { clearTimeout(step4Timer); step4Timer = null; }
     capturedImages      = [];
     enrollmentSessionId = null;
@@ -1592,7 +1595,8 @@ function fullRestart() {
     _rtResetCounters();
 
     // ล้าง liveness embeddings ที่ server (session["liveness_embeddings"])
-    fetch(ENROLL_CONFIG.resetLivenessUrl, {
+    // await เพื่อให้ server clear session ก่อน UI reset — ป้องกัน race condition
+    await fetch(ENROLL_CONFIG.resetLivenessUrl, {
         method: 'POST',
         headers: { 'X-CSRF-Token': _csrfToken() },
     }).catch(e => _warn('reset-liveness fetch failed:', e));

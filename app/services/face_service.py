@@ -67,9 +67,19 @@ def extract_embedding(base64_image: str) -> list:
 
 def check_anti_spoof(base64_image: str) -> bool:
     """
-    Liveness check via face detection (MiniFASNet/PyTorch unavailable on Railway).
-    Returns True if a face is detected, False otherwise.
-    Liveness is enforced by the blink check in the frontend.
+    ⚠️  STUB — NOT a real anti-spoof check.
+    MiniFASNet / PyTorch is unavailable on Railway (~512MB RAM limit).
+    This function only checks that a face is detectable (anti_spoofing=False).
+    It will return True for printed photos, screen replays, and masks.
+
+    Real spoof protection relies on:
+      - Moiré FFT check  (detect_screen_moire)
+      - Screen texture check  (detect_screen_texture)
+      - Temporal variance check  (detect_static_image)
+      - MediaPipe liveness challenge  (blink / head-turn / nod)
+
+    TODO: Replace with a lightweight model (e.g. Silent-Face-Anti-Spoofing)
+          that runs within the Railway memory budget.
     """
     from deepface import DeepFace
 

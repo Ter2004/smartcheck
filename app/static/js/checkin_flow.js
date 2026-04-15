@@ -106,6 +106,17 @@ class CheckinFlow {
 
         status.textContent = 'เตรียมกล้อง — จัดใบหน้าให้อยู่ในกรอบวงรี';
 
+        // Timeout: ถ้า 40 วินาทีแล้วยังไม่พบใบหน้า ให้ปิดกล้องและแสดงข้อผิดพลาด
+        const _streamTimeoutId = setTimeout(() => {
+            if (!verified && !countingDown) {
+                faceMesh.close();
+                this._stopStream(this._camStream);
+                status.textContent = 'หมดเวลา — ไม่พบใบหน้า กรุณาลองใหม่อีกครั้ง';
+                guide.classList.remove('ok');
+                guide.classList.add('fail');
+            }
+        }, 40000);
+
         // รอให้กล้องเริ่มก่อน 1.5 วินาที
         await this._sleep(1500);
         status.textContent = 'จัดใบหน้าให้อยู่ในกรอบวงรี';
@@ -212,12 +223,14 @@ class CheckinFlow {
                         })
                         .then(r => r.json())
                         .then(r => { passiveResult = r; })
-                        .catch(() => { passiveResult = { real: true, score: 0.85 }; });
+                        // Fail-closed: network error → treat as spoof, not real
+                        .catch(() => { passiveResult = { real: false, score: 0.0, _networkError: true }; });
                     });
                 }
 
                 if (faceReadyFrames >= 25) {
                     countingDown = true;
+                    clearTimeout(_streamTimeoutId);
                     faceMesh.close();
                     // Final 1: ถ่ายรูปทันที ข้าม liveness
                     // TODO Phase 3: เปลี่ยนกลับเป็น _countdownThenLiveness(...)

@@ -299,11 +299,9 @@ function goToStep(n) {
 // ─────────────────────────────────────────────
 // Step 1 — Consent
 // ─────────────────────────────────────────────
-// ติ้กครั้งเดียว → ดำเนินการต่อทันที ไม่ต้องกดปุ่มซ้ำ
+// ติ้ก → ปุ่ม enable → ผู้ใช้กดปุ่มเอง (ไม่ auto-trigger เพื่อป้องกัน button re-disable ทันที)
 document.getElementById('consentCheck').addEventListener('change', function () {
-    const btn = document.getElementById('btnConsent');
-    btn.disabled = !this.checked;
-    if (this.checked) goToCalibration();
+    document.getElementById('btnConsent').disabled = !this.checked;
 });
 
 // ─── CSRF + device helpers ────────────────────────────────────────────────────

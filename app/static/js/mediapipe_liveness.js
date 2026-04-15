@@ -427,6 +427,28 @@ class InteractiveChallengeDetector {
 
                 const lm = results.multiFaceLandmarks[0];
 
+                // ── Draw face features + anti-spoof overlay ──────────────────
+                const _EYE_L = [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246];
+                const _EYE_R = [362,382,381,380,374,373,390,249,263,466,388,387,386,385,384,398];
+                const _MOUTH = [61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146];
+                ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 3]);
+                [_EYE_L, _EYE_R, _MOUTH].forEach(indices => {
+                    ctx.beginPath();
+                    indices.forEach((idx, i) => {
+                        const px = lm[idx].x * this.canvas.width;
+                        const py = lm[idx].y * this.canvas.height;
+                        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+                    });
+                    ctx.closePath(); ctx.stroke();
+                });
+                ctx.setLineDash([]);
+                if (typeof _drawAntiSpoofBBox === 'function' && typeof _lastSpoofOverlay !== 'undefined') {
+                    _drawAntiSpoofBBox(ctx, lm, this.canvas.width, this.canvas.height, _lastSpoofOverlay);
+                }
+                // ────────────────────────────────────────────────────────────
+
                 // Real-time Moiré + edge check (defined in rt_analyze.js)
                 if (typeof _rtAnalyzeFrame === 'function') {
                     const rt = _rtAnalyzeFrame(this.video, lm);

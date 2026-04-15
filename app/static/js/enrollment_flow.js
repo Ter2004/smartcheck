@@ -753,6 +753,7 @@ async function startLivenessChallenge() {
         }
         const sc1 = await _callSpoofCheckSafe(frame1);
         _setSpoofLabel('spoofLabelLiveness', sc1.is_real, sc1.confidence);
+        if (!sc1._networkError) _lastSpoofOverlay = { is_real: sc1.is_real, score: sc1.confidence };
         setTimeout(() => _clearSpoofLabel('spoofLabelLiveness'), 2000);
         if (!sc1.is_real) {
             if (sc1._networkError) {
@@ -832,6 +833,7 @@ async function startLivenessChallenge() {
         if (frame2) {
             const sc2 = await _callSpoofCheckSafe(frame2);
             _setSpoofLabel('spoofLabelLiveness', sc2.is_real, sc2.confidence);
+            if (!sc2._networkError) _lastSpoofOverlay = { is_real: sc2.is_real, score: sc2.confidence };
             if (!sc2.is_real && !sc2._networkError) {
                 // Hard spoof detected post-challenge — require full restart (face swap suspected)
                 _showSpoofWarn();
@@ -955,6 +957,48 @@ function _checkNeutral(lm) {
     const rightBrow = d(lm[295], lm[386]) / faceH;
     if ((leftBrow + rightBrow) / 2 > GATE_BROW_RAISE_RATIO)
         return { ok: false, reason: 'กรุณาทำหน้าปกติ ไม่ยกคิ้ว' };
+
+    return { ok: true, reason: null };
+}
+
+// Camera environment condition check (brightness + backlight)
+// Called before capture to block frames with bad lighting conditions
+// rather than relying on MiniFASNet to handle them (which causes false positives).
+function _checkCameraConditions(videoEl) {
+    const c = document.getElementById('captureCanvas');
+    c.width = 320; c.height = 240;   // downsample for speed
+    const ctx = c.getContext('2d');
+    ctx.drawImage(videoEl, 0, 0, 320, 240);
+    const { data } = ctx.getImageData(0, 0, 320, 240);
+
+    // ── 1. Average brightness ────────────────────────────────────────────
+    let totalBrightness = 0, sampleCount = 0;
+    for (let i = 0; i < data.length; i += 4 * 8) {   // sample every 8th pixel
+        totalBrightness += 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
+        sampleCount++;
+    }
+    const avgBright = sampleCount > 0 ? totalBrightness / sampleCount : 128;
+    if (avgBright < 55) return { ok: false, reason: 'แสงน้อยเกินไป — กรุณาเปิดไฟหรือเข้าใกล้แหล่งแสง' };
+
+    // ── 2. Backlight detection (edge brightness >> center brightness) ────
+    const W = 320, H = 240;
+    let centerSum = 0, edgeSum = 0, centerN = 0, edgeN = 0;
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const idx = (y * W + x) * 4;
+            const lum = 0.299*data[idx] + 0.587*data[idx+1] + 0.114*data[idx+2];
+            if (x > W*0.25 && x < W*0.75 && y > H*0.25 && y < H*0.75) {
+                centerSum += lum; centerN++;
+            } else {
+                edgeSum += lum; edgeN++;
+            }
+        }
+    }
+    const centerAvg = centerN > 0 ? centerSum / centerN : 1;
+    const edgeAvg   = edgeN   > 0 ? edgeSum   / edgeN   : 0;
+    if (centerAvg > 0 && edgeAvg / centerAvg > 2.2) {
+        return { ok: false, reason: 'แสงจ้าด้านหลังมากเกินไป — กรุณาหันหน้าเข้าหาแสง' };
+    }
 
     return { ok: true, reason: null };
 }
@@ -1104,6 +1148,14 @@ function startCaptureWithDetection() {
         if (now - lastCaptureTime < CAPTURE_INTERVAL_MS) {
             const remain = Math.max(0, (CAPTURE_INTERVAL_MS - (now - lastCaptureTime)) / 1000).toFixed(1);
             status.textContent = `✓ พบใบหน้า — ถ่ายถัดไปใน ${remain}s (${capturedImages.length}/${TOTAL_FRAMES})`;
+            return;
+        }
+
+        // ── Camera condition check (brightness + backlight) ─────────────────
+        const conditions = _checkCameraConditions(video);
+        if (!conditions.ok) {
+            guide.classList.remove('ok'); guide.classList.add('fail');
+            status.textContent = conditions.reason;
             return;
         }
 

@@ -334,6 +334,54 @@ def api_enroll():
                 "message":      f"รูปที่ {idx+1} ไม่ถูกต้อง ({v['reason']}) — กรุณาถ่ายใหม่",
             }), 400
 
+    # ── 2b. Pre-Duplicate Check (ใช้ liveness_embeddings จาก session) ───────────
+    # รันก่อน spoof checks ทั้งหมด เพื่อให้ผู้ใช้เห็น "duplicate" แทน "spoof_detected"
+    # เมื่อส่งใบหน้าที่ลงทะเบียนไปแล้ว liveness_embeddings ถูก extract ไว้ใน session
+    # ระหว่าง liveness check (FaceNet512 512-D) — ใช้ซ้ำได้โดยไม่ต้องรัน DeepFace เพิ่ม
+    _pre_dup_embs = session.get("liveness_embeddings", [])
+    if _pre_dup_embs:
+        try:
+            _pre_dup_offset = 0
+            _pre_dup_found  = False
+            while not _pre_dup_found:
+                _pre_batch = (
+                    supabase_admin.table("student_biometrics")
+                    .select("user_id, face_embeddings")
+                    .not_.is_("face_embeddings", "null")
+                    .neq("user_id", user_id)
+                    .range(_pre_dup_offset, _pre_dup_offset + 49)
+                    .execute()
+                    .data or []
+                )
+                if not _pre_batch:
+                    break
+                for _bio in _pre_batch:
+                    _stored = _bio.get("face_embeddings") or []
+                    if not _stored:
+                        continue
+                    for _emb in _pre_dup_embs:
+                        _sim = max_similarity_multi(_emb, _stored)
+                        if _sim >= DUPLICATE_THRESHOLD:
+                            _log(user_id, "pre_duplicate_check", "blocked",
+                                 f"sim={_sim:.4f} other_user={_bio['user_id']}")
+                            _pre_dup_found = True
+                            break
+                    if _pre_dup_found:
+                        break
+                if _pre_dup_found or len(_pre_batch) < 50:
+                    break
+                _pre_dup_offset += 50
+            if _pre_dup_found:
+                return jsonify({
+                    "status":  "duplicate",
+                    "message": "ใบหน้านี้ถูกลงทะเบียนในระบบแล้ว",
+                }), 400
+            _log(user_id, "pre_duplicate_check", "pass",
+                 f"liveness_embs={len(_pre_dup_embs)}")
+        except Exception as _pre_dup_err:
+            # Non-fatal — ถ้า pre-check crash ให้ดำเนินการต่อ (definitive check ที่ step 12 จะรับ)
+            _log(user_id, "pre_duplicate_check", "error", str(_pre_dup_err)[:80])
+
     # ── 3. Decode all frames once (shared across checks below) ───────────────
     try:
         raw_frames = [_decode_image(img) for img in face_images]

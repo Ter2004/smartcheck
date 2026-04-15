@@ -299,8 +299,11 @@ function goToStep(n) {
 // ─────────────────────────────────────────────
 // Step 1 — Consent
 // ─────────────────────────────────────────────
+// ติ้กครั้งเดียว → ดำเนินการต่อทันที ไม่ต้องกดปุ่มซ้ำ
 document.getElementById('consentCheck').addEventListener('change', function () {
-    document.getElementById('btnConsent').disabled = !this.checked;
+    const btn = document.getElementById('btnConsent');
+    btn.disabled = !this.checked;
+    if (this.checked) goToCalibration();
 });
 
 // ─── CSRF + device helpers ────────────────────────────────────────────────────

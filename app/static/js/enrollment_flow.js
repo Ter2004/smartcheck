@@ -1139,7 +1139,11 @@ function startCaptureWithDetection() {
             width: 640, height: 480,
         });
         _stepCamera = captureCamera;
-        captureCamera.start();
+        captureCamera.start().catch(() => {
+            status.textContent = 'ไม่สามารถเปิดกล้องได้ — กรุณาลองใหม่';
+            if (step4Timer) { clearTimeout(step4Timer); step4Timer = null; }
+            setTimeout(() => restartCapture(), 2000);
+        });
         status.textContent = 'มองตรงกล้อง อยู่นิ่ง ๆ — ระบบจะถ่ายอัตโนมัติ';
 
         // ── 2-minute timeout — restart capture if not done
@@ -1291,6 +1295,15 @@ function _startSelfVerify() {
                 await new Promise(r => setTimeout(r, 900));
             }
             overlay.style.display = 'none';
+
+            // R3: check video is still live after countdown (face may have drifted)
+            if (!video.videoWidth || !video.videoHeight) {
+                countingDown = false;
+                verifyReady  = false;
+                guide.classList.remove('ok');
+                status.textContent = 'ใบหน้าหายไประหว่างนับถอยหลัง — กรุณามองตรงกล้อง';
+                return;
+            }
 
             // capture verify shot
             const cap = document.getElementById('captureCanvas');

@@ -24,6 +24,7 @@ function dist2D(a, b) {
 }
 
 function calcEARFromLM(lm, indices) {
+    if (!lm || lm.length < 468) return 0.25;   // R4: safe default open-eye EAR
     const [p1, p2, p3, p4, p5, p6] = indices.map(i => lm[i]);
     return (dist2D(p2, p6) + dist2D(p3, p5)) / (2.0 * dist2D(p1, p4));
 }
@@ -315,7 +316,13 @@ class LivenessDetector {
                 width: 640, height: 480,
             });
             this._camera = camera;
-            camera.start();
+            camera.start().catch(() => {
+                if (!resolved) {
+                    resolved = true;
+                    this.stop();
+                    resolve({ pass: false, action, error: 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการใช้กล้อง' });
+                }
+            });
 
             setTimeout(() => {
                 if (!resolved) {

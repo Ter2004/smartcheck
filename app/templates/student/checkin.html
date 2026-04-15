@@ -139,6 +139,7 @@
 {% block scripts %}
 {% if session_data %}
 <script src="{{ url_for('static', filename='js/ble_scanner.js') }}"></script>
+<script src="{{ url_for('static', filename='js/rt_analyze.js') }}"></script>
 <script src="{{ url_for('static', filename='js/mediapipe_liveness.js') }}"></script>
 <script src="{{ url_for('static', filename='js/checkin_flow.js') }}"></script>
 <script>

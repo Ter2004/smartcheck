@@ -4,6 +4,7 @@
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="{{ url_for('static', filename='js/rt_analyze.js') }}"></script>
 <script src="{{ url_for('static', filename='js/mediapipe_liveness.js') }}"></script>
 <style>
     /* ── Step show/hide (toggled by JS) ─── */

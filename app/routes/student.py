@@ -17,14 +17,29 @@ SELF_VERIFY_THRESHOLD = 0.80   # A7: raised from 0.75 — must match enrollment 
 DUPLICATE_THRESHOLD   = 0.65   # reject if another student matches this closely
 DUPLICATE_GRAY_ZONE   = (0.60, 0.70)  # A6: log matches in this range for future tuning
 MAX_RETRY             = 3      # max outlier-retry rounds (server-enforced — A4)
+# M1: module-level constant — used in both /api/enroll and /api/self_verify
+CONTINUITY_THRESHOLD  = 0.80   # liveness→capture / liveness→self_verify similarity gate
 
 # ─── Audit logger (D1) ───────────────────────────────────────────────────────
 _audit = logging.getLogger("smartcheck.enrollment")
 
 
+import re as _re
+_IP_RE = _re.compile(r'^(\d{1,3}\.){3}\d{1,3}$')
+
+def _safe_ip():
+    """M13: Return client IP — validate X-Forwarded-For to prevent log spoofing."""
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        first = xff.split(",")[0].strip()
+        if _IP_RE.match(first):
+            return first
+    return request.remote_addr or "unknown"
+
+
 def _log(student_id, step, result, details=""):
     """D1: structured audit log for every enrollment pipeline step."""
-    ip = request.remote_addr or "unknown"
+    ip = _safe_ip()
     ua = request.headers.get("User-Agent", "unknown")[:80]
     _audit.info(f"student={student_id} step={step} result={result} details={details} ip={ip} ua={ua}")
 
@@ -75,7 +90,6 @@ def enroll_face():
     already_enrolled = bool(bio and bio.get("face_embeddings") and bio.get("consent_given"))
     # Reset server-side retry counters when page is (re)loaded
     session.pop("enroll_retry", None)
-    session.pop("verify_attempts", None)
     session.pop("consent_given_at", None)
     return render_template("student/enroll_face.html", already_enrolled=already_enrolled)
 
@@ -174,7 +188,7 @@ def record_consent():
             "consent_type":     "biometric_enrollment",
             "consent_given":    True,
             "consent_version":  "1.0",
-            "ip_address":       request.headers.get("X-Forwarded-For", request.remote_addr),
+            "ip_address":       _safe_ip(),
             "user_agent":       request.headers.get("User-Agent", "")[:500],
         }).execute()
     except Exception as consent_err:
@@ -219,8 +233,8 @@ def api_enroll():
         extract_embedding, check_embedding_consistency,
         max_similarity_multi, detect_screen_moire, detect_screen_texture,
         detect_static_image, check_anti_spoof, _decode_image, server_validate_frame,
-        DUPLICATE_THRESHOLD, DUPLICATE_GRAY_ZONE,
     )
+    # M2: DUPLICATE_THRESHOLD and DUPLICATE_GRAY_ZONE defined at module level above — use those
 
     user_id = session["user_id"]
     data    = request.get_json()
@@ -254,7 +268,17 @@ def api_enroll():
         return jsonify({"status": "error", "message": "ไม่พบข้อมูล"}), 400
 
     face_images  = data.get("face_images", [])
-    baseline_ear = data.get("baseline_ear")
+    # L2: validate baseline_ear before float() — malformed value causes unhandled ValueError
+    _raw_ear = data.get("baseline_ear")
+    if _raw_ear is not None:
+        try:
+            baseline_ear = float(_raw_ear)
+            if not (0.0 < baseline_ear < 1.0):
+                baseline_ear = None  # out of plausible EAR range — ignore
+        except (ValueError, TypeError):
+            return jsonify({"status": "error", "message": "ข้อมูล baseline_ear ไม่ถูกต้อง"}), 400
+    else:
+        baseline_ear = None
     # A4: retry_count is server-enforced — ignore client-sent value
     retry_count = session.get("enroll_retry", 0)
 
@@ -270,56 +294,37 @@ def api_enroll():
             "message": f"ลองใหม่เกิน {MAX_RETRY} รอบ — กรุณาเริ่มลงทะเบียนใหม่",
         }), 400
 
-    # ── 1b. DB-level enrollment attempt check (ป้องกัน logout-bypass) ─────────
+    # ── 1b. DB-level enrollment attempt check — atomic via RPC (M3 fix) ─────────
+    # atomic_enroll_attempt() does SELECT FOR UPDATE + increment in one transaction,
+    # preventing concurrent-tab races that let two requests both slip past the limit.
     DB_MAX_ATTEMPTS = 5
-    from datetime import datetime, timezone, timedelta
     try:
-        bio_row = (
-            supabase_admin.table("student_biometrics")
-            .select("enrollment_attempts, last_enrollment_attempt")
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-        if bio_row and bio_row.data:
-            db_attempts   = bio_row.data.get("enrollment_attempts") or 0
-            last_attempt  = bio_row.data.get("last_enrollment_attempt")
-            if db_attempts >= DB_MAX_ATTEMPTS and last_attempt:
-                last_dt = datetime.fromisoformat(
-                    str(last_attempt).replace("Z", "+00:00")
-                )
-                if datetime.now(timezone.utc) - last_dt < timedelta(hours=24):
-                    _log(user_id, "enroll_attempt", "db_blocked",
-                         f"db_attempts={db_attempts} last={last_attempt}")
-                    return jsonify({
-                        "status":  "blocked",
-                        "message": "ลงทะเบียนเกินจำนวนครั้งที่กำหนด กรุณาติดต่ออาจารย์",
-                        "db_attempts": db_attempts,
-                    }), 403
-
-        # นับ attempt ทันที (ก่อนประมวลผลภาพ) — ทุก attempt ไม่ว่าสำเร็จหรือไม่
-        now_iso = datetime.now(timezone.utc).isoformat()
-        if bio_row and bio_row.data:
-            supabase_admin.table("student_biometrics").update({
-                "enrollment_attempts":       (bio_row.data.get("enrollment_attempts") or 0) + 1,
-                "last_enrollment_attempt":   now_iso,
-            }).eq("user_id", user_id).execute()
-            db_attempts_now = (bio_row.data.get("enrollment_attempts") or 0) + 1
-        else:
-            # ยังไม่มี row → สร้าง (เกิดได้ถ้า CSV import ไม่ได้สร้าง biometrics row)
-            supabase_admin.table("student_biometrics").upsert({
-                "user_id":                   user_id,
-                "enrollment_attempts":       1,
-                "last_enrollment_attempt":   now_iso,
-            }, on_conflict="user_id").execute()
-            db_attempts_now = 1
-
+        rpc_res = supabase_admin.rpc(
+            "atomic_enroll_attempt",
+            {"p_user_id": user_id, "p_max": DB_MAX_ATTEMPTS, "p_window_h": 24},
+        ).execute()
+        if not rpc_res.data:
+            raise RuntimeError("atomic_enroll_attempt returned no rows")
+        row = rpc_res.data[0]
+        db_attempts_now = row["current_attempts"]
+        allowed         = row["allowed"]
         _log(user_id, "enroll_attempt", "counted",
              f"db_attempts={db_attempts_now}/{DB_MAX_ATTEMPTS}")
-
+        if not allowed:
+            _log(user_id, "enroll_attempt", "db_blocked",
+                 f"db_attempts={db_attempts_now}")
+            return jsonify({
+                "status":      "blocked",
+                "message":     "ลงทะเบียนเกินจำนวนครั้งที่กำหนด กรุณาติดต่ออาจารย์",
+                "db_attempts": db_attempts_now,
+            }), 403
     except Exception as db_err:
-        # DB ล้มเหลว — ใช้ session fallback แทน (ไม่ block การทำงาน)
-        _log(user_id, "enroll_attempt", "db_error", str(db_err)[:80])
+        # DB ล้มเหลว — fail-closed: ไม่ยอม enroll ถ้าไม่สามารถนับ attempt ได้
+        _log(user_id, "enroll_attempt", "db_error_blocked", str(db_err)[:80])
+        return jsonify({
+            "status":  "error",
+            "message": "ไม่สามารถตรวจสอบสิทธิ์ได้ชั่วคราว กรุณาลองใหม่อีกครั้ง",
+        }), 500
 
     # ── 2. Zero-trust frame validation (Sprint 2A) — before any DeepFace call ──
     for idx, img in enumerate(face_images):
@@ -558,7 +563,7 @@ def api_enroll():
             "message": "กรุณาทำ Liveness Check ก่อน — กรุณาเริ่มใหม่",
         }), 400
 
-    CONTINUITY_THRESHOLD = 0.80
+    # M1: use module-level CONTINUITY_THRESHOLD (defined at top of file)
     for idx, emb in enumerate(embeddings):
         max_sim = max(
             _cosine_sim(emb, ref) for ref in liveness_embeddings
@@ -625,11 +630,11 @@ def api_enroll():
     supabase_admin.table("student_biometrics").upsert({
         "user_id":         user_id,
         "face_embeddings": embeddings,
-        "baseline_ear":    float(baseline_ear) if baseline_ear else None,
+        "baseline_ear":    baseline_ear,  # already float or None from validation
         "consent_given":   False,
     }, on_conflict="user_id").execute()
 
-    session["enroll_baseline_ear"] = float(baseline_ear) if baseline_ear else None
+    session["enroll_baseline_ear"] = baseline_ear  # already float or None
     session.pop("enroll_retry", None)  # reset retry counter on successful batch
     _log(user_id, "enroll_save", "pending_verify")
 
@@ -694,21 +699,13 @@ def api_self_verify():
             "message": "ไม่สามารถตรวจสอบใบหน้าได้ — กรุณาลองใหม่",
         }), 400
 
-    # B2: track verify attempts server-side
-    verify_attempts = session.get("verify_attempts", 0)
+    # B2 / H2: track verify attempts in DB (not session) to prevent concurrent-tab bypass
     MAX_VERIFY_ATTEMPTS = 2
 
-    # ── Check attempt limit BEFORE expensive DeepFace call ───────────────────
-    if verify_attempts >= MAX_VERIFY_ATTEMPTS:
-        return jsonify({
-            "status":  "error",
-            "message": "ยืนยันตัวตนเกินจำนวนครั้งที่กำหนด — กรุณาเริ่มลงทะเบียนใหม่",
-        }), 400
-
-    # ── Load pending embeddings ───────────────────────────────────────────────
+    # ── Load pending embeddings + current attempt count ───────────────────────
     bio_res = (
         supabase_admin.table("student_biometrics")
-        .select("face_embeddings, baseline_ear")
+        .select("face_embeddings, baseline_ear, verify_attempts")
         .eq("user_id", user_id)
         .maybe_single()
         .execute()
@@ -716,6 +713,14 @@ def api_self_verify():
     if not bio_res or not bio_res.data:
         return jsonify({"status": "error", "message": "ไม่พบข้อมูล enrollment — กรุณาเริ่มใหม่"}), 400
 
+    verify_attempts = int(bio_res.data.get("verify_attempts") or 0)
+
+    # ── Check attempt limit BEFORE expensive DeepFace call ───────────────────
+    if verify_attempts >= MAX_VERIFY_ATTEMPTS:
+        return jsonify({
+            "status":  "error",
+            "message": "ยืนยันตัวตนเกินจำนวนครั้งที่กำหนด — กรุณาเริ่มลงทะเบียนใหม่",
+        }), 400
     stored_embeddings = bio_res.data.get("face_embeddings") or []
     if not stored_embeddings:
         return jsonify({"status": "error", "message": "ไม่พบ embedding — กรุณาเริ่มใหม่"}), 400
@@ -736,8 +741,8 @@ def api_self_verify():
         }), 400
 
     max_sim = max(_cosine_sim(live_emb, ref) for ref in liveness_embeddings)
-    if max_sim < 0.80:
-        _log(user_id, "self_verify_continuity", "fail", f"max_sim={max_sim:.4f}")
+    if max_sim < CONTINUITY_THRESHOLD:
+        _log(user_id, "self_verify_continuity", "fail", f"max_sim={max_sim:.4f} threshold={CONTINUITY_THRESHOLD}")
         return jsonify({
             "status":  "continuity_fail",
             "message": "ตรวจพบใบหน้าไม่ตรงกับ Liveness Check — กรุณาเริ่มใหม่",
@@ -756,19 +761,20 @@ def api_self_verify():
     if not verify_result["verified"]:
         new_attempts = verify_attempts + 1
         if new_attempts >= MAX_VERIFY_ATTEMPTS:
-            # Wipe pending embeddings — must re-enroll from scratch
+            # Wipe pending embeddings + reset counter — must re-enroll from scratch
             supabase_admin.table("student_biometrics") \
-                .update({"face_embeddings": None}) \
+                .update({"face_embeddings": None, "verify_attempts": 0}) \
                 .eq("user_id", user_id).execute()
-            session.pop("verify_attempts", None)
             session.pop("enroll_baseline_ear", None)
             _log(user_id, "self_verify", "wiped", "max_attempts_reached")
             return jsonify({
                 "status":  "failed",
                 "message": "ยืนยันตัวตนไม่สำเร็จ — กรุณาลงทะเบียนใบหน้าใหม่ตั้งแต่ต้น",
             })
-        # Still have attempts left — let user retry
-        session["verify_attempts"] = new_attempts
+        # Still have attempts left — increment DB counter then let user retry
+        supabase_admin.table("student_biometrics") \
+            .update({"verify_attempts": new_attempts}) \
+            .eq("user_id", user_id).execute()
         remaining = MAX_VERIFY_ATTEMPTS - new_attempts
         return jsonify({
             "status":             "retry",
@@ -795,6 +801,7 @@ def api_self_verify():
             "enrolled_at":     now_iso,
             "baseline_ear":    baseline_ear,
             "integrity_hash":  integrity_hash,
+            "verify_attempts": 0,   # H2: reset counter on successful enrollment
         }).eq("user_id", user_id).execute()
 
         # Upload self-verify shot as profile image (non-fatal)
@@ -826,7 +833,6 @@ def api_self_verify():
 
         # Clean up session (รวม liveness embeddings)
         session.pop("enroll_baseline_ear", None)
-        session.pop("verify_attempts", None)
         session.pop("consent_given_at", None)
         session.pop("liveness_embeddings", None)
 

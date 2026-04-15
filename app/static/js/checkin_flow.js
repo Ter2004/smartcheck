@@ -194,7 +194,7 @@ class CheckinFlow {
             const eyesOk = earNow >= earMin;
 
             // ปากต้องหุบ
-            const mouthOpen = Math.abs(lm[13].y - lm[14].y);
+            const mouthOpen = dist2D(lm[13], lm[14]);
             const mouthOk   = faceH > 0 && (mouthOpen / faceH) < 0.10;
 
             const faceOk = inCenter && closeEnough && pitchOk && rollOk && yawOk && eyesOk && mouthOk;
@@ -261,6 +261,7 @@ class CheckinFlow {
             onFrame: async () => { await faceMesh.send({ image: video }); },
             width: 640, height: 480,
         });
+        this._faceMeshCam = cam;  // H3: store for cleanup on error paths
         cam.start();
     }
 
@@ -280,8 +281,9 @@ class CheckinFlow {
             for (let i = 0; i < 15 && !passiveResult; i++) await this._sleep(100);
         }
 
-        const spoofScore = passiveResult?.score ?? 0.85;
-        const isReal     = passiveResult?.real ?? true;
+        const spoofScore = passiveResult?.score ?? 0.0;
+        // Fail-closed: if passive result not available within timeout, treat as spoof
+        const isReal     = passiveResult?.real ?? false;
 
         // ถ้า passive บอกว่า spoof → ปฏิเสธทันที
         if (!isReal && spoofScore < 0.50) {
@@ -330,7 +332,7 @@ class CheckinFlow {
     // ─── Submit ──────────────────────────────────────────
 
     async _submitCheckin(faceImage, livenessAction) {
-        this._goToStep(3);
+        this._goToStep(2);
         document.getElementById('doneLoadingView').style.display  = 'block';
         document.getElementById('doneResultView').style.display   = 'none';
 
@@ -423,6 +425,11 @@ class CheckinFlow {
 
     _stopStream(stream) {
         if (stream) stream.getTracks().forEach(t => t.stop());
+        // H3: also stop MediaPipe Camera instance if stored
+        if (this._faceMeshCam) {
+            try { this._faceMeshCam.stop(); } catch (_) {}
+            this._faceMeshCam = null;
+        }
     }
 
     _sleep(ms) {

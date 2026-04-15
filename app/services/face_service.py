@@ -146,7 +146,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
         return {"is_real": False, "confidence": 0.0, "embedding": None, "message": "ไม่พบใบหน้า"}
     except Exception as e:
         _audit.error(f"[SPOOF_CHECK] embedding error: {e}", exc_info=True)
-        return {"is_real": False, "confidence": 0.0, "embedding": None, "message": f"ตรวจสอบไม่สำเร็จ: {e}"}
+        return {"is_real": False, "confidence": 0.0, "embedding": None, "message": "ตรวจสอบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"}
 
     _audit.info(f"[SPOOF_CHECK] face detected, embedding extracted (no MiniFASNet)")
     return {

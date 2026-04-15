@@ -38,8 +38,22 @@ def checkin():
     session_id      = data.get("session_id")
     ble_rssi        = data.get("ble_rssi")
     liveness_pass   = data.get("liveness_pass", False)
-    liveness_action = data.get("liveness_action", "")
+    liveness_action = data.get("liveness_action", "") or ""
     face_image      = data.get("face_image")
+
+    # M7: whitelist liveness_action — reject arbitrary strings
+    _ALLOWED_LIVENESS_ACTIONS = {"", "blink", "nod", "turn_left", "turn_right", "smile", "raise_eyebrows"}
+    if liveness_action not in _ALLOWED_LIVENESS_ACTIONS:
+        return jsonify({"ok": False, "error": "ข้อมูลไม่ถูกต้อง"}), 400
+
+    # M6: validate ble_rssi before int() conversion
+    if ble_rssi is not None:
+        try:
+            ble_rssi = int(ble_rssi)
+            if not (-120 <= ble_rssi <= 0):
+                ble_rssi = None  # out of realistic RSSI range — ignore silently
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "ข้อมูล BLE ไม่ถูกต้อง"}), 400
 
     if not all([session_id, face_image]):
         return jsonify({"ok": False, "error": "ข้อมูลไม่ครบ"}), 400
@@ -47,10 +61,15 @@ def checkin():
     # ─── 0. Device token verification (Sprint 1B) — cheapest check first ──────
     raw_token = request.headers.get("Authorization", "").replace("DeviceToken ", "").strip()
     device_payload = verify_device_token(raw_token, current_app.config["SECRET_KEY"])
+    # M4: distinguish 3 cases — (a) no token, (b) invalid token, (c) valid wrong user
+    if raw_token and device_payload is None:
+        # Token was provided but failed verification (invalid/expired/tampered)
+        _log.warning(f"[DEVICE_TOKEN] invalid token rejected student={student_id}")
+        return jsonify({"ok": False, "error": "Device token ไม่ถูกต้อง"}), 403
     if device_payload is not None and device_payload.get("uid") != student_id:
         # Token is valid but belongs to a different user — reject immediately
         return jsonify({"ok": False, "error": "Device token ไม่ตรงกับบัญชีนี้"}), 403
-    # device_payload=None means no token sent (legacy / first check-in) — handled below
+    # device_payload=None + no raw_token = legacy / first check-in — allowed
 
     # ─── 0b. Zero-trust frame validation (Sprint 2A) ─────────────────────────
     frame_check = server_validate_frame(face_image)
@@ -144,7 +163,19 @@ def checkin():
     if user_device and device_id and user_device != device_id:
         return jsonify({"ok": False, "error": "Device ไม่ตรง — ต้องใช้อุปกรณ์ที่ผูกไว้"}), 400
     # Bind device on first check-in
+    # M5: verify device_id not already bound to another student before binding
     if not user_device and device_id:
+        existing = (
+            supabase_admin.table("users")
+            .select("id")
+            .eq("device_id", device_id)
+            .neq("id", student_id)
+            .maybe_single()
+            .execute()
+        )
+        if existing and existing.data:
+            _log.warning(f"[DEVICE_BIND] device_id already bound to another student={existing.data.get('id')} attempt by={student_id}")
+            return jsonify({"ok": False, "error": "อุปกรณ์นี้ถูกผูกกับบัญชีอื่นแล้ว"}), 403
         supabase_admin.table("users").update({"device_id": device_id}).eq("id", student_id).execute()
 
     # Sprint 1B: HMAC device token counts as trusted regardless of DB binding
@@ -183,7 +214,9 @@ def checkin():
     try:
         live_embedding = extract_embedding(face_image)
     except Exception as e:
-        return jsonify({"ok": False, "error": f"ตรวจใบหน้าไม่สำเร็จ: {e}", "retry_face": True}), 400
+        _log.warning(f"[FACE] extract_embedding failed: {e}")
+        # L1: don't expose internal error details to client
+        return jsonify({"ok": False, "error": "ตรวจใบหน้าไม่สำเร็จ กรุณาถ่ายใหม่อีกครั้ง", "retry_face": True}), 400
 
     verify_result = verify_face_multi(live_embedding, stored_embeddings, face_threshold)
     score = verify_result["best_similarity"]
@@ -226,7 +259,7 @@ def checkin():
         supabase_admin.table("attendance").insert({
             "session_id":      session_id,
             "student_id":      student_id,
-            "ble_rssi":        int(ble_rssi) if ble_rssi is not None else None,
+            "ble_rssi":        ble_rssi,  # already int or None from validation above
             "ble_pass":        ble_pass,
             "liveness_pass":   False,
             "liveness_action": liveness_action or "",

@@ -53,144 +53,8 @@ let challengeAttempts = 0;
 // Face continuity check ย้ายไปทำที่ server (session["liveness_embeddings"])
 // Client ไม่รับหรือเก็บ embedding ใดๆ อีกต่อไป
 
-// ─── Real-time anti-spoof frame analysis (shared across liveness + capture) ───
-// Runs every 250 ms inside any MediaPipe onResults callback.
-//
-// Moiré check: compute row-wise SAD (horizontal pixel differences) over 64×64 face ROI.
-//   Screens have a regular pixel grid → all rows produce similar SAD → low coefficient
-//   of variation (CV). Real faces have varied texture (eyes/nose/cheeks) → high CV.
-//
-// Edge check: run Sobel on an expanded face region (+18% padding) and accumulate
-//   magnitude per column (catches vertical phone/paper borders) and per row (horizontal).
-//   A phone border shows as ONE spike >> average near the image border zone.
-
-const _RT_CANVAS = document.createElement('canvas');
-_RT_CANVAS.width = 64; _RT_CANVAS.height = 64;
-const _RT_CTX = _RT_CANVAS.getContext('2d', { willReadFrequently: true });
-
-const RT_THROTTLE_MS   = 250;   // max analysis rate (ms between runs)
-const RT_CONSEC_THRESH = 4;     // consecutive alert frames before blocking
-const RT_MOIRE_CV_MAX  = 0.20;  // CV below this → screen (uniform texture)
-const RT_MOIRE_SAD_MIN = 2.5;   // min mean SAD — skip near-blank/dark frames
-const RT_EDGE_RATIO    = 4.5;   // Sobel peak/average ratio to flag a straight edge
-
-let _rtLastCheck   = 0;
-let _rtMoireConsec = 0;
-let _rtEdgeConsec  = 0;
-
-function _rtResetCounters() { _rtMoireConsec = 0; _rtEdgeConsec = 0; }
-
-/**
- * Analyse one video frame for Moiré + straight-edge spoof indicators.
- * @param {HTMLVideoElement} video
- * @param {Array} landmarks  — MediaPipe face landmark array
- * @returns {null | { moireAlert, edgeAlert, blocked, reason, sadCV, sadMean }}
- */
-function _rtAnalyzeFrame(video, landmarks) {
-    const now = Date.now();
-    if (now - _rtLastCheck < RT_THROTTLE_MS) return null;
-    _rtLastCheck = now;
-
-    const vw = video.videoWidth, vh = video.videoHeight;
-    if (!vw || !vh) return null;
-
-    // ── Face bounding box ──────────────────────────────────────────────────
-    let minX = 1, maxX = 0, minY = 1, maxY = 0;
-    for (const p of landmarks) {
-        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
-        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
-    }
-    const faceX = minX * vw, faceY = minY * vh;
-    const faceW = (maxX - minX) * vw, faceH = (maxY - minY) * vh;
-    if (faceW < 30 || faceH < 30) return null;
-
-    // ── 1. Moiré: row-SAD coefficient of variation ─────────────────────────
-    _RT_CTX.drawImage(video, faceX, faceY, faceW, faceH, 0, 0, 64, 64);
-    const fp = _RT_CTX.getImageData(0, 0, 64, 64).data;
-    const gray = new Uint8Array(4096);
-    for (let i = 0; i < 4096; i++) {
-        gray[i] = (77 * fp[i*4] + 150 * fp[i*4+1] + 29 * fp[i*4+2]) >> 8;
-    }
-
-    const rowSAD = new Float32Array(64);
-    for (let r = 0; r < 64; r++) {
-        let s = 0;
-        for (let c = 0; c < 63; c++) s += Math.abs(gray[r*64+c+1] - gray[r*64+c]);
-        rowSAD[r] = s / 63;
-    }
-    const sadMean = rowSAD.reduce((a, b) => a + b, 0) / 64;
-    const sadStd  = Math.sqrt(rowSAD.reduce((s, v) => s + (v - sadMean) ** 2, 0) / 64);
-    const sadCV   = sadMean > RT_MOIRE_SAD_MIN ? sadStd / sadMean : 1.0;
-    const moireAlert = sadCV < RT_MOIRE_CV_MAX && sadMean > RT_MOIRE_SAD_MIN;
-
-    // ── 2. Edge detection: straight line at face-border zone ──────────────
-    const pad  = 0.18;
-    const expX = Math.max(0, faceX - faceW * pad);
-    const expY = Math.max(0, faceY - faceH * pad);
-    const expW = Math.min(vw - expX, faceW * (1 + 2 * pad));
-    const expH = Math.min(vh - expY, faceH * (1 + 2 * pad));
-
-    _RT_CTX.drawImage(video, expX, expY, expW, expH, 0, 0, 64, 64);
-    const ep = _RT_CTX.getImageData(0, 0, 64, 64).data;
-    const ge = new Int16Array(4096);
-    for (let i = 0; i < 4096; i++) {
-        ge[i] = (77 * ep[i*4] + 150 * ep[i*4+1] + 29 * ep[i*4+2]) >> 8;
-    }
-
-    const colSum = new Float32Array(64);
-    const rowSum = new Float32Array(64);
-    for (let r = 1; r < 63; r++) {
-        for (let c = 1; c < 63; c++) {
-            // Sobel X (horizontal gradient) → accumulates onto rowSum
-            const sx = Math.abs(
-                ge[(r-1)*64+c+1] + 2*ge[r*64+c+1] + ge[(r+1)*64+c+1] -
-                ge[(r-1)*64+c-1] - 2*ge[r*64+c-1] - ge[(r+1)*64+c-1]
-            );
-            // Sobel Y (vertical gradient) → accumulates onto colSum
-            const sy = Math.abs(
-                ge[(r+1)*64+c-1] + 2*ge[(r+1)*64+c] + ge[(r+1)*64+c+1] -
-                ge[(r-1)*64+c-1] - 2*ge[(r-1)*64+c] - ge[(r-1)*64+c+1]
-            );
-            colSum[c] += sy;
-            rowSum[r] += sx;
-        }
-    }
-
-    const avgCol = colSum.reduce((a, b) => a + b, 0) / 64;
-    const avgRow = rowSum.reduce((a, b) => a + b, 0) / 64;
-    let edgeAlert = false;
-    if (avgCol > 10 || avgRow > 10) {
-        let maxColVal = 0, maxColIdx = 0, maxRowVal = 0, maxRowIdx = 0;
-        for (let i = 0; i < 64; i++) {
-            if (colSum[i] > maxColVal) { maxColVal = colSum[i]; maxColIdx = i; }
-            if (rowSum[i] > maxRowVal) { maxRowVal = rowSum[i]; maxRowIdx = i; }
-        }
-        // Border zone: columns 0-19 or 44-63, rows 0-19 or 44-63
-        const colAtBorder = maxColIdx < 20 || maxColIdx > 43;
-        const rowAtBorder = maxRowIdx < 20 || maxRowIdx > 43;
-        edgeAlert = (avgCol > 10 && maxColVal > RT_EDGE_RATIO * avgCol && colAtBorder) ||
-                    (avgRow > 10 && maxRowVal > RT_EDGE_RATIO * avgRow && rowAtBorder);
-    }
-
-    // ── Consecutive counters ──────────────────────────────────────────────
-    _rtMoireConsec = moireAlert ? _rtMoireConsec + 1 : 0;
-    _rtEdgeConsec  = edgeAlert  ? _rtEdgeConsec  + 1 : 0;
-
-    const moireBlocked = _rtMoireConsec >= RT_CONSEC_THRESH;
-    const edgeBlocked  = _rtEdgeConsec  >= RT_CONSEC_THRESH;
-    const blocked = moireBlocked || edgeBlocked;
-
-    return {
-        moireAlert, edgeAlert, blocked,
-        reason: moireBlocked
-            ? 'ตรวจพบหน้าจอ (Moiré) — กรุณาใช้ใบหน้าจริงต่อหน้ากล้อง'
-            : edgeBlocked
-            ? 'ตรวจพบขอบวัตถุแปลกปลอม — กรุณานำโทรศัพท์/กระดาษออก'
-            : null,
-        sadCV: +sadCV.toFixed(3),
-        sadMean: +sadMean.toFixed(1),
-    };
-}
+// ─── _rtAnalyzeFrame + helpers are defined in rt_analyze.js (H5 fix) ──────────
+// rt_analyze.js is loaded before this file in enroll_face.html
 
 // ─── EAR samples collected during Step 4 capture ─────────────────────────────
 let earSamplesDuringCapture = [];
@@ -553,7 +417,8 @@ function _runBlinkCheck() {
             status.textContent = `กรุณากะพริบตา 1 ครั้ง (${Math.ceil(remaining / 1000)}s)`;
 
         } else if (blinkPhase === 'waiting_drop') {
-            if (ear > openEAR) openEAR = ear;   // track highest open EAR seen
+            // M10: openEAR locked at entry to this phase — do NOT update
+            // (updating it makes the drop threshold rise, making blink harder to detect)
             if (ear < openEAR * BLINK_DROP_RATIO) {
                 blinkPhase = 'waiting_recover';
                 status.textContent = '...';
@@ -657,7 +522,7 @@ function _onBlinkTimeout() {
     }
 }
 
-// ── Phase B: measure baseline EAR for 5 s ────────────────────────────────────
+// ── Phase B: measure baseline EAR for 2 s ────────────────────────────────────
 function _startEARMeasurement() {
     const video       = document.getElementById('videoCalib');
     const canvas      = document.getElementById('canvasCalib');
@@ -999,7 +864,8 @@ function _checkNeutral(lm) {
 
     const faceH = d(lm[10], lm[152]);
     const faceW = d(lm[234], lm[454]);
-    if (faceH === 0 || faceW === 0) return { ok: true, reason: null };
+    // M11: use epsilon threshold — values near 0 cause Infinity in ratio calculations
+    if (faceH < 1e-6 || faceW < 1e-6) return { ok: false, reason: 'ไม่พบใบหน้าที่ชัดเจน' };
 
     // Mouth open: gap between inner upper/lower lip
     const mouthGap = d(lm[13], lm[14]) / faceH;
@@ -1162,7 +1028,7 @@ function startCaptureWithDetection() {
 
         const now = Date.now();
         if (now - lastCaptureTime < CAPTURE_INTERVAL_MS) {
-            const remain = ((CAPTURE_INTERVAL_MS - (now - lastCaptureTime)) / 1000).toFixed(1);
+            const remain = Math.max(0, (CAPTURE_INTERVAL_MS - (now - lastCaptureTime)) / 1000).toFixed(1);
             status.textContent = `✓ พบใบหน้า — ถ่ายถัดไปใน ${remain}s (${capturedImages.length}/${TOTAL_FRAMES})`;
             return;
         }

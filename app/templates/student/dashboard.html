@@ -61,8 +61,8 @@
     <!-- Enrollment card -->
     <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col">
         <div class="flex items-center justify-between mb-4">
-            <div class="w-10 h-10 bg-{% if enrolled %}emerald{% else %}slate{% endif %}-50 rounded-xl flex items-center justify-center">
-                <svg class="w-5 h-5 text-{% if enrolled %}emerald{% else %}slate{% endif %}-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
+            <div class="w-10 h-10 {% if enrolled %}bg-emerald-50{% else %}bg-slate-50{% endif %} rounded-xl flex items-center justify-center">
+                <svg class="w-5 h-5 {% if enrolled %}text-emerald-600{% else %}text-slate-600{% endif %}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
             </div>
             {% if enrolled %}
             <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-full">

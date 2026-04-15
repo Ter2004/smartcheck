@@ -460,7 +460,9 @@ class InteractiveChallengeDetector {
                 width: 640, height: 480,
             });
             this._camera = camera;
-            camera.start().then(() => { startActionTimer(); });
+            camera.start()
+                .then(() => { startActionTimer(); })
+                .catch(() => { fail('ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการใช้กล้อง'); });
         });
     }
 }

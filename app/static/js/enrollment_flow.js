@@ -299,10 +299,13 @@ function goToStep(n) {
 // ─────────────────────────────────────────────
 // Step 1 — Consent
 // ─────────────────────────────────────────────
-// ติ้ก → ปุ่ม enable → ผู้ใช้กดปุ่มเอง (ไม่ auto-trigger เพื่อป้องกัน button re-disable ทันที)
 document.getElementById('consentCheck').addEventListener('change', function () {
     document.getElementById('btnConsent').disabled = !this.checked;
 });
+// Sync button state on page load — handles browser form-state restore (back/reload)
+// บราวเซอร์อาจ restore checkbox เป็น checked โดยไม่ fire change event
+document.getElementById('btnConsent').disabled =
+    !document.getElementById('consentCheck').checked;
 
 // ─── CSRF + device helpers ────────────────────────────────────────────────────
 function _csrfToken() {

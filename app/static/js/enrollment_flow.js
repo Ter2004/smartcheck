@@ -13,6 +13,55 @@ let captureCamera   = null;
 let calibEARValues  = [];
 let calibrating     = false;
 
+// ─── Anti-spoof overlay cache ─────────────────
+// Updated after each _callSpoofCheckSafe result.
+// Read every onResults frame to draw bounding box overlay.
+let _lastSpoofOverlay = null;   // { is_real: bool, score: float } | null
+
+/**
+ * Draw a coloured bounding box + REAL/SPOOF label on the canvas.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Array} lm   – MediaPipe 468-landmark array
+ * @param {number} w   – canvas pixel width
+ * @param {number} h   – canvas pixel height
+ * @param {object|null} result – { is_real, score } or null
+ */
+function _drawAntiSpoofBBox(ctx, lm, w, h, result) {
+    if (!lm || lm.length < 468) return;
+
+    // Bounding box from outer face landmarks + 10 px padding
+    const x1 = lm[234].x * w - 10;
+    const y1 = lm[10].y  * h - 10;
+    const bw = (lm[454].x - lm[234].x) * w + 20;
+    const bh = (lm[152].y - lm[10].y)  * h + 20;
+
+    const isReal = result ? (result.is_real ?? false) : null;
+    const score  = result ? (result.score  ?? result.confidence ?? 0) : 0;
+
+    const color = isReal === null ? 'rgba(148,163,184,0.7)'
+                : isReal          ? '#4ade80'
+                :                   '#f87171';
+    const label = isReal === null ? 'DETECTING...'
+                : isReal          ? `REAL ${score.toFixed(3)}`
+                :                   `SPOOF ${score.toFixed(3)}`;
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 2.5;
+    ctx.strokeRect(x1, y1, bw, bh);
+
+    ctx.font = 'bold 13px monospace';
+    const textW = ctx.measureText(label).width + 10;
+    const bgColor = isReal === null ? 'rgba(100,116,139,0.85)'
+                  : isReal          ? 'rgba(74,222,128,0.85)'
+                  :                   'rgba(248,113,113,0.85)';
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(x1, y1 - 22, textW, 20);
+    ctx.fillStyle = '#000';
+    ctx.fillText(label, x1 + 5, y1 - 7);
+    ctx.restore();
+}
+
 // ─── Shared FaceMesh singleton ────────────────
 // MediaPipe WASM can only be initialised once per page.
 // All steps share one FaceMesh; only the Camera and onResults handler change.
@@ -978,6 +1027,7 @@ function startCaptureWithDetection() {
 
         const lm = results.multiFaceLandmarks[0];
         drawFaceFeatures(ctx2, lm, canvas.width, canvas.height, 'rgba(255,255,255,0.7)');
+        _drawAntiSpoofBBox(ctx2, lm, canvas.width, canvas.height, _lastSpoofOverlay);
 
         // Collect EAR sample for temporal anti-spoof check
         earSamplesDuringCapture.push(_computeEAR(lm));
@@ -1060,6 +1110,8 @@ function startCaptureWithDetection() {
         }
         const sc = await _callSpoofCheckSafe(snapB64);
         _setSpoofLabel('spoofLabelCapture', sc.is_real, sc.confidence);
+        // Update overlay cache so bounding box reflects latest server result
+        if (!sc._networkError) _lastSpoofOverlay = { is_real: sc.is_real, score: sc.confidence };
 
         if (!sc.is_real) {
             if (sc._networkError) {
@@ -1281,6 +1333,7 @@ function _startSelfVerify() {
             return;
         }
         drawFaceFeatures(ctx, results.multiFaceLandmarks[0], canvas.width, canvas.height, 'rgba(74,222,128,0.9)');
+        _drawAntiSpoofBBox(ctx, results.multiFaceLandmarks[0], canvas.width, canvas.height, _lastSpoofOverlay);
         guide.classList.add('ok');
 
         if (!verifyReady) {
@@ -1485,6 +1538,7 @@ async function fullRestart() {
     _enrollSubmitting        = false;   // B5: release double-submit lock on full restart
     earSamplesDuringCapture  = [];
     _rtResetCounters();
+    _lastSpoofOverlay = null;   // clear overlay cache so old result doesn't bleed into next run
 
     // ล้าง liveness embeddings ที่ server (session["liveness_embeddings"])
     // await เพื่อให้ server clear session ก่อน UI reset — ป้องกัน race condition
@@ -1527,6 +1581,7 @@ function restartCapture() {
     _enrollSubmitting        = false;   // B5: release double-submit lock on capture restart
     earSamplesDuringCapture  = [];
     _rtResetCounters();
+    _lastSpoofOverlay = null;   // reset so overlay shows DETECTING... on new capture session
 
     stopStream(captureStream);
     captureStream = null;

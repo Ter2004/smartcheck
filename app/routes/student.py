@@ -713,7 +713,10 @@ def api_self_verify():
     if not bio_res or not bio_res.data:
         return jsonify({"status": "error", "message": "ไม่พบข้อมูล enrollment — กรุณาเริ่มใหม่"}), 400
 
-    verify_attempts = int(bio_res.data.get("verify_attempts") or 0)
+    try:
+        verify_attempts = int(bio_res.data.get("verify_attempts") or 0)
+    except (ValueError, TypeError):
+        verify_attempts = 0
 
     # ── Check attempt limit BEFORE expensive DeepFace call ───────────────────
     if verify_attempts >= MAX_VERIFY_ATTEMPTS:

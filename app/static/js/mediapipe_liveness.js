@@ -36,6 +36,7 @@ function noseRelX(lm) {
 
 /** Pitch proxy: nose y relative to forehead-chin span */
 function nosePitch(lm) {
+    if (!lm || lm.length < 468) return 0.5;
     const faceH = lm[152].y - lm[10].y;
     return faceH > 0 ? (lm[1].y - lm[10].y) / faceH : 0.5;
 }
@@ -268,7 +269,7 @@ class LivenessDetector {
 
                 const lm = results.multiFaceLandmarks[0];
 
-                // Real-time Moiré + edge check (defined in enrollment_flow.js)
+                // Real-time Moiré + edge check (defined in rt_analyze.js)
                 if (typeof _rtAnalyzeFrame === 'function') {
                     const rt = _rtAnalyzeFrame(this.video, lm);
                     if (rt) {
@@ -418,7 +419,7 @@ class InteractiveChallengeDetector {
 
                 const lm = results.multiFaceLandmarks[0];
 
-                // Real-time Moiré + edge check (defined in enrollment_flow.js)
+                // Real-time Moiré + edge check (defined in rt_analyze.js)
                 if (typeof _rtAnalyzeFrame === 'function') {
                     const rt = _rtAnalyzeFrame(this.video, lm);
                     if (rt) {

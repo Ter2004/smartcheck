@@ -1325,7 +1325,10 @@ function _startSelfVerify() {
         video.srcObject = stream;
         const cam = new Camera(video, { onFrame: async () => { if (!countingDown) await fm.send({ image: video }); }, width:640, height:480 });
         _stepCamera = cam;
-        cam.start();
+        cam.start().catch(() => {
+            status.textContent = 'ไม่สามารถเปิดกล้องได้ — กรุณาลองใหม่';
+            setTimeout(() => _startSelfVerify(), 2500);
+        });
         status.textContent = 'มองตรงกล้อง — ระบบจะถ่ายอัตโนมัติ';
     }).catch(e => alert('ไม่สามารถเปิดกล้องได้: ' + e.message));
 }

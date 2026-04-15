@@ -30,6 +30,7 @@ function calcEARFromLM(lm, indices) {
 
 /** Yaw: nose x position relative to face width (0=hard left, 0.5=centre, 1=hard right) */
 function noseRelX(lm) {
+    if (!lm || lm.length < 468) return 0.5;
     const faceW = lm[454].x - lm[234].x;
     return faceW > 0 ? (lm[1].x - lm[234].x) / faceW : 0.5;
 }

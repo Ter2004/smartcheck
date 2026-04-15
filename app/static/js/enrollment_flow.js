@@ -441,7 +441,12 @@ function _runBlinkCheck() {
         width: 640, height: 480,
     });
     _stepCamera = cam;
-    cam.start();
+    cam.start().catch(() => {
+        blinkDone = true;
+        calibrating = false;
+        document.getElementById('calibStatus').textContent = 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการใช้กล้อง';
+        document.getElementById('btnRetryBlink').style.display = 'block';
+    });
 }
 
 async function _onBlinkSuccess(blinkFrame) {
@@ -573,7 +578,12 @@ function _startEARMeasurement() {
         width: 640, height: 480,
     });
     _stepCamera = cam;
-    cam.start();
+    cam.start().catch(() => {
+        calibDone = true;
+        calibrating = false;
+        document.getElementById('calibStatus').textContent = 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการใช้กล้อง';
+        document.getElementById('btnRetryBlink').style.display = 'block';
+    });
 }
 
 async function finishCalibration() {

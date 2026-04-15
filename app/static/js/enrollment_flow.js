@@ -429,13 +429,7 @@ async function goToCalibration() {
         });
     } catch (e) { /* non-fatal — server will reject enroll if missing */ }
 
-    await _showStepModal(
-        '👁️',
-        'สอบเทียบการกะพริบตา',
-        'ระบบจะเปิดกล้อง แล้วให้คุณกะพริบตา 1 ครั้ง เพื่อยืนยันว่าเป็นคนจริง จากนั้นจะวัดค่า Baseline ของดวงตาอัตโนมัติ',
-        'พร้อมแล้ว เปิดกล้อง →'
-    );
-
+    // ไม่แสดง modal ซ้อนอีกชั้น — ผู้ใช้กด consent ไปแล้ว ไป Step 2 ทันที
     blinkAttempts      = 0;
     enrollmentSessionId = null;   // new session ID for spoof_check rate limiting
     goToStep(2);

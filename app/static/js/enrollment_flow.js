@@ -361,11 +361,19 @@ async function startCamera(videoId, onStream) {
         const stream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: 'user', width: 640, height: 480 }
         });
+        const vcCheck = await detectVirtualCamera(stream);
+        if (vcCheck.blocked) {
+            stream.getTracks().forEach(t => t.stop());
+            alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
+            throw new Error('Virtual Camera Detected');
+        }
         const video = document.getElementById(videoId);
         video.srcObject = stream;
         if (onStream) onStream(stream);
     } catch (e) {
-        alert('ไม่สามารถเปิดกล้องได้: ' + e.message);
+        if (e.message !== 'Virtual Camera Detected') {
+            alert('ไม่สามารถเปิดกล้องได้: ' + e.message);
+        }
     }
 }
 
@@ -710,6 +718,12 @@ async function startLivenessChallenge() {
         livenessStream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: 'user', width: 640, height: 480 }
         });
+        const vcCheck = await detectVirtualCamera(livenessStream);
+        if (vcCheck.blocked) {
+            livenessStream.getTracks().forEach(t => t.stop());
+            alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
+            return;
+        }
         document.getElementById('videoLiveness').srcObject = livenessStream;
     } catch (e) {
         alert('ไม่สามารถเปิดกล้องได้: ' + e.message);
@@ -1183,7 +1197,13 @@ function startCaptureWithDetection() {
 
     navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: 640, height: 480 }
-    }).then(stream => {
+    }).then(async stream => {
+        const vcCheck = await detectVirtualCamera(stream);
+        if (vcCheck.blocked) {
+            stream.getTracks().forEach(t => t.stop());
+            alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
+            throw new Error('Virtual Camera Detected');
+        }
         captureStream = stream;
         video.srcObject = stream;
         captureCamera = new Camera(video, {
@@ -1373,7 +1393,13 @@ function _startSelfVerify() {
     });
 
     navigator.mediaDevices.getUserMedia({ video: { facingMode:'user', width:640, height:480 } })
-    .then(stream => {
+    .then(async stream => {
+        const vcCheck = await detectVirtualCamera(stream);
+        if (vcCheck.blocked) {
+            stream.getTracks().forEach(t => t.stop());
+            alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
+            throw new Error('Virtual Camera Detected');
+        }
         verifyStream = stream;
         video.srcObject = stream;
         const cam = new Camera(video, { onFrame: async () => { if (!countingDown) await fm.send({ image: video }); }, width:640, height:480 });

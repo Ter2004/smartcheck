@@ -99,6 +99,13 @@ class CheckinFlow {
             this._camStream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'user', width: 640, height: 480 }
             });
+            const vcCheck = await detectVirtualCamera(this._camStream);
+            if (vcCheck.blocked) {
+                this._camStream.getTracks().forEach(t => t.stop());
+                status.textContent = 'ตรวจพบกล้องเสมือน — กรุณาใช้กล้องจริงเท่านั้น';
+                alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
+                throw new Error('Virtual Camera Detected');
+            }
             video.srcObject = this._camStream;
         } catch (e) {
             status.textContent = 'ไม่สามารถเปิดกล้องได้: ' + e.message;

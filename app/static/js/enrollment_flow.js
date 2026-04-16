@@ -549,7 +549,7 @@ async function startEarCheck() {
     }
 }
 
-function runEarCheck() {
+async function runEarCheck() {
     const DURATION_MS = 3000;
     const status = document.getElementById('earCheckStatus');
     const btn    = document.getElementById('btnEarCheckStart');
@@ -557,55 +557,87 @@ function runEarCheck() {
     const val    = document.getElementById('earValDisplay');
     const video  = document.getElementById('videoEarCheck');
 
-    // Bug 1 guard: if stream or video frame not ready, bail early with a helpful message
-    // (avoids a silent 3-second wait before "วัดไม่ได้ผล")
+    // Guard: bail early if stream/frame not ready (avoids silent 3s wait)
     if (!_earCheckStream || !video?.videoWidth) {
         if (status) status.textContent = 'กล้องยังไม่พร้อม — กรุณารอสักครู่แล้วลองใหม่';
         return;
+    }
+
+    // iOS Safari: video may be paused even though srcObject is set — force play()
+    if (video.paused) {
+        try { await video.play(); } catch (e) { console.warn('[EAR] video.play() failed:', e); }
     }
 
     if (btn)    btn.disabled = true;
     if (status) status.textContent = 'กำลังวัด EAR — ทำหน้าปกติ อยู่นิ่งๆ...';
     if (bar)    bar.style.width = '0%';
 
+    // Debug counters — TODO: remove after demo
+    let _dbgPumpCount     = 0;
+    let _dbgResultsCount  = 0;
+    let _dbgLandmarkCount = 0;
+    let _dbgSendErrors    = 0;
+
     const earSamples = [];
     const startTime  = Date.now();
     let   earDone    = false;
-    let   rafId      = null;
 
     const fm = _getSharedFM({ refineLandmarks: false });
-    // Bug 3: clear stale handler before installing a new one (handles retry case)
-    fm.onResults(() => {});
+
+    // Try explicit initialize for older iOS WebKit (no-op if method absent)
+    if (typeof fm.initialize === 'function') {
+        try { await fm.initialize(); } catch (e) { console.warn('[EAR] FaceMesh init:', e); }
+    }
+
+    // Install results handler (no need to clear first — second call replaces the previous)
     fm.onResults(results => {
+        _dbgResultsCount++;
         if (earDone) return;
         if (!results.multiFaceLandmarks?.length) return;
+        _dbgLandmarkCount++;
         const lm  = results.multiFaceLandmarks[0];
         const ear = _computeEAR(lm);
-        // Bug 2: relaxed range — iOS FaceMesh reports lower EAR than Android/desktop
+        // Relaxed range — iOS FaceMesh reports lower EAR (~0.10–0.25) than Android/desktop
         if (ear > 0.10 && ear < 0.45) earSamples.push(ear);
         if (val) val.textContent = ear.toFixed(3);
     });
 
-    // Bug 1 fix: pump frames ourselves via rAF — do NOT use new Camera()
-    // which conflicts with the srcObject already set by startEarCheck()
-    const pump = async () => {
-        if (earDone) return;
-        try { await fm.send({ image: video }); } catch (e) { /* ignore mid-frame errors */ }
+    // setInterval at 100ms (10 fps) instead of rAF — rAF can be throttled
+    // by iOS Safari when the tab is not fully in the foreground
+    const pumpInterval = setInterval(async () => {
+        if (earDone) { clearInterval(pumpInterval); return; }
+        _dbgPumpCount++;
+        try {
+            await fm.send({ image: video });
+        } catch (e) {
+            _dbgSendErrors++;
+            console.warn('[EAR] fm.send error:', e);
+        }
         const elapsed = Date.now() - startTime;
         const pct = Math.min(100, (elapsed / DURATION_MS) * 100);
         if (bar) bar.style.width = pct.toFixed(1) + '%';
-        if (elapsed >= DURATION_MS) { finish(); return; }
-        rafId = requestAnimationFrame(pump);
-    };
+        if (elapsed >= DURATION_MS) { clearInterval(pumpInterval); finish(); }
+    }, 100);
 
     const finish = () => {
         earDone = true;
-        if (rafId) cancelAnimationFrame(rafId);
+        clearInterval(pumpInterval);
         fm.onResults(() => {});   // detach handler
+
+        console.log('[EAR] debug:', {
+            pumps:        _dbgPumpCount,
+            results:      _dbgResultsCount,
+            landmarks:    _dbgLandmarkCount,
+            sendErrors:   _dbgSendErrors,
+            samples:      earSamples.length,
+            videoReady:   (video.videoWidth || 0) + 'x' + (video.videoHeight || 0),
+            videoPaused:  video.paused,
+            videoReadyState: video.readyState,
+        });
 
         if (earSamples.length < 10) {
             if (status) status.textContent =
-                `วัดไม่ได้ผล (เก็บได้ ${earSamples.length} ตัวอย่าง) — กรุณามองตรงกล้องแล้วลองใหม่`;
+                `วัดไม่ได้ผล (pumps=${_dbgPumpCount} results=${_dbgResultsCount}) — กรุณาลองใหม่`;
             if (btn) btn.disabled = false;
             if (bar) bar.style.width = '0%';
             return;
@@ -626,8 +658,6 @@ function runEarCheck() {
             startLivenessChallenge();
         });
     };
-
-    pump();
 }
 
 // ─────────────────────────────────────────────

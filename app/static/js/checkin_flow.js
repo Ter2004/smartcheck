@@ -13,10 +13,9 @@ class CheckinFlow {
         this.baselineEAR   = opts.baselineEAR;
         this.apiUrl        = opts.apiUrl || '/api/checkin';
 
-        this._bleRSSI          = null;
-        this._bleSkip          = false;
-        this._camStream        = null;
-        this._lastSpoofResult  = null;   // cache last passive spoof result for overlay
+        this._bleRSSI   = null;
+        this._bleSkip   = false;
+        this._camStream = null;
     }
 
     start() {
@@ -211,8 +210,6 @@ class CheckinFlow {
             this._drawFaceFeatures(ctx, lm, canvas.width, canvas.height,
                 faceOk ? 'rgba(74,222,128,0.95)' : 'rgba(255,255,255,0.6)');
 
-            // Anti-spoof bounding box overlay (อัปเดตทุก frame ด้วยผลล่าสุด)
-            this._drawAntiSpoofOverlay(ctx, lm, canvas.width, canvas.height, this._lastSpoofResult);
 
             if (faceOk) {
                 guide.classList.remove('fail');
@@ -233,12 +230,9 @@ class CheckinFlow {
                             body: JSON.stringify({ face_image: b64 }),
                         })
                         .then(r => r.json())
-                        .then(r => { passiveResult = r; this._lastSpoofResult = r; })
+                        .then(r => { passiveResult = r; })
                         // Fail-closed: network error → treat as spoof, not real
-                        .catch(() => {
-                            passiveResult = { real: false, score: 0.0, _networkError: true };
-                            this._lastSpoofResult = passiveResult;
-                        });
+                        .catch(() => { passiveResult = { real: false, score: 0.0, _networkError: true }; });
                     });
                 }
 
@@ -429,57 +423,6 @@ class CheckinFlow {
             ctx.stroke();
         });
         ctx.setLineDash([]);
-    }
-
-    /**
-     * Draw a coloured bounding box + REAL/SPOOF label on the canvas.
-     * Called every onResults frame with the cached _lastSpoofResult.
-     * @param {CanvasRenderingContext2D} ctx
-     * @param {Array} lm  – MediaPipe 468-landmark array
-     * @param {number} w  – canvas pixel width
-     * @param {number} h  – canvas pixel height
-     * @param {object|null} result – { real, score } or { is_real, confidence } or null
-     */
-    _drawAntiSpoofOverlay(ctx, lm, w, h, result) {
-        if (!lm || lm.length < 468) return;
-
-        // Bounding box from outer face landmarks (left-ear, right-ear, forehead, chin)
-        // Add 10 px padding so the box doesn't clip the face mesh lines
-        const x1 = lm[234].x * w - 10;
-        const y1 = lm[10].y  * h - 10;
-        const bw = (lm[454].x - lm[234].x) * w + 20;
-        const bh = (lm[152].y - lm[10].y)  * h + 20;
-
-        // Normalise field names (passive API uses .real/.score;
-        // _callSpoofCheckSafe uses .is_real/.confidence)
-        const isReal = result ? (result.real ?? result.is_real ?? false) : null;
-        const score  = result ? (result.score ?? result.confidence ?? 0) : 0;
-
-        // Colour scheme: green = real, red = spoof, grey = waiting
-        const color = isReal === null ? 'rgba(148,163,184,0.7)'
-                    : isReal          ? '#4ade80'
-                    :                   '#f87171';
-        const label = isReal === null ? 'DETECTING...'
-                    : isReal          ? `REAL ${score.toFixed(3)}`
-                    :                   `SPOOF ${score.toFixed(3)}`;
-
-        // Box
-        ctx.save();
-        ctx.strokeStyle = color;
-        ctx.lineWidth   = 2.5;
-        ctx.strokeRect(x1, y1, bw, bh);
-
-        // Label background + text
-        ctx.font = 'bold 13px monospace';
-        const textW = ctx.measureText(label).width + 10;
-        const bgColor = isReal === null ? 'rgba(100,116,139,0.85)'
-                      : isReal          ? 'rgba(74,222,128,0.85)'
-                      :                   'rgba(248,113,113,0.85)';
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(x1, y1 - 22, textW, 20);
-        ctx.fillStyle = '#000';
-        ctx.fillText(label, x1 + 5, y1 - 7);
-        ctx.restore();
     }
 
     _calcEAR(lm, idx) {

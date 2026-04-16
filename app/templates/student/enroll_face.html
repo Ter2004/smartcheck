@@ -123,6 +123,8 @@
         <div class="step-dot" id="dot3">3</div>
         <div class="flex-1 h-0.5 bg-slate-200" id="line3"></div>
         <div class="step-dot" id="dot4">4</div>
+        <div class="flex-1 h-0.5 bg-slate-200" id="line4"></div>
+        <div class="step-dot" id="dot5">5</div>
     </div>
 
     <!-- ─── Step 1: PDPA Consent ─── -->
@@ -180,8 +182,32 @@
         </button>
     </div>
 
-    <!-- ─── Step 3: Interactive Challenge ─── -->
-    <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="step3">
+    <!-- ─── Step 3: EAR Baseline ─── -->
+    <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="stepEarCheck">
+        <h3 class="text-sm font-semibold text-slate-800 mb-1">👁 ตรวจ EAR (Eye Aspect Ratio)</h3>
+        <p class="text-sm text-slate-500 mb-3">ระบบจะวัดค่า EAR ของดวงตาคุณ 3 วินาที เพื่อใช้เป็น baseline สำหรับตรวจการกะพริบตาในขั้นตอนถัดไป</p>
+        <div class="camera-box">
+            <video id="videoEarCheck" autoplay playsinline muted></video>
+            <div class="face-guide" id="faceGuideEarCheck"></div>
+        </div>
+        <!-- EAR measurement progress bar -->
+        <div class="flex items-center gap-2 mt-2 mb-1">
+            <span class="text-xs text-slate-400 w-12">EAR</span>
+            <div class="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                <div id="earProgressBar" class="h-2 bg-indigo-500 rounded-full transition-all duration-300" style="width:0%"></div>
+            </div>
+            <span id="earValDisplay" class="text-xs text-slate-400 w-12 text-right">—</span>
+        </div>
+        <p class="text-sm text-center min-h-[1.4em] mb-3" id="earCheckStatus">กำลังเปิดกล้อง...</p>
+        <button id="btnEarCheckStart"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-medium py-2.5 rounded-xl transition-colors"
+                disabled onclick="runEarCheck()">
+            เริ่มตรวจ EAR
+        </button>
+    </div>
+
+    <!-- ─── Step 4: Interactive Challenge ─── -->
+    <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="step4">
         <h3 class="text-sm font-semibold text-slate-800 mb-1">ยืนยันตัวตน (Interactive Challenge)</h3>
         <p class="text-sm text-slate-500 mb-3">ระบบจะสุ่ม 2 ท่า ทำตามลำดับเพื่อยืนยันว่าเป็นคนจริง</p>
         <div id="challengeSteps" class="flex gap-2 justify-center mb-3"></div>
@@ -197,12 +223,19 @@
         <p class="text-sm text-center text-slate-400" id="livenessStatus">กำลังเตรียม...</p>
     </div>
 
-    <!-- ─── Step 4: Auto-Capture ─── -->
-    <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="step4">
+    <!-- ─── Step 5: Auto-Capture ─── -->
+    <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="step5">
         <h3 class="text-sm font-semibold text-slate-800 mb-1">
             ถ่ายรูปใบหน้า <span id="captureProgress" class="text-xs font-normal text-slate-400">0/5</span>
         </h3>
         <p class="text-sm text-center text-slate-500 mb-3">มองตรงเข้ากล้อง อยู่นิ่ง ๆ — ระบบจะถ่ายให้อัตโนมัติ</p>
+
+        <!-- Start button shown before capture begins; hidden by JS after click -->
+        <button id="btnStartCapture"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors mb-4"
+                style="display:none" onclick="onStartCaptureClicked()">
+            📷 เริ่มถ่ายรูป
+        </button>
 
         <div id="autoCaptureSection">
             <div id="captureDots" class="flex gap-1.5 justify-center mb-3"></div>

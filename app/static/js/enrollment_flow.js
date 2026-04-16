@@ -105,20 +105,37 @@ function _warn(...args) { if (DEBUG) console.warn('[SmartCheck]', ...args); }
 
 // ─── T16: Step Transition Modal ───────────────────────────────────────────────
 let _modalResolve = null;
+let _modalAutoDismissTimer = null;
 
-function _showStepModal(icon, title, desc, btnText) {
+/**
+ * Show step transition modal.
+ * @param {string}      icon
+ * @param {string}      title
+ * @param {string}      desc
+ * @param {string|null} btnText        — button label; pass null when using autoDismissMs
+ * @param {number|null} autoDismissMs  — if set, hide button and auto-dismiss after N ms
+ */
+function _showStepModal(icon, title, desc, btnText, autoDismissMs) {
     return new Promise(resolve => {
         _modalResolve = resolve;
         document.getElementById('stepModalIcon').textContent  = icon;
         document.getElementById('stepModalTitle').textContent = title;
         document.getElementById('stepModalDesc').textContent  = desc;
-        document.getElementById('stepModalBtn').textContent   = btnText || 'เข้าใจแล้ว เริ่มเลย →';
-        const modal = document.getElementById('stepModal');
-        modal.style.display = 'flex';
+        const btn = document.getElementById('stepModalBtn');
+        if (autoDismissMs) {
+            btn.style.display = 'none';
+            _modalAutoDismissTimer = setTimeout(_dismissStepModal, autoDismissMs);
+        } else {
+            btn.style.display = '';
+            btn.textContent = btnText || 'เข้าใจแล้ว เริ่มเลย →';
+        }
+        document.getElementById('stepModal').style.display = 'flex';
     });
 }
 
 function _dismissStepModal() {
+    // Clear auto-dismiss timer to prevent double-fire if user taps the button manually
+    if (_modalAutoDismissTimer) { clearTimeout(_modalAutoDismissTimer); _modalAutoDismissTimer = null; }
     document.getElementById('stepModal').style.display = 'none';
     if (_modalResolve) { _modalResolve(); _modalResolve = null; }
 }
@@ -152,7 +169,10 @@ function goToStep(n) {
     document.querySelectorAll('.step').forEach((el, i) => {
         el.classList.toggle('active', i + 1 === n);
     });
-    for (let i = 1; i <= 4; i++) {
+    // Dynamic: count actual dot elements so this function never needs updating
+    // when steps are added or removed from the HTML
+    const dotCount = document.querySelectorAll('.step-dot').length;
+    for (let i = 1; i <= dotCount; i++) {
         const dot = document.getElementById('dot' + i);
         if (dot) {
             dot.classList.toggle('active', i <= n);
@@ -249,6 +269,7 @@ async function _callSpoofCheckSafe(imageB64) {
 // Stop every active stream + camera; safe to call multiple times
 function _stopAllStreams() {
     stopLightCheck();
+    stopEarCheck();
     [calibStream, captureStream, verifyStream, livenessStream].forEach(s => {
         if (s) { try { s.getTracks().forEach(t => t.stop()); } catch(e) {} }
     });
@@ -352,11 +373,12 @@ function calcEAR(landmarks, indices) {
 // ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
-// Step 2 — Lighting Check
+// Step 2 — Lighting Check + Anti-Spoof (Moiré/edge)
 // ─────────────────────────────────────────────
-let _lightCheckStream = null;
-let _lightCheckTimer  = null;
-let _lightOkConsec    = 0;   // consecutive ok readings — auto-proceed after 3
+let _lightCheckStream  = null;
+let _lightCheckTimer   = null;
+let _lightOkConsec     = 0;     // consecutive ok readings — auto-proceed after 3
+let _lightSpoofBlocked = false; // set true when rt-spoof fires; gates interval + auto-proceed
 
 function stopLightCheck() {
     if (_lightCheckTimer) { clearInterval(_lightCheckTimer); _lightCheckTimer = null; }
@@ -367,7 +389,10 @@ function stopLightCheck() {
 }
 
 async function startLightCheck() {
-    _lightOkConsec = 0;
+    _lightOkConsec     = 0;
+    _lightSpoofBlocked = false;
+    _rtResetCounters();   // reset Moiré/edge consecutive counters from a previous run
+
     const btn    = document.getElementById('btnLightCheckNext');
     const status = document.getElementById('lightCheckStatus');
     const guide  = document.getElementById('faceGuideLightCheck');
@@ -394,13 +419,46 @@ async function startLightCheck() {
         const video = document.getElementById('videoLightCheck');
         video.srcObject = stream;
 
-        // Poll _checkCameraConditions every 500ms
+        // ── Shared FaceMesh for real-time Moiré + edge anti-spoof ─────────
+        const fm = _getSharedFM({ refineLandmarks: false });
+        fm.onResults(results => {
+            if (_lightSpoofBlocked) return;
+            if (!results.multiFaceLandmarks?.length) return;
+            const lm = results.multiFaceLandmarks[0];
+            const rt = _rtAnalyzeFrame(video, lm);
+            if (rt && rt.blocked) {
+                _lightSpoofBlocked = true;
+                _showSpoofWarn();
+                stopLightCheck();
+                _stopStepCamera();
+                if (status) { status.textContent = rt.reason; status.style.color = '#dc2626'; }
+                if (guide)  { guide.classList.remove('ok'); guide.classList.add('fail'); }
+                if (btn)    btn.disabled = true;
+                setTimeout(() => {
+                    _lightSpoofBlocked = false;
+                    _rtResetCounters();
+                    startLightCheck();
+                }, 3000);
+            }
+        });
+        const cam = new Camera(video, {
+            onFrame: async () => {
+                if (!_lightSpoofBlocked) await fm.send({ image: video });
+            },
+            width: 640, height: 480,
+        });
+        _stepCamera = cam;
+        cam.start();
+        // ─────────────────────────────────────────────────────────────────
+
+        // Poll _checkCameraConditions every 500ms for brightness + backlight
         _lightCheckTimer = setInterval(() => {
+            if (_lightSpoofBlocked) return;
             if (!video.videoWidth) return;
 
             const result = _checkCameraConditions(video);
 
-            // Read brightness value that _checkCameraConditions already wrote to captureCanvas
+            // Read brightness that _checkCameraConditions already wrote to captureCanvas
             const c   = document.getElementById('captureCanvas');
             const ctx = c.getContext('2d');
             const d   = ctx.getImageData(0, 0, 320, 240).data;
@@ -437,14 +495,127 @@ async function startLightCheck() {
     }
 }
 
-function proceedFromLightCheck() {
+async function proceedFromLightCheck() {
+    if (_lightSpoofBlocked) return;   // guard against interval firing mid-spoof-block
     stopLightCheck();
+    _stopStepCamera();
+    await _showStepModal('✓', 'แสงผ่าน — ตรวจพบใบหน้าจริง',
+        'ระบบตรวจสอบแสงและยืนยันว่าเป็นใบหน้าจริงแล้ว', null, 1500);
     goToStep(3);
-    startLivenessChallenge();
+    startEarCheck();
 }
 
 // ─────────────────────────────────────────────
-// Step 3 — Interactive Challenge (2 actions)
+// Step 3 — EAR Baseline Calibration
+// ─────────────────────────────────────────────
+let _earCheckStream = null;
+
+function stopEarCheck() {
+    if (_earCheckStream) {
+        _earCheckStream.getTracks().forEach(t => t.stop());
+        _earCheckStream = null;
+    }
+    _stopStepCamera();
+}
+
+async function startEarCheck() {
+    const status = document.getElementById('earCheckStatus');
+    const btn    = document.getElementById('btnEarCheckStart');
+    const bar    = document.getElementById('earProgressBar');
+    const val    = document.getElementById('earValDisplay');
+
+    if (status) status.textContent = 'กำลังเปิดกล้อง...';
+    if (btn)    btn.disabled = true;
+    if (bar)    bar.style.width = '0%';
+    if (val)    val.textContent = '—';
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: 640, height: 480 }
+        });
+        const vcCheck = await detectVirtualCamera(stream);
+        if (vcCheck.blocked) {
+            stream.getTracks().forEach(t => t.stop());
+            alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
+            return;
+        }
+        _earCheckStream = stream;
+        const video = document.getElementById('videoEarCheck');
+        video.srcObject = stream;
+        if (status) status.textContent = 'กรุณาทำหน้าปกติ ลืมตาตามปกติ แล้วกดปุ่ม';
+        if (btn)    btn.disabled = false;
+    } catch (e) {
+        if (status) status.textContent = 'ไม่สามารถเปิดกล้องได้: ' + e.message;
+    }
+}
+
+function runEarCheck() {
+    const DURATION_MS = 3000;
+    const status  = document.getElementById('earCheckStatus');
+    const btn     = document.getElementById('btnEarCheckStart');
+    const bar     = document.getElementById('earProgressBar');
+    const val     = document.getElementById('earValDisplay');
+    const video   = document.getElementById('videoEarCheck');
+
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = 'กำลังวัด EAR — ทำหน้าปกติ อยู่นิ่งๆ...';
+    if (bar)    bar.style.width = '0%';
+
+    const earSamples = [];
+    const startTime  = Date.now();
+    let   earDone    = false;
+
+    const fm = _getSharedFM({ refineLandmarks: false });
+    fm.onResults(results => {
+        if (earDone) return;
+        if (!results.multiFaceLandmarks?.length) return;
+        const lm  = results.multiFaceLandmarks[0];
+        const ear = _computeEAR(lm);
+        // Accept only physiologically plausible open-eye EAR values
+        if (ear > EAR_OPEN_THRESHOLD && ear < 0.5) earSamples.push(ear);
+        const pct = Math.min(Math.round((Date.now() - startTime) / DURATION_MS * 100), 100);
+        if (bar) bar.style.width = pct + '%';
+        if (val) val.textContent = ear.toFixed(3);
+    });
+
+    const cam = new Camera(video, {
+        onFrame: async () => { if (!earDone) await fm.send({ image: video }); },
+        width: 640, height: 480,
+    });
+    _stepCamera = cam;
+    cam.start();
+
+    // Evaluate after 3 seconds
+    setTimeout(() => {
+        earDone = true;
+        _stopStepCamera();
+        if (bar) bar.style.width = '100%';
+
+        if (earSamples.length < 10) {
+            if (status) status.textContent = 'วัดไม่ได้ผล — ตรวจสอบใบหน้าในกรอบแล้วลองอีกครั้ง';
+            if (btn)    btn.disabled = false;
+            return;
+        }
+
+        const sorted = [...earSamples].sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)];
+        baselineEAR  = median;
+        if (val)    val.textContent = median.toFixed(3);
+        if (status) status.textContent = `✓ EAR baseline = ${median.toFixed(3)}`;
+
+        _showStepModal('✓', 'วัด EAR สำเร็จ',
+            `ค่า EAR baseline ของคุณ = ${median.toFixed(3)} — ระบบพร้อมสำหรับ Liveness Challenge`,
+            null, 1500
+        ).then(() => {
+            stopEarCheck();
+            goToStep(4);
+            startLivenessChallenge();
+        });
+    }, DURATION_MS);
+}
+
+// ─────────────────────────────────────────────
+// Step 4 — Interactive Challenge (2 actions)
 // ─────────────────────────────────────────────
 let livenessStream = null;
 
@@ -615,14 +786,14 @@ async function startLivenessChallenge() {
     if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());
 
     await _showStepModal(
-        '📸',
-        'ถ่ายรูปใบหน้า 5 รูป',
-        'ระบบจะถ่ายรูปอัตโนมัติ 5 ครั้ง — มองตรงกล้อง ทำหน้าปกติ อยู่นิ่งๆ ในที่ที่มีแสงเพียงพอ',
-        'พร้อมถ่ายรูป →'
+        '✓',
+        'ยืนยันตัวตนผ่าน',
+        'ทำท่าทางครบทั้ง 2 ท่าเรียบร้อยแล้ว — กดปุ่มเมื่อพร้อมถ่ายรูปใบหน้า 5 รูป',
+        null, 1500
     );
 
-    goToStep(4);
-    startCaptureWithDetection();
+    goToStep(5);
+    prepareCaptureStep();
 }
 
 // ─────────────────────────────────────────────
@@ -652,8 +823,23 @@ function drawFaceFeatures(ctx, lm, w, h, color) {
 }
 
 // ─────────────────────────────────────────────
-// Step 4 — Auto-Capture (frontal, 5 frames)
+// Step 5 — Auto-Capture (frontal, 5 frames)
 // ─────────────────────────────────────────────
+
+// Show "เริ่มถ่ายรูป" button; camera starts only after user confirms
+function prepareCaptureStep() {
+    const btnStart = document.getElementById('btnStartCapture');
+    const status   = document.getElementById('captureStatus');
+    if (btnStart) btnStart.style.display = 'block';
+    if (status)   status.textContent = 'กดปุ่มเมื่อพร้อม';
+}
+
+function onStartCaptureClicked() {
+    const btnStart = document.getElementById('btnStartCapture');
+    if (btnStart) btnStart.style.display = 'none';
+    startCaptureWithDetection();
+}
+
 
 function _checkFrontal(lm) {
     const nose     = lm[1];
@@ -1194,7 +1380,7 @@ function _hideChecking() {
 function _showResult(type, msg) {
     // B6: always stop camera streams when reaching terminal state
     _stopAllStreams();
-    goToStep(4);
+    goToStep(5);
     document.getElementById('autoCaptureSection').style.display = 'none';
     document.getElementById('checkingSection').style.display    = 'none';
     document.getElementById('resultSection').style.display      = 'block';
@@ -1239,6 +1425,16 @@ async function fullRestart() {
     _clearSpoofLabel('spoofLabelLiveness');
     _clearSpoofLabel('spoofLabelCapture');
 
+    // Reset EAR display for fresh calibration in step 3
+    const earStatus = document.getElementById('earCheckStatus');
+    const earBar    = document.getElementById('earProgressBar');
+    const earVal    = document.getElementById('earValDisplay');
+    const earBtn    = document.getElementById('btnEarCheckStart');
+    if (earStatus) earStatus.textContent = 'กำลังเปิดกล้อง...';
+    if (earBar)    earBar.style.width = '0%';
+    if (earVal)    earVal.textContent = '—';
+    if (earBtn)    earBtn.disabled = true;
+
     _updateCaptureDots();
     goToStep(2);
     startLightCheck();
@@ -1267,6 +1463,6 @@ function restartCapture() {
     _clearSpoofLabel('spoofLabelCapture');
 
     _updateCaptureDots();
-    goToStep(4);
-    startCaptureWithDetection();
+    goToStep(5);
+    prepareCaptureStep();
 }

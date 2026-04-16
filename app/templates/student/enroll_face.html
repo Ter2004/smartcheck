@@ -121,6 +121,8 @@
         <div class="step-dot" id="dot2">2</div>
         <div class="flex-1 h-0.5 bg-slate-200" id="line2"></div>
         <div class="step-dot" id="dot3">3</div>
+        <div class="flex-1 h-0.5 bg-slate-200" id="line3"></div>
+        <div class="step-dot" id="dot4">4</div>
     </div>
 
     <!-- ─── Step 1: PDPA Consent ─── -->
@@ -151,6 +153,30 @@
         <button class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded-xl transition-colors"
                 id="btnConsent" disabled onclick="goToLiveness()">
             ยืนยันและดำเนินการต่อ →
+        </button>
+    </div>
+
+    <!-- ─── Step 2: Lighting Check ─── -->
+    <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="stepLightCheck">
+        <h3 class="text-sm font-semibold text-slate-800 mb-1">🔆 ตรวจสอบแสง</h3>
+        <p class="text-sm text-slate-500 mb-3">ระบบตรวจสอบว่าแสงเพียงพอ — ยืนอยู่ในที่มีแสงสว่าง ไม่มีแสงจ้าด้านหลัง</p>
+        <div class="camera-box">
+            <video id="videoLightCheck" autoplay playsinline muted></video>
+            <div class="face-guide" id="faceGuideLightCheck"></div>
+        </div>
+        <!-- brightness meter bar -->
+        <div class="flex items-center gap-2 mt-2 mb-1">
+            <span class="text-xs text-slate-400 w-12">แสง</span>
+            <div class="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                <div id="lightMeterBar" class="h-2 rounded-full transition-all duration-300" style="width:0%;background:#4f46e5"></div>
+            </div>
+            <span id="lightMeterVal" class="text-xs text-slate-400 w-8 text-right">—</span>
+        </div>
+        <p class="text-sm text-center min-h-[1.4em] mb-3" id="lightCheckStatus">กำลังเปิดกล้อง...</p>
+        <button id="btnLightCheckNext"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-medium py-2.5 rounded-xl transition-colors"
+                disabled onclick="proceedFromLightCheck()">
+            ดำเนินการต่อ →
         </button>
     </div>
 

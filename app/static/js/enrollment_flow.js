@@ -150,7 +150,7 @@ function goToStep(n) {
     document.querySelectorAll('.step').forEach((el, i) => {
         el.classList.toggle('active', i + 1 === n);
     });
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= 4; i++) {
         const dot = document.getElementById('dot' + i);
         if (dot) {
             dot.classList.toggle('active', i <= n);
@@ -246,6 +246,7 @@ async function _callSpoofCheckSafe(imageB64) {
 
 // Stop every active stream + camera; safe to call multiple times
 function _stopAllStreams() {
+    stopLightCheck();
     [calibStream, captureStream, verifyStream, livenessStream].forEach(s => {
         if (s) { try { s.getTracks().forEach(t => t.stop()); } catch(e) {} }
     });
@@ -299,8 +300,8 @@ async function goToLiveness() {
 
     challengeAttempts   = 0;
     enrollmentSessionId = null;   // new session ID for spoof_check rate limiting
-    goToStep(2);   // step index 2 → liveness (step3 element, position 2 after step2 removed)
-    startLivenessChallenge();
+    goToStep(2);   // step index 2 → light check (stepLightCheck element, position 2)
+    startLightCheck();
 }
 
 // ─────────────────────────────────────────────
@@ -349,7 +350,99 @@ function calcEAR(landmarks, indices) {
 // ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
-// Step 2 — Interactive Challenge (2 actions)
+// Step 2 — Lighting Check
+// ─────────────────────────────────────────────
+let _lightCheckStream = null;
+let _lightCheckTimer  = null;
+let _lightOkConsec    = 0;   // consecutive ok readings — auto-proceed after 3
+
+function stopLightCheck() {
+    if (_lightCheckTimer) { clearInterval(_lightCheckTimer); _lightCheckTimer = null; }
+    if (_lightCheckStream) {
+        _lightCheckStream.getTracks().forEach(t => t.stop());
+        _lightCheckStream = null;
+    }
+}
+
+async function startLightCheck() {
+    _lightOkConsec = 0;
+    const btn    = document.getElementById('btnLightCheckNext');
+    const status = document.getElementById('lightCheckStatus');
+    const guide  = document.getElementById('faceGuideLightCheck');
+    const bar    = document.getElementById('lightMeterBar');
+    const val    = document.getElementById('lightMeterVal');
+
+    if (btn)    btn.disabled = true;
+    if (status) status.textContent = 'กำลังเปิดกล้อง...';
+    if (guide)  guide.className = 'face-guide';
+    if (bar)    { bar.style.width = '0%'; bar.style.background = '#4f46e5'; }
+    if (val)    val.textContent = '—';
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: 640, height: 480 }
+        });
+        const vcCheck = await detectVirtualCamera(stream);
+        if (vcCheck.blocked) {
+            stream.getTracks().forEach(t => t.stop());
+            alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
+            return;
+        }
+        _lightCheckStream = stream;
+        const video = document.getElementById('videoLightCheck');
+        video.srcObject = stream;
+
+        // Poll _checkCameraConditions every 500ms
+        _lightCheckTimer = setInterval(() => {
+            if (!video.videoWidth) return;
+
+            const result = _checkCameraConditions(video);
+
+            // Read brightness value that _checkCameraConditions already wrote to captureCanvas
+            const c   = document.getElementById('captureCanvas');
+            const ctx = c.getContext('2d');
+            const d   = ctx.getImageData(0, 0, 320, 240).data;
+            let b = 0, n = 0;
+            for (let i = 0; i < d.length; i += 4 * 8) {
+                b += 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+                n++;
+            }
+            const avgB = n > 0 ? b / n : 0;
+            const pct  = Math.min(Math.round(avgB / 255 * 100), 100);
+
+            if (bar) {
+                bar.style.width = pct + '%';
+                bar.style.background = avgB < 55 ? '#ef4444' : avgB > 210 ? '#f59e0b' : '#22c55e';
+            }
+            if (val) val.textContent = Math.round(avgB);
+
+            if (result.ok) {
+                if (guide) { guide.classList.remove('fail'); guide.classList.add('ok'); }
+                if (status) { status.textContent = '✓ แสงดี — พร้อมดำเนินการต่อ'; status.style.color = '#16a34a'; }
+                if (btn)    btn.disabled = false;
+                _lightOkConsec++;
+                if (_lightOkConsec >= 3) proceedFromLightCheck();
+            } else {
+                if (guide)  { guide.classList.remove('ok'); guide.classList.add('fail'); }
+                if (status) { status.textContent = result.reason; status.style.color = '#dc2626'; }
+                if (btn)    btn.disabled = true;
+                _lightOkConsec = 0;
+            }
+        }, 500);
+
+    } catch (e) {
+        if (status) status.textContent = 'ไม่สามารถเปิดกล้องได้: ' + e.message;
+    }
+}
+
+function proceedFromLightCheck() {
+    stopLightCheck();
+    goToStep(3);
+    startLivenessChallenge();
+}
+
+// ─────────────────────────────────────────────
+// Step 3 — Interactive Challenge (2 actions)
 // ─────────────────────────────────────────────
 let livenessStream = null;
 
@@ -526,7 +619,7 @@ async function startLivenessChallenge() {
         'พร้อมถ่ายรูป →'
     );
 
-    goToStep(3);
+    goToStep(4);
     startCaptureWithDetection();
 }
 
@@ -1099,7 +1192,7 @@ function _hideChecking() {
 function _showResult(type, msg) {
     // B6: always stop camera streams when reaching terminal state
     _stopAllStreams();
-    goToStep(3);
+    goToStep(4);
     document.getElementById('autoCaptureSection').style.display = 'none';
     document.getElementById('checkingSection').style.display    = 'none';
     document.getElementById('resultSection').style.display      = 'block';
@@ -1146,7 +1239,7 @@ async function fullRestart() {
 
     _updateCaptureDots();
     goToStep(2);
-    startLivenessChallenge();
+    startLightCheck();
 }
 
 // Partial restart — back to Step 4 only; server-side liveness embeddings ยังอยู่
@@ -1172,6 +1265,6 @@ function restartCapture() {
     _clearSpoofLabel('spoofLabelCapture');
 
     _updateCaptureDots();
-    goToStep(3);
+    goToStep(4);
     startCaptureWithDetection();
 }

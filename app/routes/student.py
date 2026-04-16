@@ -625,13 +625,45 @@ def api_enroll():
 
     _log(user_id, "duplicate_check", "pass")
 
-    # ── 10. Save embeddings — consent_given=True (self-verify step removed) ─────
+    # ── 10. Save embeddings — finalize immediately (self-verify step removed) ────
+    from datetime import datetime, timezone
+    import base64 as _b64
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    integrity_hash = None
+    try:
+        integrity_hash = compute_embedding_integrity_hash(
+            user_id,
+            embeddings,
+            current_app.config["EMBEDDING_INTEGRITY_SALT"],
+        )
+    except Exception as ih_err:
+        _log(user_id, "integrity_hash", "warning", str(ih_err)[:80])
+
     supabase_admin.table("student_biometrics").upsert({
         "user_id":         user_id,
         "face_embeddings": embeddings,
         "baseline_ear":    baseline_ear,
         "consent_given":   True,
+        "consent_at":      session.get("consent_given_at") or now_iso,
+        "enrolled_at":     now_iso,
+        "integrity_hash":  integrity_hash,
+        "verify_attempts": 0,
     }, on_conflict="user_id").execute()
+
+    # Upload first capture frame as profile image (non-fatal)
+    try:
+        raw = face_images[0].split(",")[1] if "," in face_images[0] else face_images[0]
+        face_path = f"{user_id}.jpg"
+        supabase_admin.storage.from_("face-images").upload(
+            face_path, _b64.b64decode(raw),
+            file_options={"content-type": "image/jpeg", "upsert": "true"},
+        )
+        supabase_admin.table("student_biometrics") \
+            .update({"face_image_url": face_path}).eq("user_id", user_id).execute()
+    except Exception as upload_err:
+        _log(user_id, "image_upload", "warning", str(upload_err)[:80])
 
     session["enroll_baseline_ear"] = baseline_ear
     session.pop("enroll_retry", None)

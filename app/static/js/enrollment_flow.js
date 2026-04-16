@@ -565,7 +565,7 @@ async function runEarCheck() {
 
     // iOS Safari: video may be paused even though srcObject is set — force play()
     if (video.paused) {
-        try { await video.play(); } catch (e) { console.warn('[EAR] video.play() failed:', e); }
+        try { await video.play(); } catch (e) { console.warn('[EAR] play:', e); }
     }
 
     if (btn)    btn.disabled = true;
@@ -573,23 +573,26 @@ async function runEarCheck() {
     if (bar)    bar.style.width = '0%';
 
     // Debug counters — TODO: remove after demo
-    let _dbgPumpCount     = 0;
-    let _dbgResultsCount  = 0;
-    let _dbgLandmarkCount = 0;
-    let _dbgSendErrors    = 0;
+    let _dbgPumpCount = 0, _dbgResultsCount = 0, _dbgLandmarkCount = 0, _dbgSendErrors = 0;
 
     const earSamples = [];
     const startTime  = Date.now();
     let   earDone    = false;
+    let   pumpInterval = null;
 
-    const fm = _getSharedFM({ refineLandmarks: false });
+    // Create a FRESH FaceMesh instance for this step.
+    // Root cause of pumps=26/results=0 on iOS Safari: reusing _sharedFM across steps
+    // leaves the WASM graph in a stale state where send() succeeds but onResults never fires.
+    // A new instance + explicit initialize() guarantees a clean pipeline.
+    const fm = new FaceMesh({ locateFile: f =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+    fm.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence:  0.5,
+    });
 
-    // Try explicit initialize for older iOS WebKit (no-op if method absent)
-    if (typeof fm.initialize === 'function') {
-        try { await fm.initialize(); } catch (e) { console.warn('[EAR] FaceMesh init:', e); }
-    }
-
-    // Install results handler (no need to clear first — second call replaces the previous)
     fm.onResults(results => {
         _dbgResultsCount++;
         if (earDone) return;
@@ -602,37 +605,33 @@ async function runEarCheck() {
         if (val) val.textContent = ear.toFixed(3);
     });
 
+    // Explicit initialize — required for older iOS WebKit to wire up the WASM graph
+    try { await fm.initialize(); } catch (e) { console.warn('[EAR] init:', e); }
+
     // setInterval at 100ms (10 fps) instead of rAF — rAF can be throttled
-    // by iOS Safari when the tab is not fully in the foreground
-    const pumpInterval = setInterval(async () => {
-        if (earDone) { clearInterval(pumpInterval); return; }
+    // by iOS Safari when not fully in foreground
+    pumpInterval = setInterval(async () => {
+        if (earDone) return;
         _dbgPumpCount++;
-        try {
-            await fm.send({ image: video });
-        } catch (e) {
-            _dbgSendErrors++;
-            console.warn('[EAR] fm.send error:', e);
-        }
+        try { await fm.send({ image: video }); }
+        catch (e) { _dbgSendErrors++; console.warn('[EAR] send:', e); }
         const elapsed = Date.now() - startTime;
         const pct = Math.min(100, (elapsed / DURATION_MS) * 100);
         if (bar) bar.style.width = pct.toFixed(1) + '%';
-        if (elapsed >= DURATION_MS) { clearInterval(pumpInterval); finish(); }
+        if (elapsed >= DURATION_MS) finish();
     }, 100);
 
     const finish = () => {
         earDone = true;
-        clearInterval(pumpInterval);
-        fm.onResults(() => {});   // detach handler
+        if (pumpInterval) clearInterval(pumpInterval);
+        try { fm.close(); } catch(e) {}   // release WASM resources immediately
 
         console.log('[EAR] debug:', {
-            pumps:        _dbgPumpCount,
-            results:      _dbgResultsCount,
-            landmarks:    _dbgLandmarkCount,
-            sendErrors:   _dbgSendErrors,
-            samples:      earSamples.length,
-            videoReady:   (video.videoWidth || 0) + 'x' + (video.videoHeight || 0),
-            videoPaused:  video.paused,
-            videoReadyState: video.readyState,
+            pumps: _dbgPumpCount, results: _dbgResultsCount,
+            landmarks: _dbgLandmarkCount, sendErrors: _dbgSendErrors,
+            samples: earSamples.length,
+            videoSize: (video.videoWidth || 0) + 'x' + (video.videoHeight || 0),
+            videoPaused: video.paused, readyState: video.readyState,
         });
 
         if (earSamples.length < 10) {
@@ -650,7 +649,7 @@ async function runEarCheck() {
         if (status) status.textContent = `✓ EAR baseline = ${median.toFixed(3)}`;
 
         _showStepModal('✓', 'วัด EAR สำเร็จ',
-            `ค่า EAR baseline ของคุณ = ${median.toFixed(3)} — ระบบพร้อมสำหรับ Liveness Challenge`,
+            `ค่า EAR baseline = ${median.toFixed(3)} — ระบบพร้อม Liveness Challenge`,
             null, 1500
         ).then(() => {
             stopEarCheck();

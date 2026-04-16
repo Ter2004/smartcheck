@@ -75,27 +75,22 @@ function buildActionChecker(action, baselineEAR) {
     }
 
     if (action === 'smile') {
-        // Require neutral → smile → neutral transition (static photo with smile cannot pass)
-        const SMILE_ON  = 0.42;   // ratio above this = smiling
-        const SMILE_OFF = 0.35;   // ratio below this = relaxed/neutral
-        let smileDetected = false;
+        // Detect sustained smile (no neutral-return requirement — too hard in practice)
+        const SMILE_ON    = 0.40;   // ratio above this = smiling
+        const SMILE_FRAMES = 4;    // sustain for 4 consecutive frames
+        let smileFrames = 0;
         return {
             check(lm) {
                 const mouthW = dist2D(lm[61], lm[291]);
                 const faceW  = dist2D(lm[234], lm[454]);
                 const ratio  = faceW > 0 ? mouthW / faceW : 0;
-                if (!smileDetected) {
-                    if (ratio > SMILE_ON) {
-                        smileDetected = true;
-                        return { done: false, statusText: '😊 ยิ้มแล้ว — ผ่อนคลายปากให้เป็นปกติ' };
-                    }
-                    return { done: false, statusText: `กรุณายิ้มให้กว้าง (${ratio.toFixed(3)})` };
+                if (ratio > SMILE_ON) {
+                    smileFrames++;
+                    if (smileFrames >= SMILE_FRAMES) return { done: true, statusText: '✓ ยิ้มสำเร็จ!' };
+                    return { done: false, statusText: `😊 ยิ้มค้างไว้... (${smileFrames}/${SMILE_FRAMES})` };
                 }
-                // Waiting for mouth to relax back to neutral
-                if (ratio < SMILE_OFF) {
-                    return { done: true, statusText: '✓ ยิ้มสำเร็จ!' };
-                }
-                return { done: false, statusText: `ผ่อนคลายปากให้เป็นปกติ (${ratio.toFixed(3)})` };
+                smileFrames = 0;
+                return { done: false, statusText: `กรุณายิ้มให้กว้าง (${ratio.toFixed(3)})` };
             }
         };
     }
@@ -137,16 +132,17 @@ function buildActionChecker(action, baselineEAR) {
     }
 
     if (action === 'nod') {
-        // Detect pitch swing: neutral → down (pitchRel > 0.60) → back (< 0.55)
+        // Detect pitch swing: neutral → down (pitchRel > 0.57) → back (< 0.51)
+        // Lowered thresholds — typical neutral pitch is 0.50–0.55, so 0.60 was too far
         let nodDown = false;
         return {
             check(lm) {
                 const pitch = nosePitch(lm);
-                if (!nodDown && pitch > 0.60) {
+                if (!nodDown && pitch > 0.57) {
                     nodDown = true;
                     return { done: false, statusText: 'กำลังก้มหน้า...' };
                 }
-                if (nodDown && pitch < 0.55) {
+                if (nodDown && pitch < 0.51) {
                     return { done: true, statusText: '✓ พยักหน้าสำเร็จ!' };
                 }
                 return { done: false, statusText: `กรุณาพยักหน้าขึ้น-ลง (pitch: ${pitch.toFixed(2)})` };
@@ -156,9 +152,14 @@ function buildActionChecker(action, baselineEAR) {
 
     if (action === 'raise_eyebrows') {
         // Brow-to-eye distance: inner brow (65, 295) vs eye top (159, 386)
-        // Measure relative to face height; detect ≥15% increase sustained 5 frames
-        let baselineDist = null;
-        let raisedFrames = 0;
+        // Calibrate baseline from first CALIB_FRAMES frames (more stable than single frame)
+        // then detect ≥12% increase sustained 3 frames
+        const CALIB_FRAMES    = 6;
+        const RAISE_THRESHOLD = 0.12;   // 12% (was 15%)
+        const RAISE_FRAMES    = 3;      // 3 consecutive frames (was 5)
+        const calibSamples    = [];
+        let baselineDist      = null;
+        let raisedFrames      = 0;
         return {
             check(lm) {
                 const faceH = dist2D(lm[10], lm[152]);
@@ -168,16 +169,21 @@ function buildActionChecker(action, baselineEAR) {
                 const rightBrowDist = dist2D(lm[295], lm[386]) / faceH;
                 const currentDist   = (leftBrowDist + rightBrowDist) / 2;
 
+                // Collect baseline from first CALIB_FRAMES frames (use min = most neutral)
                 if (baselineDist === null) {
-                    baselineDist = currentDist;
+                    calibSamples.push(currentDist);
+                    if (calibSamples.length < CALIB_FRAMES) {
+                        return { done: false, statusText: 'กรุณาทำหน้าปกติสักครู่...' };
+                    }
+                    baselineDist = Math.min(...calibSamples);
                     return { done: false, statusText: 'กรุณายกคิ้วขึ้น' };
                 }
 
                 const increase = (currentDist - baselineDist) / (baselineDist + 1e-6);
-                if (increase > 0.15) {
+                if (increase > RAISE_THRESHOLD) {
                     raisedFrames++;
-                    if (raisedFrames >= 5) return { done: true, statusText: '✓ ยกคิ้วสำเร็จ!' };
-                    return { done: false, statusText: `กำลังยกคิ้ว... (${raisedFrames}/5)` };
+                    if (raisedFrames >= RAISE_FRAMES) return { done: true, statusText: '✓ ยกคิ้วสำเร็จ!' };
+                    return { done: false, statusText: `กำลังยกคิ้ว... (${raisedFrames}/${RAISE_FRAMES})` };
                 }
                 raisedFrames = 0;
                 return { done: false, statusText: `กรุณายกคิ้วขึ้น (+${(increase * 100).toFixed(0)}%)` };
@@ -426,28 +432,6 @@ class InteractiveChallengeDetector {
                 }
 
                 const lm = results.multiFaceLandmarks[0];
-
-                // ── Draw face features + anti-spoof overlay ──────────────────
-                const _EYE_L = [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246];
-                const _EYE_R = [362,382,381,380,374,373,390,249,263,466,388,387,386,385,384,398];
-                const _MOUTH = [61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146];
-                ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-                ctx.lineWidth = 1.5;
-                ctx.setLineDash([4, 3]);
-                [_EYE_L, _EYE_R, _MOUTH].forEach(indices => {
-                    ctx.beginPath();
-                    indices.forEach((idx, i) => {
-                        const px = lm[idx].x * this.canvas.width;
-                        const py = lm[idx].y * this.canvas.height;
-                        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-                    });
-                    ctx.closePath(); ctx.stroke();
-                });
-                ctx.setLineDash([]);
-                if (typeof _drawAntiSpoofBBox === 'function' && typeof _lastSpoofOverlay !== 'undefined') {
-                    _drawAntiSpoofBBox(ctx, lm, this.canvas.width, this.canvas.height, _lastSpoofOverlay);
-                }
-                // ────────────────────────────────────────────────────────────
 
                 // Real-time Moiré + edge check (defined in rt_analyze.js)
                 if (typeof _rtAnalyzeFrame === 'function') {

@@ -551,49 +551,63 @@ async function startEarCheck() {
 
 function runEarCheck() {
     const DURATION_MS = 3000;
-    const status  = document.getElementById('earCheckStatus');
-    const btn     = document.getElementById('btnEarCheckStart');
-    const bar     = document.getElementById('earProgressBar');
-    const val     = document.getElementById('earValDisplay');
-    const video   = document.getElementById('videoEarCheck');
+    const status = document.getElementById('earCheckStatus');
+    const btn    = document.getElementById('btnEarCheckStart');
+    const bar    = document.getElementById('earProgressBar');
+    const val    = document.getElementById('earValDisplay');
+    const video  = document.getElementById('videoEarCheck');
 
-    if (btn) btn.disabled = true;
+    // Bug 1 guard: if stream or video frame not ready, bail early with a helpful message
+    // (avoids a silent 3-second wait before "วัดไม่ได้ผล")
+    if (!_earCheckStream || !video?.videoWidth) {
+        if (status) status.textContent = 'กล้องยังไม่พร้อม — กรุณารอสักครู่แล้วลองใหม่';
+        return;
+    }
+
+    if (btn)    btn.disabled = true;
     if (status) status.textContent = 'กำลังวัด EAR — ทำหน้าปกติ อยู่นิ่งๆ...';
     if (bar)    bar.style.width = '0%';
 
     const earSamples = [];
     const startTime  = Date.now();
     let   earDone    = false;
+    let   rafId      = null;
 
     const fm = _getSharedFM({ refineLandmarks: false });
+    // Bug 3: clear stale handler before installing a new one (handles retry case)
+    fm.onResults(() => {});
     fm.onResults(results => {
         if (earDone) return;
         if (!results.multiFaceLandmarks?.length) return;
         const lm  = results.multiFaceLandmarks[0];
         const ear = _computeEAR(lm);
-        // Accept only physiologically plausible open-eye EAR values
-        if (ear > EAR_OPEN_THRESHOLD && ear < 0.5) earSamples.push(ear);
-        const pct = Math.min(Math.round((Date.now() - startTime) / DURATION_MS * 100), 100);
-        if (bar) bar.style.width = pct + '%';
+        // Bug 2: relaxed range — iOS FaceMesh reports lower EAR than Android/desktop
+        if (ear > 0.10 && ear < 0.45) earSamples.push(ear);
         if (val) val.textContent = ear.toFixed(3);
     });
 
-    const cam = new Camera(video, {
-        onFrame: async () => { if (!earDone) await fm.send({ image: video }); },
-        width: 640, height: 480,
-    });
-    _stepCamera = cam;
-    cam.start();
+    // Bug 1 fix: pump frames ourselves via rAF — do NOT use new Camera()
+    // which conflicts with the srcObject already set by startEarCheck()
+    const pump = async () => {
+        if (earDone) return;
+        try { await fm.send({ image: video }); } catch (e) { /* ignore mid-frame errors */ }
+        const elapsed = Date.now() - startTime;
+        const pct = Math.min(100, (elapsed / DURATION_MS) * 100);
+        if (bar) bar.style.width = pct.toFixed(1) + '%';
+        if (elapsed >= DURATION_MS) { finish(); return; }
+        rafId = requestAnimationFrame(pump);
+    };
 
-    // Evaluate after 3 seconds
-    setTimeout(() => {
+    const finish = () => {
         earDone = true;
-        _stopStepCamera();
-        if (bar) bar.style.width = '100%';
+        if (rafId) cancelAnimationFrame(rafId);
+        fm.onResults(() => {});   // detach handler
 
         if (earSamples.length < 10) {
-            if (status) status.textContent = 'วัดไม่ได้ผล — ตรวจสอบใบหน้าในกรอบแล้วลองอีกครั้ง';
-            if (btn)    btn.disabled = false;
+            if (status) status.textContent =
+                `วัดไม่ได้ผล (เก็บได้ ${earSamples.length} ตัวอย่าง) — กรุณามองตรงกล้องแล้วลองใหม่`;
+            if (btn) btn.disabled = false;
+            if (bar) bar.style.width = '0%';
             return;
         }
 
@@ -611,7 +625,9 @@ function runEarCheck() {
             goToStep(4);
             startLivenessChallenge();
         });
-    }, DURATION_MS);
+    };
+
+    pump();
 }
 
 // ─────────────────────────────────────────────

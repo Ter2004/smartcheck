@@ -121,8 +121,6 @@
         <div class="step-dot" id="dot2">2</div>
         <div class="flex-1 h-0.5 bg-slate-200" id="line2"></div>
         <div class="step-dot" id="dot3">3</div>
-        <div class="flex-1 h-0.5 bg-slate-200" id="line3"></div>
-        <div class="step-dot" id="dot4">4</div>
     </div>
 
     <!-- ─── Step 1: PDPA Consent ─── -->
@@ -151,34 +149,9 @@
             </span>
         </label>
         <button class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded-xl transition-colors"
-                id="btnConsent" disabled onclick="goToCalibration()">
+                id="btnConsent" disabled onclick="goToLiveness()">
             ยืนยันและดำเนินการต่อ →
         </button>
-    </div>
-
-    <!-- ─── Step 2: EAR Calibration ─── -->
-    <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="step2">
-        <h3 class="text-sm font-semibold text-slate-800 mb-1">สอบเทียบ Baseline EAR</h3>
-        <p class="text-sm text-slate-500 mb-3">
-            มองตรงไปข้างหน้า แล้วกด "เริ่ม" — ระบบจะขอให้กะพริบตา 1 ครั้งเพื่อยืนยันตัวตน จากนั้นจะวัดค่า Baseline EAR อัตโนมัติ
-        </p>
-        <div class="camera-box">
-            <video id="videoCalib" autoplay playsinline muted></video>
-            <canvas id="canvasCalib"></canvas>
-            <div class="face-guide" id="faceGuideCalib"></div>
-            <div class="spoof-label" id="spoofLabelCalib"></div>
-        </div>
-        <div class="progress-bar-wrap" id="calibProgressWrap" style="display:none">
-            <div class="progress-bar-fill" id="calibProgressBar"></div>
-        </div>
-        <p class="text-sm text-center text-slate-400 mb-3" id="calibStatus">กดปุ่มด้านล่างเพื่อเริ่ม</p>
-        <button class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded-xl transition-colors"
-                id="btnStartCalib" onclick="startCalibration()">เริ่มสอบเทียบ</button>
-        <button class="w-full mt-2 border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium py-2.5 rounded-xl transition-colors"
-                id="btnRetryBlink" style="display:none" onclick="startCalibration()">ลองอีกครั้ง</button>
-        <a href="{{ url_for('student.dashboard') }}"
-           class="block text-center text-sm text-slate-400 hover:text-slate-600 mt-2 transition-colors"
-           id="btnBlinkGiveUp" style="display:none">กลับหน้าหลัก</a>
     </div>
 
     <!-- ─── Step 3: Interactive Challenge ─── -->
@@ -218,20 +191,6 @@
             <div id="thumbnailRow" class="flex gap-1.5 justify-center flex-wrap min-h-[56px] mt-2"></div>
         </div>
 
-        <div id="selfVerifySection" style="display:none">
-            <p class="text-sm font-semibold text-slate-800 text-center mb-1">ยืนยันตัวตน — ถ่ายรูปสุดท้าย 1 รูป</p>
-            <p class="text-sm text-slate-500 text-center mb-3">มองตรงกล้อง ระบบจะถ่ายอัตโนมัติใน 3 วินาที</p>
-            <div class="camera-box">
-                <video id="videoVerify" autoplay playsinline muted></video>
-                <canvas id="canvasVerifyDetect" style="position:absolute;top:0;left:0;width:100%;height:100%"></canvas>
-                <div class="face-guide" id="faceGuideVerify"></div>
-                <div id="verifyCountdownOverlay" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.4)">
-                    <div style="font-size:5rem;font-weight:700;color:#fff;line-height:1;text-shadow:0 2px 12px rgba(0,0,0,0.5)" id="verifyCountNum">3</div>
-                </div>
-            </div>
-            <p class="text-sm text-center text-slate-400" id="verifyStatus">รอตรวจจับใบหน้า...</p>
-        </div>
-
         <div id="checkingSection" style="display:none;text-align:center;padding:1rem 0">
             <div class="spinner" style="margin:0 auto 0.75rem"></div>
             <p id="checkingMsg" class="text-sm text-slate-500 mb-3">กำลังตรวจสอบ...</p>
@@ -241,29 +200,29 @@
             </div>
             <p id="enrollProgressLabel" class="text-xs text-slate-400 mt-2"></p>
         </div>
-    </div>
 
-    <!-- ─── Step 5: Result ─── -->
-    <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center" id="step5">
-        <div id="successView" style="display:none">
-            <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg class="w-8 h-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+        <!-- Result (success / error) shown in-place after capture completes -->
+        <div id="resultSection" style="display:none;text-align:center;padding:1rem 0">
+            <div id="successView" style="display:none">
+                <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <h3 class="text-base font-semibold text-slate-800 mb-1">ลงทะเบียนสำเร็จ!</h3>
+                <p class="text-sm text-slate-500 mb-5">บันทึก Face Embedding เรียบร้อยแล้ว</p>
+                <a href="{{ url_for('student.dashboard') }}"
+                   class="inline-flex items-center justify-center w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
+                    กลับหน้าหลัก
+                </a>
             </div>
-            <h3 class="text-base font-semibold text-slate-800 mb-1">ลงทะเบียนสำเร็จ!</h3>
-            <p class="text-sm text-slate-500 mb-5">บันทึก Face Embedding เรียบร้อยแล้ว</p>
-            <a href="{{ url_for('student.dashboard') }}"
-               class="inline-flex items-center justify-center w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
-                กลับหน้าหลัก
-            </a>
-        </div>
-        <div id="errorView" style="display:none">
-            <div class="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg class="w-8 h-8 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <div id="errorView" style="display:none">
+                <div class="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </div>
+                <h3 class="text-base font-semibold text-slate-800 mb-1">เกิดข้อผิดพลาด</h3>
+                <p id="errorMsg" class="text-sm text-rose-500 mb-5"></p>
+                <button class="w-full border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium py-2.5 rounded-xl transition-colors"
+                        onclick="fullRestart()">เริ่มใหม่ทั้งหมด</button>
             </div>
-            <h3 class="text-base font-semibold text-slate-800 mb-1">เกิดข้อผิดพลาด</h3>
-            <p id="errorMsg" class="text-sm text-rose-500 mb-5"></p>
-            <button class="w-full border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium py-2.5 rounded-xl transition-colors"
-                    onclick="fullRestart()">เริ่มใหม่ทั้งหมด</button>
         </div>
     </div>
 

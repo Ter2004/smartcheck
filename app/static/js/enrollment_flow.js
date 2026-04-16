@@ -4,7 +4,7 @@
 // State
 // ─────────────────────────────────────────────
 let currentStep  = 1;
-let baselineEAR  = null;
+let baselineEAR  = 0.25;   // default — EAR calibration step removed
 let calibStream  = null;
 let captureStream = null;
 let verifyStream = null;
@@ -150,7 +150,7 @@ function goToStep(n) {
     document.querySelectorAll('.step').forEach((el, i) => {
         el.classList.toggle('active', i + 1 === n);
     });
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 1; i <= 3; i++) {
         const dot = document.getElementById('dot' + i);
         if (dot) {
             dot.classList.toggle('active', i <= n);
@@ -286,7 +286,7 @@ function _showSpoofWarn() {
 // ─── Face Continuity ทำที่ server แล้ว (/api/enroll + /api/self_verify) ───────
 // Client ไม่เก็บหรือตรวจ embedding อีกต่อไป
 
-async function goToCalibration() {
+async function goToLiveness() {
     const btn = document.getElementById('btnConsent');
     if (btn) btn.disabled = true;   // prevent double-click during async consent fetch
     // A5: record PDPA consent server-side before proceeding
@@ -297,11 +297,10 @@ async function goToCalibration() {
         });
     } catch (e) { /* non-fatal — server will reject enroll if missing */ }
 
-    // ไม่แสดง modal ซ้อนอีกชั้น — ผู้ใช้กด consent ไปแล้ว ไป Step 2 ทันที
-    blinkAttempts      = 0;
+    challengeAttempts   = 0;
     enrollmentSessionId = null;   // new session ID for spoof_check rate limiting
-    goToStep(2);
-    startCamera('videoCalib', stream => { calibStream = stream; });
+    goToStep(2);   // step index 2 → liveness (step3 element, position 2 after step2 removed)
+    startLivenessChallenge();
 }
 
 // ─────────────────────────────────────────────
@@ -345,316 +344,12 @@ function calcEAR(landmarks, indices) {
 }
 
 // ─────────────────────────────────────────────
-// Step 2 — EAR Calibration (with blink micro-check gate)
+// Step 2 (old) — EAR Calibration removed.
+// baselineEAR is now fixed at 0.25 (default).
 // ─────────────────────────────────────────────
 
-function startCalibration() {
-    if (calibrating) return;
-    calibrating = true;
-
-    document.getElementById('btnStartCalib').disabled = true;
-    document.getElementById('btnRetryBlink').style.display  = 'none';
-    document.getElementById('btnBlinkGiveUp').style.display = 'none';
-    document.getElementById('calibProgressWrap').style.display = 'block';
-    document.getElementById('faceGuideCalib').classList.remove('ok', 'fail');
-
-    _runBlinkCheck();
-}
-
-// ── Phase A: wait for one blink cycle to confirm live face ───────────────────
-function _runBlinkCheck() {
-    const video       = document.getElementById('videoCalib');
-    const canvas      = document.getElementById('canvasCalib');
-    const guide       = document.getElementById('faceGuideCalib');
-    const status      = document.getElementById('calibStatus');
-    const progressBar = document.getElementById('calibProgressBar');
-
-    status.textContent           = 'กรุณากะพริบตา 1 ครั้ง';
-    progressBar.style.background = '#4f46e5';
-    progressBar.style.width      = '100%';  // drains to 0 over 10 s
-
-    let openEAR    = null;
-    let blinkPhase = 'waiting_open';  // → waiting_drop → waiting_recover
-    let blinkDone  = false;
-    const startTime = performance.now();
-
-    const faceMesh = _getSharedFM();
-
-    faceMesh.onResults(results => {
-        if (blinkDone) return;
-
-        canvas.width  = video.videoWidth;
-        canvas.height = video.videoHeight;
-        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-
-        const elapsed   = performance.now() - startTime;
-        const remaining = Math.max(0, BLINK_TIMEOUT_MS - elapsed);
-        progressBar.style.width = ((remaining / BLINK_TIMEOUT_MS) * 100) + '%';
-
-        if (elapsed >= BLINK_TIMEOUT_MS) {
-            blinkDone = true;
-            _stopStepCamera();
-            _onBlinkTimeout();
-            return;
-        }
-
-        if (!results.multiFaceLandmarks?.length) {
-            guide.classList.remove('ok', 'fail');
-            // Don't reset mid-blink — face briefly disappears during eye closure
-            // Only reset if we haven't started tracking yet
-            if (blinkPhase === 'waiting_open') {
-                openEAR = null;
-                status.textContent = `ไม่พบใบหน้า — จัดหน้าให้อยู่ในกรอบ (${Math.ceil(remaining / 1000)}s)`;
-            }
-            return;
-        }
-
-        guide.classList.remove('fail');
-        guide.classList.add('ok');
-        const lm  = results.multiFaceLandmarks[0];
-        const ctx = canvas.getContext('2d');
-        drawFaceFeatures(ctx, lm, canvas.width, canvas.height, 'rgba(255,255,255,0.7)');
-
-        const ear = (calcEAR(lm, LEFT_EYE) + calcEAR(lm, RIGHT_EYE)) / 2;
-
-        if (blinkPhase === 'waiting_open') {
-            if (ear >= EAR_OPEN_THRESHOLD) {
-                openEAR    = ear;
-                blinkPhase = 'waiting_drop';
-            }
-            status.textContent = `กรุณากะพริบตา 1 ครั้ง (${Math.ceil(remaining / 1000)}s)`;
-
-        } else if (blinkPhase === 'waiting_drop') {
-            // M10: openEAR locked at entry to this phase — do NOT update
-            // (updating it makes the drop threshold rise, making blink harder to detect)
-            if (ear < openEAR * BLINK_DROP_RATIO) {
-                blinkPhase = 'waiting_recover';
-                status.textContent = '...';
-            } else {
-                status.textContent = `กรุณากะพริบตา 1 ครั้ง (${Math.ceil(remaining / 1000)}s)`;
-            }
-
-        } else if (blinkPhase === 'waiting_recover') {
-            if (ear >= openEAR * BLINK_RECOVER_RATIO) {
-                blinkDone = true;
-                const blinkFrame = _captureFrameFromVideo(video);  // capture before stream stops
-                _stopStepCamera();
-                _onBlinkSuccess(blinkFrame);
-            }
-        }
-    });
-
-    const cam = new Camera(video, {
-        onFrame: async () => { if (!blinkDone) await faceMesh.send({ image: video }); },
-        width: 640, height: 480,
-    });
-    _stepCamera = cam;
-    cam.start().catch(() => {
-        blinkDone = true;
-        calibrating = false;
-        document.getElementById('calibStatus').textContent = 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการใช้กล้อง';
-        document.getElementById('btnRetryBlink').style.display = 'block';
-    });
-}
-
-async function _onBlinkSuccess(blinkFrame) {
-    const status      = document.getElementById('calibStatus');
-    const guide       = document.getElementById('faceGuideCalib');
-    const progressBar = document.getElementById('calibProgressBar');
-
-    progressBar.style.background = '#22c55e';
-    progressBar.style.width      = '100%';
-    guide.classList.add('ok');
-    status.textContent = '✓ กะพริบตาสำเร็จ — กำลังตรวจสอบใบหน้า...';
-
-    // ── Inline spoof check (Step 2) ──────────────────────────────────────────
-    {
-        const frame = blinkFrame;
-        if (!frame) {
-            calibrating = false;
-            status.textContent = 'กล้องยังไม่พร้อม — กรุณาลองใหม่';
-            document.getElementById('btnRetryBlink').style.display = 'block';
-            return;
-        }
-        const r = await _callSpoofCheckSafe(frame);
-        _setSpoofLabel('spoofLabelCalib', r.is_real, r.confidence);
-        if (!r.is_real) {
-            _showSpoofWarn();
-            calibrating = false;
-            progressBar.style.background = '#ef4444';
-            progressBar.style.width      = '0%';
-            guide.classList.remove('ok');
-            guide.classList.add('fail');
-            status.textContent = r.message || 'ตรวจพบภาพปลอม กรุณาใช้ใบหน้าจริง';
-            blinkAttempts++;
-            setTimeout(() => _clearSpoofLabel('spoofLabelCalib'), 4000);
-            if (blinkAttempts >= MAX_BLINK_ATTEMPTS) {
-                document.getElementById('btnStartCalib').style.display  = 'none';
-                document.getElementById('btnRetryBlink').style.display  = 'none';
-                document.getElementById('btnBlinkGiveUp').style.display = 'block';
-            } else {
-                document.getElementById('btnRetryBlink').style.display = 'block';
-            }
-            return;
-        }
-        // embedding ถูกเก็บที่ server แล้ว (session["liveness_embeddings"])
-        setTimeout(() => _clearSpoofLabel('spoofLabelCalib'), 2000);
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // ── Show instruction modal before EAR measurement ────────────────────────
-    await _showStepModal(
-        '👁️',
-        'เตรียมวัดค่าสายตาปกติ',
-        'กรุณาทำหน้าปกติ เปิดตาตามธรรมชาติ และอยู่ในวงภาพโดยไม่ขยับ — ระบบจะนับถอยหลัง 5 วินาที แล้วเริ่มวัดอัตโนมัติ',
-        'พร้อมแล้ว →'
-    );
-
-    // ── 5-second countdown then start measurement ────────────────────────────
-    progressBar.style.background = '#4f46e5';
-    progressBar.style.width      = '100%';
-
-    await new Promise(resolve => {
-        let count = 5;
-        status.textContent = `เริ่มวัดใน ${count} วินาที — ทำหน้าปกติและอยู่นิ่ง`;
-        const interval = setInterval(() => {
-            count--;
-            if (count <= 0) {
-                clearInterval(interval);
-                resolve();
-            } else {
-                status.textContent = `เริ่มวัดใน ${count} วินาที — ทำหน้าปกติและอยู่นิ่ง`;
-            }
-        }, 1000);
-    });
-
-    progressBar.style.width = '0%';
-    status.textContent = 'กำลังวัดค่า Baseline EAR... เปิดตาตามปกติ';
-    calibEARValues = [];
-    _startEARMeasurement();
-}
-
-function _onBlinkTimeout() {
-    blinkAttempts++;
-    calibrating = false;
-
-    const status      = document.getElementById('calibStatus');
-    const guide       = document.getElementById('faceGuideCalib');
-    const progressBar = document.getElementById('calibProgressBar');
-
-    progressBar.style.width = '0%';
-    guide.classList.remove('ok');
-    guide.classList.add('fail');
-
-    if (blinkAttempts >= MAX_BLINK_ATTEMPTS) {
-        status.textContent = 'ไม่สามารถยืนยันได้ว่าเป็นใบหน้าจริง กรุณาติดต่อผู้ดูแลระบบ';
-        document.getElementById('btnStartCalib').style.display  = 'none';
-        document.getElementById('btnRetryBlink').style.display  = 'none';
-        document.getElementById('btnBlinkGiveUp').style.display = 'block';
-    } else {
-        const left = MAX_BLINK_ATTEMPTS - blinkAttempts;
-        status.textContent = `ไม่พบการกะพริบตา กรุณาใช้ใบหน้าจริงต่อหน้ากล้อง (เหลืออีก ${left} ครั้ง)`;
-        document.getElementById('btnRetryBlink').style.display = 'block';
-    }
-}
-
-// ── Phase B: measure baseline EAR for 2 s ────────────────────────────────────
-function _startEARMeasurement() {
-    const video       = document.getElementById('videoCalib');
-    const canvas      = document.getElementById('canvasCalib');
-    const guide       = document.getElementById('faceGuideCalib');
-    const progressBar = document.getElementById('calibProgressBar');
-
-    const DURATION_MS         = 2000;
-    const EAR_BLINK_THRESHOLD = 0.15;   // C1: discard frames where eyes are closing
-    let startTime = null;
-    let calibDone = false;
-
-    const faceMesh = _getSharedFM();
-
-    faceMesh.onResults(results => {
-        if (calibDone) return;
-        canvas.width  = video.videoWidth;
-        canvas.height = video.videoHeight;
-        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-
-        if (results.multiFaceLandmarks?.length > 0) {
-            guide.classList.add('ok');
-            const lm  = results.multiFaceLandmarks[0];
-            drawFaceFeatures(canvas.getContext('2d'), lm, canvas.width, canvas.height, 'rgba(255,255,255,0.7)');
-            const ear = (calcEAR(lm, LEFT_EYE) + calcEAR(lm, RIGHT_EYE)) / 2;
-
-            if (startTime === null) startTime = performance.now();
-            const elapsed = performance.now() - startTime;
-            progressBar.style.width = Math.min((elapsed / DURATION_MS) * 100, 100) + '%';
-
-            if (ear >= EAR_BLINK_THRESHOLD) calibEARValues.push(ear);
-            document.getElementById('calibStatus').textContent =
-                `EAR: ${ear.toFixed(4)} — กำลังวัด... (${Math.ceil((DURATION_MS - elapsed) / 1000)}s)`;
-
-            if (elapsed >= DURATION_MS) {
-                calibDone = true;
-                _stopStepCamera();
-                finishCalibration();
-            }
-        } else {
-            guide.classList.remove('ok');
-            document.getElementById('calibStatus').textContent = 'ไม่พบใบหน้า — จัดหน้าให้อยู่ในกรอบ';
-            startTime = null;   // reset timer if face lost
-        }
-    });
-
-    const cam = new Camera(video, {
-        onFrame: async () => { if (!calibDone) await faceMesh.send({ image: video }); },
-        width: 640, height: 480,
-    });
-    _stepCamera = cam;
-    cam.start().catch(() => {
-        calibDone = true;
-        calibrating = false;
-        document.getElementById('calibStatus').textContent = 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการใช้กล้อง';
-        document.getElementById('btnRetryBlink').style.display = 'block';
-    });
-}
-
-async function finishCalibration() {
-    calibrating = false;
-    if (calibEARValues.length === 0) {
-        document.getElementById('calibStatus').textContent = 'วัดไม่สำเร็จ กรุณาลองใหม่';
-        document.getElementById('btnRetryBlink').style.display = 'block';
-        calibEARValues = [];
-        return;
-    }
-    // C1: need at least 10 usable (non-blink) frames for a reliable baseline
-    if (calibEARValues.length < 10) {
-        document.getElementById('calibStatus').textContent = 'กะพริบตาบ่อยเกินไป — กรุณามองกล้องตาเปิดค้างไว้ แล้วกดลองใหม่';
-        document.getElementById('btnRetryBlink').style.display = 'block';
-        calibEARValues = [];
-        return;
-    }
-    const sorted = [...calibEARValues].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    baselineEAR = median;
-
-    document.getElementById('calibProgressBar').style.width = '100%';
-    document.getElementById('calibStatus').textContent =
-        `✓ Baseline EAR = ${median.toFixed(4)} — สำเร็จ!`;
-
-    stopStream(calibStream);
-
-    await _showStepModal(
-        '🎭',
-        'ยืนยันตัวตน',
-        'ระบบจะสุ่มท่าทาง 2 อย่าง เช่น กะพริบตา, ยิ้ม, หันซ้าย-ขวา — ทำตามลำดับเพื่อยืนยันว่าเป็นคนจริง',
-        'เข้าใจแล้ว เริ่มเลย →'
-    );
-
-    goToStep(3);
-    startLivenessChallenge();
-}
-
 // ─────────────────────────────────────────────
-// Step 3 — Interactive Challenge (2 actions)
+// Step 2 — Interactive Challenge (2 actions)
 // ─────────────────────────────────────────────
 let livenessStream = null;
 
@@ -831,7 +526,7 @@ async function startLivenessChallenge() {
         'พร้อมถ่ายรูป →'
     );
 
-    goToStep(4);
+    goToStep(3);
     startCaptureWithDetection();
 }
 
@@ -1298,13 +993,8 @@ async function _sendToEnroll() {
             setTimeout(() => restartCapture(), 2500);
 
         } else if (json.status === 'pending_verify') {
-            await _showStepModal(
-                '✅',
-                'ยืนยันตัวตนครั้งสุดท้าย',
-                'ระบบจะถ่ายรูปอีก 1 รูป เพื่อเปรียบเทียบกับรูปที่ถ่ายไว้ มองตรงกล้องแล้วระบบจะถ่ายให้อัตโนมัติ',
-                'พร้อมยืนยัน →'
-            );
-            _startSelfVerify();
+            // Self-verify step removed — show success directly
+            _showResult('success', json.message || 'ลงทะเบียนสำเร็จ!');
 
         } else if (json.status === 'spoof_detected') {
             // Server ตรวจพบ spoof ใน capture frames
@@ -1340,152 +1030,6 @@ async function _sendToEnroll() {
         if (step4Timer) { clearTimeout(step4Timer); step4Timer = null; }
         _showResult('error', 'ไม่สามารถเชื่อมต่อ server ได้ — กำลังเริ่มใหม่...');
         setTimeout(() => restartCapture(), 3000);
-    } finally {
-        _enrollSubmitting = false;
-    }
-}
-
-// ─── Self-Verify: 1 verification shot ────────────────────────────────────────
-function _startSelfVerify() {
-    document.getElementById('autoCaptureSection').style.display = 'none';
-    document.getElementById('selfVerifySection').style.display  = 'block';
-
-    const video  = document.getElementById('videoVerify');
-    const canvas = document.getElementById('canvasVerifyDetect');
-    const guide  = document.getElementById('faceGuideVerify');
-    const status = document.getElementById('verifyStatus');
-
-    let verifyReady = false;
-    let countingDown = false;
-
-    const fm = _getSharedFM();
-
-    fm.onResults(async results => {
-        if (countingDown) return;
-        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        const hasFace = results.multiFaceLandmarks?.length > 0;
-        if (!hasFace || !_checkFrontal(results.multiFaceLandmarks[0])) {
-            guide.classList.remove('ok');
-            status.textContent = hasFace ? 'กรุณามองตรงเข้ากล้อง' : 'ไม่พบใบหน้า';
-            verifyReady = false;
-            return;
-        }
-        drawFaceFeatures(ctx, results.multiFaceLandmarks[0], canvas.width, canvas.height, 'rgba(74,222,128,0.9)');
-        guide.classList.add('ok');
-
-        if (!verifyReady) {
-            verifyReady = true;
-            countingDown = true;
-            // countdown 3→1 then capture
-            const overlay = document.getElementById('verifyCountdownOverlay');
-            const numEl   = document.getElementById('verifyCountNum');
-            overlay.style.display = 'flex';
-            for (let i = 3; i >= 1; i--) {
-                numEl.textContent = i;
-                await new Promise(r => setTimeout(r, 900));
-            }
-            overlay.style.display = 'none';
-
-            // R3: check video is still live after countdown (face may have drifted)
-            if (!video.videoWidth || !video.videoHeight) {
-                countingDown = false;
-                verifyReady  = false;
-                guide.classList.remove('ok');
-                status.textContent = 'ใบหน้าหายไประหว่างนับถอยหลัง — กรุณามองตรงกล้อง';
-                return;
-            }
-
-            // capture verify shot
-            const cap = document.getElementById('captureCanvas');
-            cap.width = video.videoWidth; cap.height = video.videoHeight;
-            cap.getContext('2d').drawImage(video, 0, 0);
-            const verifyB64 = cap.toDataURL('image/jpeg', 0.88);
-
-            // Spoof check + face continuity ทำที่ server ใน /api/self_verify แล้ว
-            status.textContent = 'กำลังส่งข้อมูล...';
-            _stopStepCamera();
-            stopStream(verifyStream);
-            await _sendSelfVerify(verifyB64);
-        }
-    });
-
-    navigator.mediaDevices.getUserMedia({ video: { facingMode:'user', width:640, height:480 } })
-    .then(async stream => {
-        const vcCheck = await detectVirtualCamera(stream);
-        if (vcCheck.blocked) {
-            stream.getTracks().forEach(t => t.stop());
-            alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
-            throw new Error('Virtual Camera Detected');
-        }
-        verifyStream = stream;
-        video.srcObject = stream;
-        const cam = new Camera(video, { onFrame: async () => { if (!countingDown) await fm.send({ image: video }); }, width:640, height:480 });
-        _stepCamera = cam;
-        cam.start().catch(() => {
-            status.textContent = 'ไม่สามารถเปิดกล้องได้ — กรุณาลองใหม่';
-            setTimeout(() => _startSelfVerify(), 2500);
-        });
-        status.textContent = 'มองตรงกล้อง — ระบบจะถ่ายอัตโนมัติ';
-    }).catch(e => alert('ไม่สามารถเปิดกล้องได้: ' + e.message));
-}
-
-async function _sendSelfVerify(faceImage) {
-    if (_enrollSubmitting) return;
-    _enrollSubmitting = true;
-    _showChecking('กำลังยืนยันตัวตน...');
-    _startProgress(_PROGRESS_MSGS_VERIFY);
-    try {
-        const res  = await fetch(ENROLL_CONFIG.selfVerifyUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': _csrfToken(),
-            },
-            body: JSON.stringify({
-                face_image:         faceImage,
-                device_fingerprint: _deviceFingerprint(),   // Sprint 1B
-            }),
-        });
-        _finishProgress();
-        const json = await res.json();
-        _hideChecking();
-
-        if (json.status === 'success') {
-            // Sprint 1B: store the HMAC device token for future check-ins
-            if (json.device_token) {
-                localStorage.setItem('sc_device_token', json.device_token);
-            }
-            _showResult('success', json.message);
-        } else if (json.status === 'retry') {
-            // B2: still have attempts left — show message and let user try again
-            _hideChecking();
-            document.getElementById('selfVerifySection').style.display = 'block';
-            document.getElementById('verifyStatus').textContent = json.message;
-            // Re-start the self-verify camera after a short pause
-            setTimeout(() => _startSelfVerify(), 2500);
-        } else if (json.status === 'failed') {
-            _showResult('error', json.message);
-        } else if (json.status === 'spoof_detected') {
-            // Server ตรวจพบ spoof ใน self-verify — แจ้ง toast + retry
-            _showSpoofWarn();
-            document.getElementById('selfVerifySection').style.display = 'block';
-            document.getElementById('verifyStatus').textContent =
-                json.message || 'ตรวจพบภาพปลอม — กรุณาใช้ใบหน้าจริง';
-            setTimeout(() => _startSelfVerify(), 2500);
-        } else if (json.status === 'continuity_fail') {
-            // Server ตรวจพบว่า self-verify frame ไม่ตรงกับ liveness embeddings
-            _showResult('error', json.message || 'ตรวจพบใบหน้าไม่ตรงกับ Liveness Check');
-            setTimeout(() => fullRestart(), 3000);
-        } else {
-            _showResult('error', json.message || 'เกิดข้อผิดพลาด');
-        }
-    } catch (e) {
-        _hideChecking();
-        _showResult('error', 'ไม่สามารถเชื่อมต่อ server ได้ — กำลังเริ่มใหม่...');
-        setTimeout(() => fullRestart(), 3000);
     } finally {
         _enrollSubmitting = false;
     }
@@ -1543,9 +1087,8 @@ function _clearProgress() {
 }
 
 function _showChecking(msg) {
-    document.getElementById('autoCaptureSection').style.display  = 'none';
-    document.getElementById('selfVerifySection').style.display   = 'none';
-    document.getElementById('checkingSection').style.display     = 'block';
+    document.getElementById('autoCaptureSection').style.display = 'none';
+    document.getElementById('checkingSection').style.display    = 'block';
     document.getElementById('checkingMsg').textContent = msg;
 }
 function _hideChecking() {
@@ -1556,7 +1099,10 @@ function _hideChecking() {
 function _showResult(type, msg) {
     // B6: always stop camera streams when reaching terminal state
     _stopAllStreams();
-    goToStep(5);
+    goToStep(3);
+    document.getElementById('autoCaptureSection').style.display = 'none';
+    document.getElementById('checkingSection').style.display    = 'none';
+    document.getElementById('resultSection').style.display      = 'block';
     if (type === 'success') {
         document.getElementById('successView').style.display = 'block';
         document.getElementById('errorView').style.display   = 'none';
@@ -1567,18 +1113,15 @@ function _showResult(type, msg) {
     }
 }
 
-// Full restart — back to Step 2 (blink check), clears ALL state including liveness
+// Full restart — back to liveness challenge, clears ALL state including liveness
 async function fullRestart() {
     if (step4Timer) { clearTimeout(step4Timer); step4Timer = null; }
     capturedImages      = [];
     enrollmentSessionId = null;
     lastCaptureTime     = 0;
     capturePaused       = false;
-    blinkAttempts       = 0;
     challengeAttempts   = 0;
-    calibEARValues      = [];
-    baselineEAR         = null;
-    calibrating         = false;
+    baselineEAR         = 0.25;
     step4SpoofFailConsecutive = 0;
     step4SpoofFailTotal       = 0;
     _enrollSubmitting        = false;   // B5: release double-submit lock on full restart
@@ -1586,7 +1129,6 @@ async function fullRestart() {
     _rtResetCounters();
 
     // ล้าง liveness embeddings ที่ server (session["liveness_embeddings"])
-    // await เพื่อให้ server clear session ก่อน UI reset — ป้องกัน race condition
     await fetch(ENROLL_CONFIG.resetLivenessUrl, {
         method: 'POST',
         headers: { 'X-CSRF-Token': _csrfToken() },
@@ -1596,23 +1138,15 @@ async function fullRestart() {
 
     document.getElementById('thumbnailRow').innerHTML = '';
     document.getElementById('autoCaptureSection').style.display = 'block';
-    document.getElementById('selfVerifySection').style.display  = 'none';
     document.getElementById('checkingSection').style.display    = 'none';
+    document.getElementById('resultSection').style.display      = 'none';
 
-    _clearSpoofLabel('spoofLabelCalib');
     _clearSpoofLabel('spoofLabelLiveness');
     _clearSpoofLabel('spoofLabelCapture');
 
-    // Reset calibration button states so user can start calibration again
-    const btnStart = document.getElementById('btnStartCalib');
-    if (btnStart) { btnStart.disabled = false; btnStart.style.display = 'block'; }
-    document.getElementById('btnRetryBlink').style.display  = 'none';
-    document.getElementById('btnBlinkGiveUp').style.display = 'none';
-    document.getElementById('calibProgressWrap').style.display = 'none';
-
     _updateCaptureDots();
     goToStep(2);
-    startCamera('videoCalib', stream => { calibStream = stream; });
+    startLivenessChallenge();
 }
 
 // Partial restart — back to Step 4 only; server-side liveness embeddings ยังอยู่
@@ -1633,11 +1167,11 @@ function restartCapture() {
 
     document.getElementById('thumbnailRow').innerHTML = '';
     document.getElementById('autoCaptureSection').style.display = 'block';
-    document.getElementById('selfVerifySection').style.display  = 'none';
     document.getElementById('checkingSection').style.display    = 'none';
+    document.getElementById('resultSection').style.display      = 'none';
     _clearSpoofLabel('spoofLabelCapture');
 
     _updateCaptureDots();
-    goToStep(4);
+    goToStep(3);
     startCaptureWithDetection();
 }

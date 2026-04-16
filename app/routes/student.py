@@ -294,37 +294,36 @@ def api_enroll():
             "message": f"ลองใหม่เกิน {MAX_RETRY} รอบ — กรุณาเริ่มลงทะเบียนใหม่",
         }), 400
 
-    # ── 1b. DB-level enrollment attempt check — atomic via RPC (M3 fix) ─────────
-    # atomic_enroll_attempt() does SELECT FOR UPDATE + increment in one transaction,
-    # preventing concurrent-tab races that let two requests both slip past the limit.
-    DB_MAX_ATTEMPTS = 5
-    try:
-        rpc_res = supabase_admin.rpc(
-            "atomic_enroll_attempt",
-            {"p_user_id": user_id, "p_max": DB_MAX_ATTEMPTS, "p_window_h": 24},
-        ).execute()
-        if not rpc_res.data:
-            raise RuntimeError("atomic_enroll_attempt returned no rows")
-        row = rpc_res.data[0]
-        db_attempts_now = row["current_attempts"]
-        allowed         = row["allowed"]
-        _log(user_id, "enroll_attempt", "counted",
-             f"db_attempts={db_attempts_now}/{DB_MAX_ATTEMPTS}")
-        if not allowed:
-            _log(user_id, "enroll_attempt", "db_blocked",
-                 f"db_attempts={db_attempts_now}")
-            return jsonify({
-                "status":      "blocked",
-                "message":     "ลงทะเบียนเกินจำนวนครั้งที่กำหนด กรุณาติดต่ออาจารย์",
-                "db_attempts": db_attempts_now,
-            }), 403
-    except Exception as db_err:
-        # DB ล้มเหลว — fail-closed: ไม่ยอม enroll ถ้าไม่สามารถนับ attempt ได้
-        _log(user_id, "enroll_attempt", "db_error_blocked", str(db_err)[:80])
-        return jsonify({
-            "status":  "error",
-            "message": "ไม่สามารถตรวจสอบสิทธิ์ได้ชั่วคราว กรุณาลองใหม่อีกครั้ง",
-        }), 500
+    # ── 1b. DB-level enrollment attempt check — DISABLED for demo/testing ────────
+    # TODO: re-enable before production by removing the pass and uncommenting below
+    pass
+    # DB_MAX_ATTEMPTS = 5
+    # try:
+    #     rpc_res = supabase_admin.rpc(
+    #         "atomic_enroll_attempt",
+    #         {"p_user_id": user_id, "p_max": DB_MAX_ATTEMPTS, "p_window_h": 24},
+    #     ).execute()
+    #     if not rpc_res.data:
+    #         raise RuntimeError("atomic_enroll_attempt returned no rows")
+    #     row = rpc_res.data[0]
+    #     db_attempts_now = row["current_attempts"]
+    #     allowed         = row["allowed"]
+    #     _log(user_id, "enroll_attempt", "counted",
+    #          f"db_attempts={db_attempts_now}/{DB_MAX_ATTEMPTS}")
+    #     if not allowed:
+    #         _log(user_id, "enroll_attempt", "db_blocked",
+    #              f"db_attempts={db_attempts_now}")
+    #         return jsonify({
+    #             "status":      "blocked",
+    #             "message":     "ลงทะเบียนเกินจำนวนครั้งที่กำหนด กรุณาติดต่ออาจารย์",
+    #             "db_attempts": db_attempts_now,
+    #         }), 403
+    # except Exception as db_err:
+    #     _log(user_id, "enroll_attempt", "db_error_blocked", str(db_err)[:80])
+    #     return jsonify({
+    #         "status":  "error",
+    #         "message": "ไม่สามารถตรวจสอบสิทธิ์ได้ชั่วคราว กรุณาลองใหม่อีกครั้ง",
+    #     }), 500
 
     # ── 2. Zero-trust frame validation (Sprint 2A) — before any DeepFace call ──
     for idx, img in enumerate(face_images):

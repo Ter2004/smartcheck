@@ -245,13 +245,15 @@ def api_enroll():
         return jsonify({"status": "error", "message": "ต้องยินยอม PDPA ก่อน"}), 400
 
     # PDPA: verify consent exists in DB (session alone is insufficient — 1-hour expiry)
+    # Bug fix: do NOT filter by consent_given=True — that silently skips withdrawn rows
+    # and lets a user who withdrew consent re-enroll using a stale True row.
+    # Instead, fetch the latest row unconditionally and check its value in Python.
     try:
         consent_check = (
             supabase_admin.table("consent_logs")
-            .select("id")
+            .select("consent_given")
             .eq("user_id", user_id)
             .eq("consent_type", "biometric_enrollment")
-            .eq("consent_given", True)
             .order("created_at", desc=True)
             .limit(1)
             .execute()
@@ -259,6 +261,11 @@ def api_enroll():
         if not consent_check.data:
             _log(user_id, "enroll_consent", "no_db_record", "consent_logs empty")
             return jsonify({"status": "error", "message": "กรุณายอมรับข้อตกลงก่อนลงทะเบียน"}), 400
+        # Explicit withdrawal check: if latest record is False → block enrollment
+        if not consent_check.data[0].get("consent_given"):
+            _log(user_id, "enroll_consent", "withdrawn", "latest consent_given=False")
+            return jsonify({"status": "error",
+                            "message": "คุณได้ถอนความยินยอมไปแล้ว กรุณายอมรับข้อตกลงใหม่ก่อนลงทะเบียน"}), 403
     except Exception as consent_err:
         _log(user_id, "enroll_consent", "db_error", str(consent_err)[:80])
         # Fail-close: DB error → deny enrollment to prevent bypassing consent requirement
@@ -1001,7 +1008,13 @@ def api_spoof_check():
     if result["is_real"] and result.get("embedding"):
         stored = session.get("liveness_embeddings", [])
         stored.append(result["embedding"])
-        session["liveness_embeddings"] = stored[:5]   # cap ไม่เกิน 5 embeddings
+        # Bug fix: use [-5:] not [:5].
+        # /api/spoof_check is called up to 8 times (liveness ×3, capture ×5).
+        # [:5] kept only the first 5 embeddings, so capture-phase embeddings were
+        # discarded and face-continuity in /api/enroll compared against stale liveness frames.
+        # [-5:] keeps the 5 most-recent embeddings, ensuring continuity is checked
+        # against the frames closest to the final enrollment capture.
+        session["liveness_embeddings"] = stored[-5:]   # keep 5 most-recent embeddings
 
     _log(user_id, "spoof_check",
          "real" if result["is_real"] else "spoof",

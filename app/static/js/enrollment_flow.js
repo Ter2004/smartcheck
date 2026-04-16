@@ -24,11 +24,13 @@ function _getSharedFM(opts = {}) {
         _sharedFM = new FaceMesh({ locateFile: f =>
             `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
     }
+    // Confidence 0.5 (was 0.7): lower threshold reduces detection lag on mobile
+    // without meaningful accuracy loss for enrollment actions and capture gate checks.
     _sharedFM.setOptions({
         maxNumFaces: 1,
         refineLandmarks:          opts.refineLandmarks          ?? false,
-        minDetectionConfidence:   opts.minDetectionConfidence   ?? 0.7,
-        minTrackingConfidence:    opts.minTrackingConfidence    ?? 0.7,
+        minDetectionConfidence:   opts.minDetectionConfidence   ?? 0.5,
+        minTrackingConfidence:    opts.minTrackingConfidence    ?? 0.5,
     });
     return _sharedFM;
 }
@@ -558,7 +560,7 @@ async function startLivenessChallenge() {
                 CHALLENGE_ACTION_LABELS[actions[actionIdx]] || actions[actionIdx];
             document.getElementById('livenessStatus').textContent = statusText;
         },
-        { faceMesh: _getSharedFM({ refineLandmarks: true }) }
+        { faceMesh: _getSharedFM({ refineLandmarks: false }) }  // iris model unused by action checkers
     );
 
     const result = await detector.run(actions, 15000);

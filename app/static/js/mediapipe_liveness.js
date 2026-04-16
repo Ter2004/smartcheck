@@ -77,7 +77,7 @@ function buildActionChecker(action, baselineEAR) {
     if (action === 'smile') {
         // Detect sustained smile (no neutral-return requirement — too hard in practice)
         const SMILE_ON    = 0.40;   // ratio above this = smiling
-        const SMILE_FRAMES = 4;    // sustain for 4 consecutive frames
+        const SMILE_FRAMES = 2;    // 2 frames sufficient (was 4 — too slow)
         let smileFrames = 0;
         return {
             check(lm) {
@@ -98,14 +98,15 @@ function buildActionChecker(action, baselineEAR) {
     if (action === 'turn_left') {
         // In mirrored selfie view: user turns left → nose moves to screen-right → relX increases
         const TURN_THRESHOLD = 0.62;
+        const TURN_FRAMES    = 3;   // 3 frames (was 5 — reduced for faster response)
         let turnFrames = 0;
         return {
             check(lm) {
                 const rel = noseRelX(lm);
                 if (rel > TURN_THRESHOLD) {
                     turnFrames++;
-                    if (turnFrames >= 5) return { done: true, statusText: '✓ หันซ้ายสำเร็จ!' };
-                    return { done: false, statusText: `กำลังหัน... (${turnFrames}/5)` };
+                    if (turnFrames >= TURN_FRAMES) return { done: true, statusText: '✓ หันซ้ายสำเร็จ!' };
+                    return { done: false, statusText: `กำลังหัน... (${turnFrames}/${TURN_FRAMES})` };
                 }
                 turnFrames = 0;
                 return { done: false, statusText: `กรุณาหันหน้าไปทางซ้าย (${rel.toFixed(2)})` };
@@ -116,14 +117,15 @@ function buildActionChecker(action, baselineEAR) {
     if (action === 'turn_right') {
         // user turns right → nose moves to screen-left → relX decreases
         const TURN_THRESHOLD = 0.38;
+        const TURN_FRAMES    = 3;   // 3 frames (was 5 — reduced for faster response)
         let turnFrames = 0;
         return {
             check(lm) {
                 const rel = noseRelX(lm);
                 if (rel < TURN_THRESHOLD) {
                     turnFrames++;
-                    if (turnFrames >= 5) return { done: true, statusText: '✓ หันขวาสำเร็จ!' };
-                    return { done: false, statusText: `กำลังหัน... (${turnFrames}/5)` };
+                    if (turnFrames >= TURN_FRAMES) return { done: true, statusText: '✓ หันขวาสำเร็จ!' };
+                    return { done: false, statusText: `กำลังหัน... (${turnFrames}/${TURN_FRAMES})` };
                 }
                 turnFrames = 0;
                 return { done: false, statusText: `กรุณาหันหน้าไปทางขวา (${rel.toFixed(2)})` };
@@ -396,20 +398,23 @@ class InteractiveChallengeDetector {
             };
 
             // Use shared FaceMesh if provided, otherwise create and own one
+            // Confidence 0.5 (was 0.7): lower threshold reduces detection lag on mobile
+            // without meaningful accuracy loss for the 6 supported actions.
+            // refineLandmarks: false — iris model adds ~15 ms/frame and is unused here.
             let faceMesh;
             if (this._sharedFM) {
                 faceMesh = this._sharedFM;
                 faceMesh.setOptions({
-                    maxNumFaces: 1, refineLandmarks: true,
-                    minDetectionConfidence: 0.7, minTrackingConfidence: 0.7,
+                    maxNumFaces: 1, refineLandmarks: false,
+                    minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
                 });
                 // _faceMesh stays null → stop() will not close the shared instance
             } else {
                 faceMesh = new FaceMesh({ locateFile: f =>
                     `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
                 faceMesh.setOptions({
-                    maxNumFaces: 1, refineLandmarks: true,
-                    minDetectionConfidence: 0.7, minTrackingConfidence: 0.7,
+                    maxNumFaces: 1, refineLandmarks: false,
+                    minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
                 });
                 this._faceMesh = faceMesh;  // owned → stop() will close it
             }

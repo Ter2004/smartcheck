@@ -151,12 +151,12 @@ function buildActionChecker(action, baselineEAR) {
     }
 
     if (action === 'raise_eyebrows') {
-        // Brow-to-eye distance: inner brow (65, 295) vs eye top (159, 386)
-        // Calibrate baseline from first CALIB_FRAMES frames (more stable than single frame)
-        // then detect ≥12% increase sustained 3 frames
+        // Brow-to-eye distance using both inner (65,295) and outer (107,336) brow landmarks
+        // vs eye-top landmarks (159,386). Calibrate from first CALIB_FRAMES frames (mean).
+        // Detect ≥8% increase sustained 3 frames.
         const CALIB_FRAMES    = 6;
-        const RAISE_THRESHOLD = 0.12;   // 12% (was 15%)
-        const RAISE_FRAMES    = 3;      // 3 consecutive frames (was 5)
+        const RAISE_THRESHOLD = 0.08;   // 8% (was 12%)
+        const RAISE_FRAMES    = 3;
         const calibSamples    = [];
         let baselineDist      = null;
         let raisedFrames      = 0;
@@ -165,17 +165,18 @@ function buildActionChecker(action, baselineEAR) {
                 const faceH = dist2D(lm[10], lm[152]);
                 if (faceH === 0) return { done: false, statusText: 'กรุณายกคิ้ว' };
 
-                const leftBrowDist  = dist2D(lm[65],  lm[159]) / faceH;
-                const rightBrowDist = dist2D(lm[295], lm[386]) / faceH;
+                // Average inner + outer brow landmarks for more robust measurement
+                const leftBrowDist  = (dist2D(lm[65],  lm[159]) + dist2D(lm[107], lm[159])) / 2 / faceH;
+                const rightBrowDist = (dist2D(lm[295], lm[386]) + dist2D(lm[336], lm[386])) / 2 / faceH;
                 const currentDist   = (leftBrowDist + rightBrowDist) / 2;
 
-                // Collect baseline from first CALIB_FRAMES frames (use min = most neutral)
+                // Collect baseline from first CALIB_FRAMES frames (mean = stable neutral)
                 if (baselineDist === null) {
                     calibSamples.push(currentDist);
                     if (calibSamples.length < CALIB_FRAMES) {
                         return { done: false, statusText: 'กรุณาทำหน้าปกติสักครู่...' };
                     }
-                    baselineDist = Math.min(...calibSamples);
+                    baselineDist = calibSamples.reduce((a, b) => a + b, 0) / calibSamples.length;
                     return { done: false, statusText: 'กรุณายกคิ้วขึ้น' };
                 }
 
@@ -251,7 +252,7 @@ class LivenessDetector {
     run(action, onStatus = () => {}) {
         return new Promise((resolve) => {
             let resolved = false;
-            const TIMEOUT_MS = 15000;
+            const TIMEOUT_MS = 20000;
 
             const faceMesh = new FaceMesh({ locateFile: f =>
                 `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
@@ -280,18 +281,13 @@ class LivenessDetector {
                 // Real-time Moiré + edge check (defined in rt_analyze.js)
                 if (typeof _rtAnalyzeFrame === 'function') {
                     const rt = _rtAnalyzeFrame(this.video, lm);
-                    if (rt) {
-                        if (rt.blocked && !resolved) {
-                            resolved = true;
-                            this.stop();
-                            resolve({ pass: false, action, error: rt.reason });
-                            return;
-                        }
-                        if (rt.moireAlert || rt.edgeAlert) {
-                            onStatus(rt.moireAlert ? '⚠️ ตรวจพบลักษณะหน้าจอ...' : '⚠️ ตรวจพบขอบวัตถุแปลกปลอม...');
-                            return;
-                        }
+                    if (rt && rt.blocked && !resolved) {
+                        resolved = true;
+                        this.stop();
+                        resolve({ pass: false, action, error: rt.reason });
+                        return;
                     }
+                    // non-blocking moireAlert/edgeAlert: don't skip — let action checker run
                 }
 
                 const guardResult = guard.check(lm);
@@ -436,14 +432,8 @@ class InteractiveChallengeDetector {
                 // Real-time Moiré + edge check (defined in rt_analyze.js)
                 if (typeof _rtAnalyzeFrame === 'function') {
                     const rt = _rtAnalyzeFrame(this.video, lm);
-                    if (rt) {
-                        if (rt.blocked) { fail(rt.reason); return; }
-                        if (rt.moireAlert || rt.edgeAlert) {
-                            this.onProgress(currentIdx, actions.length,
-                                rt.moireAlert ? '⚠️ ตรวจพบลักษณะหน้าจอ...' : '⚠️ ตรวจพบขอบวัตถุแปลกปลอม...');
-                            return;
-                        }
-                    }
+                    if (rt && rt.blocked) { fail(rt.reason); return; }
+                    // non-blocking moireAlert/edgeAlert: don't skip — let action checker run
                 }
 
                 const guardResult = guard.check(lm);

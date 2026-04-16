@@ -561,7 +561,7 @@ async function startLivenessChallenge() {
         { faceMesh: _getSharedFM({ refineLandmarks: true }) }
     );
 
-    const result = await detector.run(actions, 8000);
+    const result = await detector.run(actions, 15000);
 
     if (!result.pass) {
         if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());

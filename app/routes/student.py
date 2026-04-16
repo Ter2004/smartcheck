@@ -625,19 +625,19 @@ def api_enroll():
 
     _log(user_id, "duplicate_check", "pass")
 
-    # ── 10. Save pending embeddings (consent_given=False until self-verify) ───
+    # ── 10. Save embeddings — consent_given=True (self-verify step removed) ─────
     supabase_admin.table("student_biometrics").upsert({
         "user_id":         user_id,
         "face_embeddings": embeddings,
-        "baseline_ear":    baseline_ear,  # already float or None from validation
-        "consent_given":   False,
+        "baseline_ear":    baseline_ear,
+        "consent_given":   True,
     }, on_conflict="user_id").execute()
 
-    session["enroll_baseline_ear"] = baseline_ear  # already float or None
-    session.pop("enroll_retry", None)  # reset retry counter on successful batch
-    _log(user_id, "enroll_save", "pending_verify")
+    session["enroll_baseline_ear"] = baseline_ear
+    session.pop("enroll_retry", None)
+    _log(user_id, "enroll_save", "success")
 
-    return jsonify({"status": "pending_verify", "message": "ตรวจสอบ embedding สำเร็จ — ถ่ายรูปยืนยัน"})
+    return jsonify({"status": "pending_verify", "message": "ลงทะเบียนใบหน้าสำเร็จ!"})
 
 
 # ─────────────────────────────────────────────────────────────────────────────

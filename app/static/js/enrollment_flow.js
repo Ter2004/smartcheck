@@ -622,6 +622,7 @@ async function runEarCheck() {
     }, 100);
 
     const finish = () => {
+        if (earDone) return;              // guard: concurrent setInterval callbacks can reach here
         earDone = true;
         if (pumpInterval) clearInterval(pumpInterval);
         try { fm.close(); } catch(e) {}   // release WASM resources immediately
@@ -663,6 +664,7 @@ async function runEarCheck() {
 // Step 4 — Interactive Challenge (2 actions)
 // ─────────────────────────────────────────────
 let livenessStream = null;
+let _livenessRetryTimer = null;
 
 const CHALLENGE_ACTION_LABELS = {
     blink:          'กะพริบตา',
@@ -688,6 +690,8 @@ function _buildChallengePills(actions, currentIdx) {
 }
 
 async function startLivenessChallenge() {
+    clearTimeout(_livenessRetryTimer);
+    _livenessRetryTimer = null;
     const actions = randomChallengeActions(2);
 
     _buildChallengePills(actions, 0);
@@ -728,7 +732,7 @@ async function startLivenessChallenge() {
         if (!frame1) {
             if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());
             document.getElementById('livenessStatus').textContent = 'กล้องยังไม่พร้อม — กรุณาลองใหม่';
-            setTimeout(() => startLivenessChallenge(), 2000);
+            _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 2000);
             return;
         }
         const sc1 = await _callSpoofCheckSafe(frame1);
@@ -748,11 +752,11 @@ async function startLivenessChallenge() {
                     challengeAttempts = 0;
                     document.getElementById('livenessStatus').textContent =
                         'ลองเกินจำนวนครั้งที่กำหนด — กรุณารอ 30 วินาที';
-                    setTimeout(() => startLivenessChallenge(), CHALLENGE_COOLDOWN_MS);
+                    _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), CHALLENGE_COOLDOWN_MS);
                 } else {
                     document.getElementById('livenessStatus').textContent =
                         (sc1.message || 'ตรวจพบภาพปลอม') + ` — กรุณาลองใหม่ (${challengeAttempts}/${MAX_CHALLENGE_ATTEMPTS})`;
-                    setTimeout(() => startLivenessChallenge(), 2000);
+                    _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 2000);
                 }
                 return;
             }
@@ -793,12 +797,12 @@ async function startLivenessChallenge() {
                 'ลองเกินจำนวนครั้งที่กำหนด — กรุณารอ 30 วินาที';
             setTimeout(() => {
                 document.getElementById('livenessStatus').textContent = 'พร้อมลองอีกครั้ง';
-                setTimeout(() => startLivenessChallenge(), 500);
+                _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 500);
             }, CHALLENGE_COOLDOWN_MS);
         } else {
             document.getElementById('livenessStatus').textContent =
                 (result.error || 'ไม่ผ่าน') + ` — กรุณาลองใหม่ (${challengeAttempts}/${MAX_CHALLENGE_ATTEMPTS})`;
-            setTimeout(() => startLivenessChallenge(), 2000);
+            _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 2000);
         }
         return;
     }
@@ -1441,6 +1445,8 @@ function _showResult(type, msg) {
 
 // Full restart — back to liveness challenge, clears ALL state including liveness
 async function fullRestart() {
+    clearTimeout(_livenessRetryTimer);
+    _livenessRetryTimer = null;
     if (step4Timer) { clearTimeout(step4Timer); step4Timer = null; }
     capturedImages      = [];
     enrollmentSessionId = null;

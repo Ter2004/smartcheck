@@ -304,6 +304,18 @@
                 <svg id="circularTickSvg" viewBox="0 0 260 260"
                      style="position:absolute;inset:0;width:100%;height:100%;
                             overflow:visible;pointer-events:none"></svg>
+                <!-- Blink challenge overlay — semi-transparent, video still visible beneath -->
+                <div id="circBlinkOverlay"
+                     style="display:none;position:absolute;inset:0;border-radius:50%;
+                            background:rgba(15,23,42,0.72);z-index:10;
+                            flex-direction:column;align-items:center;justify-content:center;gap:0.25rem">
+                    <span style="font-size:2.2rem">👁</span>
+                    <p style="color:#fff;font-size:0.9rem;font-weight:700;text-align:center;
+                              line-height:1.35">กะพริบตา 1 ครั้ง</p>
+                    <p id="circBlinkCountdown"
+                       style="color:#94a3b8;font-size:2rem;font-weight:700;
+                              font-variant-numeric:tabular-nums">3</p>
+                </div>
             </div>
         </div>
 

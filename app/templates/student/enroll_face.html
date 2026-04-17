@@ -288,9 +288,68 @@
     {% endif %}
 
     {% if flow_mode == "circular" %}
-    <!-- ─── Circular Flow Placeholder ─── -->
+    <!-- ─── Step 4: Circular Face Scan ─── -->
     <div id="stepCircular" class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        <p class="text-sm text-slate-500 text-center">Circular flow placeholder</p>
+        <h3 class="text-sm font-semibold text-slate-800 mb-1 text-center">สแกนใบหน้า (360°)</h3>
+        <p class="text-sm text-center text-slate-500 mb-3" id="circularInstruction">หมุนหน้าช้าๆ เป็นวงกลม</p>
+
+        <!-- Circular camera arena: video clipped to circle + SVG tick ring overlay -->
+        <div style="display:flex;justify-content:center;margin-bottom:0.75rem">
+            <div id="circularArena" style="position:relative;
+                 width:min(260px,80vw);height:min(260px,80vw)">
+                <video id="videoCircular" autoplay playsinline muted
+                       style="position:absolute;inset:0;width:100%;height:100%;
+                              object-fit:cover;border-radius:50%;background:#0f172a;display:block"></video>
+                <svg id="circularTickSvg" viewBox="0 0 260 260"
+                     style="position:absolute;inset:0;width:100%;height:100%;
+                            overflow:visible;pointer-events:none"></svg>
+            </div>
+        </div>
+
+        <p class="text-sm text-center font-medium mb-4" id="circularProgress"
+           style="color:#64748b">0/5 มุมเก็บแล้ว</p>
+
+        <!-- Phase 2 test buttons: verify UI without real pose detection -->
+        <div id="circularTestBtns">
+            <p class="text-xs text-center mb-2" style="color:#cbd5e1">— ทดสอบ UI —</p>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <button onclick="circularMarkZone('FRONT')"
+                        class="text-xs py-2 px-3 rounded-lg border border-slate-200
+                               bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200
+                               hover:text-indigo-700 text-slate-600 transition-colors">
+                    Mark FRONT done
+                </button>
+                <button onclick="circularMarkZone('UP')"
+                        class="text-xs py-2 px-3 rounded-lg border border-slate-200
+                               bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200
+                               hover:text-indigo-700 text-slate-600 transition-colors">
+                    Mark UP done
+                </button>
+                <button onclick="circularMarkZone('RIGHT')"
+                        class="text-xs py-2 px-3 rounded-lg border border-slate-200
+                               bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200
+                               hover:text-indigo-700 text-slate-600 transition-colors">
+                    Mark RIGHT done
+                </button>
+                <button onclick="circularMarkZone('DOWN')"
+                        class="text-xs py-2 px-3 rounded-lg border border-slate-200
+                               bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200
+                               hover:text-indigo-700 text-slate-600 transition-colors">
+                    Mark DOWN done
+                </button>
+                <button onclick="circularMarkZone('LEFT')"
+                        class="text-xs py-2 px-3 rounded-lg border border-slate-200
+                               bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200
+                               hover:text-indigo-700 text-slate-600 col-span-2 transition-colors">
+                    Mark LEFT done
+                </button>
+            </div>
+            <button onclick="circularReset()"
+                    class="w-full text-xs py-2 rounded-lg border border-slate-200
+                           hover:bg-slate-50 text-slate-400 transition-colors">
+                ↺ Reset
+            </button>
+        </div>
     </div>
     {% endif %}
 

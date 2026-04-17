@@ -206,6 +206,7 @@
         </button>
     </div>
 
+    {% if flow_mode == "classic" %}
     <!-- ─── Step 4: Interactive Challenge ─── -->
     <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="step4">
         <h3 class="text-sm font-semibold text-slate-800 mb-1">ยืนยันตัวตน (Interactive Challenge)</h3>
@@ -284,6 +285,14 @@
             </div>
         </div>
     </div>
+    {% endif %}
+
+    {% if flow_mode == "circular" %}
+    <!-- ─── Circular Flow Placeholder ─── -->
+    <div id="stepCircular" class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <p class="text-sm text-slate-500 text-center">Circular flow placeholder</p>
+    </div>
+    {% endif %}
 
 </div>
 
@@ -333,6 +342,9 @@ const ENROLL_CONFIG = {
 };
 </script>
 <script src="{{ url_for('static', filename='js/enrollment_flow.js') }}"></script>
+{% if flow_mode == "circular" %}
+<script src="{{ url_for('static', filename='js/enrollment_circular.js') }}"></script>
+{% endif %}
 <!-- enrollment_flow.js loaded above (T15: JS extracted from template) -->
 {% endblock %}
 

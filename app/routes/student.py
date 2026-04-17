@@ -91,7 +91,9 @@ def enroll_face():
     # Reset server-side retry counters when page is (re)loaded
     session.pop("enroll_retry", None)
     session.pop("consent_given_at", None)
-    return render_template("student/enroll_face.html", already_enrolled=already_enrolled)
+    return render_template("student/enroll_face.html",
+                           already_enrolled=already_enrolled,
+                           flow_mode=current_app.config["ENROLL_FLOW_MODE"])
 
 
 @student_bp.route("/checkin")

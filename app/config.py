@@ -45,6 +45,9 @@ class Config:
     # Redis URL for rate limiter (production)
     REDIS_URL = os.getenv("REDIS_URL", "")
 
+    # Enrollment flow variant: "classic" | "circular"
+    ENROLL_FLOW_MODE = os.getenv("ENROLL_FLOW_MODE", "classic")
+
     # ── Flask-Session: server-side SQLAlchemy sessions (Railway deployment) ──
     SESSION_TYPE               = "sqlalchemy"
     SESSION_SQLALCHEMY_TABLE   = "flask_sessions"

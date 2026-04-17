@@ -291,7 +291,8 @@
     <!-- ─── Step 4: Circular Face Scan ─── -->
     <div id="stepCircular" class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <h3 class="text-sm font-semibold text-slate-800 mb-1 text-center">สแกนใบหน้า (360°)</h3>
-        <p class="text-sm text-center text-slate-500 mb-3" id="circularInstruction">หมุนหน้าช้าๆ เป็นวงกลม</p>
+        <p class="text-sm text-center text-slate-500 mb-2" id="circularInstruction">หมุนหน้าช้าๆ เป็นวงกลม</p>
+        <p class="text-sm text-center min-h-[1.25em] mb-2" id="circularStatus" style="color:#64748b"></p>
 
         <!-- Circular camera arena: video clipped to circle + SVG tick ring overlay -->
         <div style="display:flex;justify-content:center;margin-bottom:0.75rem">
@@ -306,11 +307,25 @@
             </div>
         </div>
 
-        <p class="text-sm text-center font-medium mb-4" id="circularProgress"
+        <p class="text-sm text-center font-medium mb-3" id="circularProgress"
            style="color:#64748b">0/5 มุมเก็บแล้ว</p>
 
-        <!-- Phase 2 test buttons: verify UI without real pose detection -->
-        <div id="circularTestBtns">
+        <!-- Restart button (shown by JS once camera is active) -->
+        <button id="btnCircularRestart" onclick="circularRestart()"
+                class="w-full text-xs py-2 mb-3 rounded-lg border border-slate-200
+                       hover:bg-slate-50 text-slate-400 transition-colors"
+                style="display:none">
+            ↺ เริ่มใหม่
+        </button>
+
+        <!-- Checking overlay (shown after all zones captured) -->
+        <div id="circularCheckingOverlay" style="display:none;text-align:center;padding:0.5rem 0 1rem">
+            <div class="spinner" style="margin:0 auto 0.5rem"></div>
+            <p class="text-sm text-slate-500">กำลังประมวลผล...</p>
+        </div>
+
+        <!-- Phase 2 test buttons: hidden but kept for debugging (display:none) -->
+        <div id="circularTestBtns" style="display:none">
             <p class="text-xs text-center mb-2" style="color:#cbd5e1">— ทดสอบ UI —</p>
             <div class="grid grid-cols-2 gap-2 mb-2">
                 <button onclick="circularMarkZone('FRONT')"

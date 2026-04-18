@@ -13,7 +13,7 @@ NEW_DEVICE_THRESHOLD     = 0.80   # check-in, new / unbound device
 CONSISTENCY_THRESHOLD    = 0.80   # pairwise consistency during enrollment
 DUPLICATE_THRESHOLD      = 0.65   # reject if another student matches this closely
 MOIRE_THRESHOLD          = 0.60   # high-freq energy ratio; above = likely screen replay (multi-frame /api/enroll)  # TODO: If False Rejections occur in low light due to camera noise, consider increasing this to 0.65 - 0.70.
-MOIRE_THRESHOLD_SINGLE   = 0.72   # single-frame threshold for /api/spoof_check — more conservative (real face JPEG noise can score 0.50–0.58)
+MOIRE_THRESHOLD_SINGLE   = 0.55   # lowered from 0.72 — high-DPI phone screens (iPhone Pro, Galaxy S) produce Moiré scores in 0.50–0.58 range. Monitor FRR.
 TEMPORAL_VAR_THRESHOLD   = 4.0   # face-ROI temporal std-dev; below = static photo
 # Applied to face-crop only (not full frame) → real face ~15-25, static photo ~0.5-2.5
 # Lowered from 8.0 → 4.0 to reduce FRR in passive 5-frame (1.25s) capture sessions.
@@ -182,12 +182,13 @@ def combined_spoof_score(
     try:
         moire = detect_screen_moire([img_bgr], threshold=MOIRE_THRESHOLD_SINGLE)
         moire_avg = moire["avg_score"]
-        if moire_avg <= 0.40:
+        # Tightened gradient: real faces 0.35-0.45 → low spoof_score; phone screens ≥0.55 → 1.0
+        if moire_avg <= 0.35:
             moire_spoof = 0.0
         elif moire_avg >= MOIRE_THRESHOLD_SINGLE:
             moire_spoof = 1.0
         else:
-            moire_spoof = (moire_avg - 0.40) / (MOIRE_THRESHOLD_SINGLE - 0.40)
+            moire_spoof = (moire_avg - 0.35) / (MOIRE_THRESHOLD_SINGLE - 0.35)
         layers["moire"] = {
             "spoof_score": round(moire_spoof, 4),
             "avg_score": moire_avg,
@@ -257,6 +258,24 @@ def combined_spoof_score(
         _audit.warning(f"[COMBINED_SPOOF] onnx error skip: {e}")
         layers["onnx"] = {"spoof_score": None, "is_real": None, "raw_real_score": None, "error": str(e)[:80]}
         active_weights["onnx"] = 0.0
+
+    # ── CRITICAL: fail-close if primary ML layer (Fasnet) is dead ──────────
+    # Without Fasnet, only FFT layers remain — insufficient for high-DPI screens.
+    fasnet_alive = layers.get("fasnet", {}).get("spoof_score") is not None
+    if not fasnet_alive:
+        _audit.error(
+            "[COMBINED_SPOOF] Fasnet layer unavailable — failing CLOSED "
+            "(rejecting frame). FFT-only defense is insufficient for "
+            "high-DPI screen attacks."
+        )
+        return {
+            "is_real": False,
+            "combined_score": 1.0,
+            "threshold": SPOOF_DECISION_THRESHOLD,
+            "layers": layers,
+            "weights_used": active_weights,
+            "disagreements": ["fasnet_unavailable_fail_close"],
+        }
 
     # ── Normalize active weights so they sum to 1.0 ────────────────────────
     total_weight = sum(active_weights.values())

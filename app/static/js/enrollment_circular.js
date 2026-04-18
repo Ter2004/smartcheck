@@ -79,6 +79,10 @@ let _blinkCountInterval = null;
 let _blinkClosed        = false;
 let _blinkCloseTime     = null;
 
+// Phase 5: enroll-submission state
+const _circFrontEarSamples = [];   // EAR readings during FRONT zone hold → baseline_ear
+let _circSubmitting = false;       // double-submit guard
+
 // ─── SVG init ─────────────────────────────────────────────────────────────────
 function circularInit() {
     const svg = document.getElementById('circularTickSvg');
@@ -165,6 +169,11 @@ function _circOnResults(results, video) {
     const avgFaceH = recent.reduce((s, f) => s + f.faceH, 0) / CIRC_AVG_FRAMES;
 
     const zone = _circWhichZone(avgYaw, avgPitch);
+
+    // Collect EAR while user holds FRONT zone (neutral face) for baseline_ear
+    if (zone === 'FRONT' && !_circDone['FRONT']) {
+        _circFrontEarSamples.push(_computeEAR(lm));
+    }
 
     if (zone !== _circHoldZone) {
         _circHoldZone  = zone;
@@ -361,10 +370,34 @@ function stopCircularCapture() {
     _circHoldZone = null; _circHoldStart = null;
     _blinkEarBuf.length = 0;
     _blinkClosed = false; _blinkCloseTime = null;
+    _circFrontEarSamples.length = 0;
+}
+
+// ─── Phase 5: /api/spoof_check wrapper ───────────────────────────────────────
+async function _circSpoofCheck(imageB64) {
+    try {
+        const res = await fetch(ENROLL_CONFIG.spoofCheckUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': _csrfToken(),
+            },
+            body: JSON.stringify({ image: imageB64 }),
+        });
+        if (res.status === 429) return { is_real: false, confidence: 0, _rateLimited: true,
+                                         message: 'ระบบกำลังประมวลผล กรุณารอสักครู่' };
+        if (!res.ok) return { is_real: false, confidence: 0, _networkError: true };
+        return await res.json();
+    } catch (e) {
+        return { is_real: false, confidence: 0, _networkError: true };
+    }
 }
 
 // ─── Completion & timeout ─────────────────────────────────────────────────────
-function _circHandleAllComplete() {
+async function _circHandleAllComplete() {
+    if (_circSubmitting) return;
+    _circSubmitting = true;
+
     stopCircularCapture();
 
     document.getElementById('circularInstruction').style.display = 'none';
@@ -372,11 +405,159 @@ function _circHandleAllComplete() {
     document.getElementById('circularCheckingOverlay').style.display = 'block';
     document.getElementById('btnCircularRestart').style.display  = 'none';
 
-    console.log('[circular] All 5 zones captured:', Object.keys(window.circularCapturedFrames));
-    Object.entries(window.circularCapturedFrames).forEach(([zone, frame]) =>
-        console.log(`  ${zone}: ${frame.substring(0, 80)}...`)
-    );
-    // Phase 5 will POST to /api/enroll here
+    const FRAME_ORDER = ['FRONT', 'RIGHT', 'LEFT', 'UP', 'DOWN'];
+    const frames = FRAME_ORDER.map(z => window.circularCapturedFrames[z]);
+
+    // ── 1. Pre-flight spoof check each frame (populates session liveness_embeddings) ──
+    _circSetCheckingMsg('กำลังตรวจสอบความปลอดภัย...');
+    for (let i = 0; i < frames.length; i++) {
+        let result = await _circSpoofCheck(frames[i]);
+
+        if (result._rateLimited) {
+            _circSetCheckingMsg('ระบบกำลังประมวลผล กรุณารอสักครู่...');
+            await new Promise(r => setTimeout(r, 3500));
+            result = await _circSpoofCheck(frames[i]);
+        }
+
+        if (result._networkError) continue;  // non-fatal — backend rejects spoof at /api/enroll
+
+        if (!result.is_real) {
+            _circSubmitting = false;
+            document.getElementById('circularCheckingOverlay').style.display = 'none';
+            _circShowEnrollError(result.message || 'ตรวจพบภาพปลอม — กรุณาลองใหม่ด้วยใบหน้าจริง');
+            setTimeout(() => circularRestart(), 3000);
+            return;
+        }
+    }
+
+    // ── 2. Compute baseline_ear from FRONT zone EAR samples ──────────────────
+    const baseline_ear = _circFrontEarSamples.length > 0
+        ? _circFrontEarSamples.reduce((s, v) => s + v, 0) / _circFrontEarSamples.length
+        : 0.25;
+    const ear_std = _stdDev(_circFrontEarSamples);
+
+    // ── 3. POST to /api/enroll ────────────────────────────────────────────────
+    _circSetCheckingMsg('กำลังลงทะเบียน...');
+    const t0 = Date.now();
+    try {
+        const res = await fetch(ENROLL_CONFIG.enrollUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': _csrfToken(),
+            },
+            body: JSON.stringify({
+                face_images:  frames,
+                baseline_ear: baseline_ear,
+                ear_std:      ear_std,
+                flow_mode:    'circular',
+            }),
+        });
+
+        const duration_ms = Date.now() - t0;
+        const json = await res.json();
+        console.log(`[CIRCULAR_ENROLL] status=${json.status}, frames_sent=5, duration_ms=${duration_ms}`);
+
+        document.getElementById('circularCheckingOverlay').style.display = 'none';
+
+        // ── 4. Handle all response statuses ──────────────────────────────────
+        if (json.status === 'pending_verify') {
+            _circShowEnrollSuccess(json.message || 'ลงทะเบียนใบหน้าสำเร็จ!');
+
+        } else if (json.status === 'need_more') {
+            // Single outlier — reset just that zone's tick, re-capture only that angle
+            const zoneIdx    = json.removed_indices?.[0];
+            const failedZone = zoneIdx !== undefined ? FRAME_ORDER[zoneIdx] : null;
+            const msg = failedZone
+                ? `มุม ${CIRC_ZONES[failedZone]?.label || failedZone} ไม่ชัด — กรุณาถ่ายใหม่`
+                : (json.message || 'รูปบางรูปไม่ชัด — กรุณาถ่ายใหม่');
+            _circShowEnrollError(msg);
+            if (failedZone) _circResetZone(failedZone);
+            setTimeout(() => _circResumeFromNeedMore(), 3000);
+
+        } else if (json.status === 'restart_capture') {
+            _circShowEnrollError(json.message || 'ภาพไม่สม่ำเสมอ — กรุณาถ่ายใหม่ทั้งหมด');
+            setTimeout(() => circularRestart(), 3000);
+
+        } else if (json.status === 'spoof_detected') {
+            const frameInfo = json.failed_frame ? ` (รูปที่ ${json.failed_frame})` : '';
+            _circShowEnrollError((json.message || 'ตรวจพบภาพปลอม') + frameInfo);
+            setTimeout(() => fullRestart(), 3000);
+
+        } else if (json.status === 'duplicate') {
+            _circShowEnrollError(json.message || 'ใบหน้านี้ลงทะเบียนแล้ว กรุณาติดต่ออาจารย์');
+            setTimeout(() => { window.location.href = ENROLL_CONFIG.dashboardUrl; }, 3000);
+
+        } else if (res.status === 429) {
+            _circShowEnrollError('ระบบยุ่ง — กรุณารอสักครู่แล้วลองใหม่');
+            setTimeout(() => circularRestart(), 5000);
+
+        } else {
+            _circShowEnrollError(json.message || 'เกิดข้อผิดพลาด — กรุณาลองใหม่');
+            setTimeout(() => circularRestart(), 3000);
+        }
+
+    } catch (e) {
+        const duration_ms = Date.now() - t0;
+        console.log(`[CIRCULAR_ENROLL] status=network_error, frames_sent=5, duration_ms=${duration_ms}`);
+        document.getElementById('circularCheckingOverlay').style.display = 'none';
+        _circShowEnrollError('ไม่สามารถเชื่อมต่อ server ได้ — กรุณาลองใหม่');
+        setTimeout(() => circularRestart(), 3000);
+    } finally {
+        _circSubmitting = false;
+    }
+}
+
+// ─── Phase 5: UI helpers ──────────────────────────────────────────────────────
+function _circSetCheckingMsg(msg) {
+    const p = document.querySelector('#circularCheckingOverlay p');
+    if (p) p.textContent = msg;
+}
+
+function _circShowEnrollSuccess(msg) {
+    document.getElementById('circResultSection').style.display   = 'block';
+    document.getElementById('circSuccessView').style.display     = 'block';
+    document.getElementById('circErrorView').style.display       = 'none';
+    const m = document.getElementById('circSuccessMsg');
+    if (m) m.textContent = msg;
+}
+
+function _circShowEnrollError(msg) {
+    document.getElementById('circResultSection').style.display   = 'block';
+    document.getElementById('circSuccessView').style.display     = 'none';
+    document.getElementById('circErrorView').style.display       = 'block';
+    const m = document.getElementById('circErrorMsg');
+    if (m) m.textContent = msg;
+}
+
+function _circResetZone(zoneName) {
+    if (!_circDone[zoneName]) return;
+    delete _circDone[zoneName];
+    delete window.circularCapturedFrames[zoneName];
+    const zone = CIRC_ZONES[zoneName];
+    if (zone) {
+        zone.ticks.forEach(i => {
+            const el = document.getElementById(`circ-tick-${i}`);
+            if (el) { el.setAttribute('stroke', COLOR_EMPTY); el.setAttribute('stroke-width', CIRC_TICK_W); }
+        });
+    }
+    const done  = Object.keys(_circDone).length;
+    const total = Object.keys(CIRC_ZONES).length;
+    const prog  = document.getElementById('circularProgress');
+    if (prog) { prog.textContent = `${done}/${total} มุมเก็บแล้ว`; prog.style.color = ''; }
+    const guide = document.getElementById('circFaceGuide');
+    if (guide) { guide.setAttribute('stroke', 'rgba(255,255,255,0.5)'); guide.setAttribute('stroke-width', '2'); guide.setAttribute('stroke-dasharray', '6 5'); }
+}
+
+function _circResumeFromNeedMore() {
+    document.getElementById('circResultSection').style.display        = 'none';
+    document.getElementById('circSuccessView').style.display          = 'none';
+    document.getElementById('circErrorView').style.display            = 'none';
+    document.getElementById('circularCheckingOverlay').style.display  = 'none';
+    document.getElementById('circularInstruction').style.display      = '';
+    document.getElementById('circularStatus').style.display           = '';
+    _circSetStatus('');
+    startCircularCapture();
 }
 
 function _circHandleTimeout() {
@@ -404,6 +585,11 @@ function circularRestart() {
     if (instr) { instr.style.display = ''; instr.textContent = 'หมุนหน้าช้าๆ เป็นวงกลม'; instr.style.color = ''; }
     if (stat)  { stat.style.display = ''; stat.textContent = ''; stat.style.color = ''; }
     if (btn)   btn.style.display   = 'none';
+
+    // Clear result section from previous attempt
+    const res = document.getElementById('circResultSection');
+    if (res) res.style.display = 'none';
+    _circSubmitting = false;
 
     startCircularCapture();
 }

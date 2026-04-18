@@ -336,6 +336,28 @@
             <p class="text-sm text-slate-500">กำลังประมวลผล...</p>
         </div>
 
+        <!-- Enrollment result (shown after POST to /api/enroll) -->
+        <div id="circResultSection" style="display:none;text-align:center;padding:1rem 0">
+            <div id="circSuccessView" style="display:none">
+                <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <h3 class="text-base font-semibold text-slate-800 mb-1">ลงทะเบียนสำเร็จ!</h3>
+                <p id="circSuccessMsg" class="text-sm text-slate-500 mb-5">บันทึก Face Embedding เรียบร้อยแล้ว</p>
+                <a href="{{ url_for('student.dashboard') }}"
+                   class="inline-flex items-center justify-center w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
+                    กลับหน้าหลัก
+                </a>
+            </div>
+            <div id="circErrorView" style="display:none">
+                <div class="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </div>
+                <h3 class="text-base font-semibold text-slate-800 mb-1">เกิดข้อผิดพลาด</h3>
+                <p id="circErrorMsg" class="text-sm text-rose-500 mb-5"></p>
+            </div>
+        </div>
+
         <!-- Phase 2 test buttons: hidden but kept for debugging (display:none) -->
         <div id="circularTestBtns" style="display:none">
             <p class="text-xs text-center mb-2" style="color:#cbd5e1">— ทดสอบ UI —</p>

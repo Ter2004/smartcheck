@@ -9,3 +9,6 @@ torch==2.2.2
 keras==2.15.0
 h5py<3.11
 protobuf<5.0
+# opencv-python-headless 4.12+ is built with numpy 2.x — pin to 4.11.x
+opencv-python-headless<4.12
+opencv-python<4.12

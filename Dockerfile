@@ -9,7 +9,7 @@ ENV TF_CPP_MIN_LOG_LEVEL=2
 COPY requirements.txt constraints.txt ./
 
 # Change CACHE_BUST to force re-run of all layers below (pip install + model download)
-ARG CACHE_BUST=20260419d
+ARG CACHE_BUST=20260419e
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc libpq-dev && \
     \
@@ -29,7 +29,7 @@ RUN apt-get update && \
     \
     # Step 3: Replace opencv-python (pulled by deepface) with headless build
     pip uninstall -y opencv-python opencv-python-headless 2>/dev/null || true && \
-    pip install --no-cache-dir "opencv-python-headless>=4.8.0" && \
+    pip install --no-cache-dir --constraint constraints.txt "opencv-python-headless>=4.8.0,<4.12" && \
     \
     # Step 4: Verify the critical imports work BEFORE proceeding.
     # Build fails loudly here rather than producing a silently broken image.

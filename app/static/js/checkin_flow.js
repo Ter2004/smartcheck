@@ -303,7 +303,10 @@ class CheckinFlow {
             return;
         }
 
+        const frame1 = await this._captureFrame(video);
+        await this._sleep(500);
         const capturedFrame = await this._captureFrame(video);
+        this._capturedFrames = [frame1, capturedFrame];
         let livenessAction  = 'passive';
 
         if (spoofScore >= 0.98) {
@@ -362,6 +365,7 @@ class CheckinFlow {
                     liveness_action: livenessAction,
                     liveness_pass:   true,
                     face_image:      faceImage,
+                    face_images:     this._capturedFrames || [faceImage],
                     ear_samples:     this._earSamples,
                 }),
             });

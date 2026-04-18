@@ -1,4 +1,6 @@
 import logging
+import cv2
+import numpy as np
 from datetime import datetime, timezone
 from dateutil import parser as dtparser
 from flask import Blueprint, request, jsonify, session, current_app
@@ -9,7 +11,8 @@ _log = logging.getLogger("smartcheck.checkin")
 from app.services.face_service import (
     extract_embedding, verify_face_multi,
     check_anti_spoof, check_anti_spoof_with_score,
-    detect_screen_moire, _decode_image, server_validate_frame,
+    detect_screen_moire, detect_screen_texture,
+    MOIRE_THRESHOLD_SINGLE, _decode_image, server_validate_frame,
 )
 from app.services.security_service import (
     verify_device_token, verify_embedding_integrity, csrf_protect,
@@ -122,10 +125,9 @@ def checkin():
         _log.warning("[LIVENESS] ear_samples missing — passing with warn (lenient mode)")
     else:
         try:
-            import numpy as _np
-            ear_arr = _np.array(ear_samples, dtype=float)
-            ear_std = float(_np.std(ear_arr))
-            ear_min = float(_np.min(ear_arr))
+            ear_arr = np.array(ear_samples, dtype=float)
+            ear_std = float(np.std(ear_arr))
+            ear_min = float(np.min(ear_arr))
             _log.info(f"[LIVENESS] ear std={ear_std:.4f} min={ear_min:.4f} n={len(ear_arr)}")
             if ear_std < 0.03 or ear_min >= 0.18:
                 return jsonify({
@@ -139,8 +141,8 @@ def checkin():
     # ─── 4a. Moiré / screen-replay detection (FFT — faster than MiniFASNet) ───
     try:
         raw_frame   = _decode_image(face_image)
-        moire       = detect_screen_moire([raw_frame])
-        _log.info(f"[MOIRE] avg_score={moire['avg_score']} is_screen={moire['is_screen']} threshold={moire.get('threshold')}")
+        moire       = detect_screen_moire([raw_frame], threshold=MOIRE_THRESHOLD_SINGLE)
+        _log.info(f"[MOIRE] avg_score={moire['avg_score']} is_screen={moire['is_screen']} threshold={MOIRE_THRESHOLD_SINGLE}")
         if moire["is_screen"]:
             return jsonify({
                 "ok":    False,
@@ -155,6 +157,54 @@ def checkin():
             "error": "ไม่สามารถตรวจสอบภาพได้ — กรุณาถ่ายใหม่อีกครั้ง",
             "retry_face": True,
         }), 400
+
+    # ─── 4a-2. Screen Texture FFT (OLED/LCD spectral peaks) ───────────────
+    try:
+        is_screen_tex = detect_screen_texture(raw_frame, min_peaks=30)
+        _log.info(f"[SCREEN_TEXTURE] is_screen={is_screen_tex}")
+        if is_screen_tex:
+            return jsonify({
+                "ok": False,
+                "error": "ตรวจพบภาพจากหน้าจอ — กรุณาใช้ใบหน้าจริงเท่านั้น",
+                "spoof": True,
+                "retry_face": True,
+            }), 400
+    except Exception as tex_err:
+        _log.error(f"[SCREEN_TEXTURE] check error (fail-close): {tex_err}")
+        return jsonify({
+            "ok": False,
+            "error": "ไม่สามารถตรวจสอบภาพได้ — กรุณาถ่ายใหม่อีกครั้ง",
+            "retry_face": True,
+        }), 400
+
+    # ─── 4a-3. Temporal Variance (catches printed photos / static images) ─
+    face_images_list = data.get("face_images")
+    if isinstance(face_images_list, list) and len(face_images_list) >= 2:
+        try:
+            frames_gray = []
+            for img_b64 in face_images_list[-3:]:
+                try:
+                    frame_bgr = _decode_image(img_b64)
+                    gray = cv2.resize(
+                        cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY),
+                        (64, 64)
+                    )
+                    frames_gray.append(gray.astype(np.float32))
+                except Exception:
+                    continue
+            if len(frames_gray) >= 2:
+                stack = np.stack(frames_gray, axis=0)
+                temporal_var = float(np.mean(np.std(stack, axis=0)))
+                _log.info(f"[TEMPORAL] variance={temporal_var:.3f} frames={len(frames_gray)}")
+                if temporal_var < 4.0:
+                    return jsonify({
+                        "ok": False,
+                        "error": "ตรวจพบภาพนิ่ง — กรุณาใช้ใบหน้าจริงเท่านั้น",
+                        "spoof": True,
+                        "retry_face": True,
+                    }), 400
+        except Exception as temp_err:
+            _log.error(f"[TEMPORAL] check error (non-blocking): {temp_err}")
 
     # ─── 4b. Anti-spoofing via MiniFASNet ────────────────────────────────────
     try:

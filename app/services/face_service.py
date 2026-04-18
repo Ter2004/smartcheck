@@ -48,12 +48,14 @@ def _get_antispoof_session():
     if _antispoof_session is None:
         with _antispoof_lock:
             if _antispoof_session is None:
-                import onnxruntime as ort
+                try:
+                    import onnxruntime as ort
+                except ImportError:
+                    _audit.info("[ANTISPOOF] onnxruntime not installed — ONNX audit layer disabled")
+                    return None
                 if not os.path.exists(_ANTISPOOF_MODEL_PATH):
-                    raise FileNotFoundError(
-                        f"Anti-spoof ONNX model not found at {_ANTISPOOF_MODEL_PATH}. "
-                        "See app/services/models/README.md"
-                    )
+                    _audit.info(f"[ANTISPOOF] ONNX model not found at {_ANTISPOOF_MODEL_PATH} — audit layer disabled")
+                    return None
                 _antispoof_session = ort.InferenceSession(
                     _ANTISPOOF_MODEL_PATH, providers=["CPUExecutionProvider"]
                 )

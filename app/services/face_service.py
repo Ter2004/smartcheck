@@ -1,5 +1,7 @@
 import base64
 import logging
+import os
+import threading
 import numpy as np
 import cv2
 import json
@@ -19,6 +21,68 @@ DUPLICATE_GRAY_ZONE      = (0.60, 0.70)  # log matches in this range for future 
 MOIRE_LOG_RANGE          = (0.45, 0.75)  # log FFT scores near the threshold
 
 _audit = logging.getLogger("smartcheck.enrollment")
+
+# ─── Anti-spoof ONNX (Silent-Face MiniFASNetV2) ───────────────────────────────
+_antispoof_session    = None
+_antispoof_lock       = threading.Lock()
+_ANTISPOOF_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "antispoof.onnx")
+_ANTISPOOF_INPUT_SIZE = 80
+_ANTISPOOF_SCALE      = 2.7
+
+
+def _get_antispoof_session():
+    global _antispoof_session
+    if _antispoof_session is None:
+        with _antispoof_lock:
+            if _antispoof_session is None:
+                import onnxruntime as ort
+                if not os.path.exists(_ANTISPOOF_MODEL_PATH):
+                    raise FileNotFoundError(
+                        f"Anti-spoof ONNX model not found at {_ANTISPOOF_MODEL_PATH}. "
+                        "See app/services/models/README.md"
+                    )
+                _antispoof_session = ort.InferenceSession(
+                    _ANTISPOOF_MODEL_PATH, providers=["CPUExecutionProvider"]
+                )
+                _audit.info(f"[ANTISPOOF] ONNX session loaded from {_ANTISPOOF_MODEL_PATH}")
+    return _antispoof_session
+
+
+def _crop_face_for_antispoof(img_bgr: np.ndarray, scale: float = 2.7, size: int = 80) -> np.ndarray:
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    gray  = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40))
+    h_img, w_img = img_bgr.shape[:2]
+    if len(faces) > 0:
+        x, y, w, h = faces[0]
+        cx, cy = x + w // 2, y + h // 2
+        nw, nh = int(w * scale), int(h * scale)
+        x1 = max(0, cx - nw // 2);    y1 = max(0, cy - nh // 2)
+        x2 = min(w_img, cx + nw // 2); y2 = min(h_img, cy + nh // 2)
+        crop = img_bgr[y1:y2, x1:x2]
+    else:
+        side = min(h_img, w_img)
+        y1 = (h_img - side) // 2; x1 = (w_img - side) // 2
+        crop = img_bgr[y1:y1+side, x1:x1+side]
+    if crop.size == 0:
+        crop = img_bgr
+    return cv2.resize(crop, (size, size))
+
+
+def _run_antispoof(img_bgr: np.ndarray) -> tuple:
+    session    = _get_antispoof_session()
+    crop       = _crop_face_for_antispoof(img_bgr)
+    rgb        = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    blob       = np.transpose(rgb, (2, 0, 1))[np.newaxis, :]   # (1, 3, 80, 80)
+    input_name = session.get_inputs()[0].name
+    raw        = session.run(None, {input_name: blob})[0][0]    # (3,)
+    shifted    = raw - raw.max()
+    exp_out    = np.exp(shifted)
+    probs      = exp_out / (exp_out.sum() + 1e-8)
+    real_score = float(probs[1]) if len(probs) >= 2 else float(probs[0])
+    is_real    = real_score > 0.5
+    _audit.info(f"[ANTISPOOF] score={real_score:.4f} is_real={is_real}")
+    return is_real, real_score
 
 
 def normalize_illumination(img: np.ndarray) -> np.ndarray:
@@ -66,61 +130,25 @@ def extract_embedding(base64_image: str) -> list:
 
 
 def check_anti_spoof(base64_image: str) -> bool:
-    """
-    ⚠️  STUB — NOT a real anti-spoof check.
-    MiniFASNet / PyTorch is unavailable on Railway (~512MB RAM limit).
-    This function only checks that a face is detectable (anti_spoofing=False).
-    It will return True for printed photos, screen replays, and masks.
-
-    Real spoof protection relies on:
-      - Moiré FFT check  (detect_screen_moire)
-      - Screen texture check  (detect_screen_texture)
-      - Temporal variance check  (detect_static_image)
-      - MediaPipe liveness challenge  (blink / head-turn / nod)
-
-    TODO: Replace with a lightweight model (e.g. Silent-Face-Anti-Spoofing)
-          that runs within the Railway memory budget.
-    """
-    from deepface import DeepFace
-
+    """Run Silent-Face MiniFASNetV2 ONNX model; returns True if face is real."""
     img = _decode_image(base64_image)
-    faces = DeepFace.extract_faces(
-        img_path=img,
-        anti_spoofing=False,
-        detector_backend="opencv",
-        enforce_detection=True,
-    )
-    return bool(faces)
+    is_real, _ = _run_antispoof(img)
+    return is_real
 
 
 def check_anti_spoof_with_score(base64_image: str) -> tuple:
-    """
-    Returns (is_real: bool, score: float).
-    MiniFASNet unavailable (requires PyTorch); falls back to face detection.
-    """
-    from deepface import DeepFace
-
+    """Returns (is_real: bool, score: float) using MiniFASNetV2 ONNX model."""
     img = _decode_image(base64_image)
-    faces = DeepFace.extract_faces(
-        img_path=img,
-        anti_spoofing=False,
-        detector_backend="opencv",
-        enforce_detection=True,
-    )
-    is_real = bool(faces)
-    _audit.debug(f"[ANTISPOOF] face_detected={is_real} (no MiniFASNet — PyTorch not available)")
-    return is_real, 1.0 if is_real else 0.0
+    return _run_antispoof(img)
 
 
 def spoof_check_with_embedding(base64_image: str) -> dict:
     """
-    Face detection + FaceNet512 embedding extraction.
-    MiniFASNet anti-spoof removed: requires PyTorch (~700MB) which exceeds
-    Railway memory limit. Liveness is enforced by blink check in frontend.
+    MiniFASNetV2 anti-spoof + FaceNet512 embedding in one call.
     Returns:
         {
-            "is_real":    bool,   # True if face detected
-            "confidence": float,  # 1.0 if face found, 0.0 if not
+            "is_real":    bool,
+            "confidence": float,
             "embedding":  list | None,
             "message":    str,
         }
@@ -132,7 +160,10 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
     except Exception as e:
         return {"is_real": False, "confidence": 0.0, "embedding": None, "message": str(e)}
 
-    # Extract FaceNet512 embedding — raises ValueError if no face detected
+    is_real, score = _run_antispoof(img)
+    if not is_real:
+        return {"is_real": False, "confidence": round(score, 4), "embedding": None, "message": "ตรวจพบภาพปลอม"}
+
     try:
         img_clahe = normalize_illumination(img)
         rep = DeepFace.represent(
@@ -148,13 +179,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
         _audit.error(f"[SPOOF_CHECK] embedding error: {e}", exc_info=True)
         return {"is_real": False, "confidence": 0.0, "embedding": None, "message": "ตรวจสอบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"}
 
-    _audit.info(f"[SPOOF_CHECK] face detected, embedding extracted (no MiniFASNet)")
-    return {
-        "is_real":    True,
-        "confidence": 1.0,
-        "embedding":  embedding,
-        "message":    "ใบหน้าตรวจพบ",
-    }
+    return {"is_real": True, "confidence": round(score, 4), "embedding": embedding, "message": "ใบหน้าจริง"}
 
 
 def cosine_similarity(vec_a: list, vec_b: list) -> float:

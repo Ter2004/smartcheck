@@ -48,6 +48,9 @@ class Config:
     # Enrollment flow variant: "classic" | "circular"
     ENROLL_FLOW_MODE = os.getenv("ENROLL_FLOW_MODE", "classic")
 
+    # BLE proximity check — set BLE_CHECK_ENABLED=true in production when beacons are deployed
+    BLE_CHECK_ENABLED = os.getenv("BLE_CHECK_ENABLED", "false").lower() == "true"
+
     # ── Flask-Session: server-side SQLAlchemy sessions (Railway deployment) ──
     SESSION_TYPE               = "sqlalchemy"
     SESSION_SQLALCHEMY_TABLE   = "flask_sessions"

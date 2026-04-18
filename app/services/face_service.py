@@ -20,6 +20,19 @@ TEMPORAL_VAR_THRESHOLD   = 4.0   # face-ROI temporal std-dev; below = static pho
 DUPLICATE_GRAY_ZONE      = (0.60, 0.70)  # log matches in this range for future tuning
 MOIRE_LOG_RANGE          = (0.45, 0.75)  # log FFT scores near the threshold
 
+# ─── Weighted spoof detection config ─────────────────────────────────────────
+# Each layer outputs spoof_score in [0.0, 1.0] where 0=real, 1=spoof.
+# Final decision: weighted sum > SPOOF_DECISION_THRESHOLD → reject.
+SPOOF_WEIGHTS = {
+    "fasnet":   0.35,
+    "moire":    0.20,
+    "temporal": 0.20,
+    "texture":  0.15,
+    "onnx":     0.10,
+}
+SPOOF_DECISION_THRESHOLD = 0.50
+FASNET_REAL_THRESHOLD    = 0.50
+
 _audit = logging.getLogger("smartcheck.enrollment")
 
 # ─── Anti-spoof ONNX (Silent-Face MiniFASNetV2) ───────────────────────────────
@@ -113,6 +126,196 @@ def _run_antispoof(img_bgr: np.ndarray) -> tuple:
     return is_real, real_score
 
 
+def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
+    """
+    Run DeepFace's built-in anti-spoofing (Fasnet/MiniVision Silent-Face).
+    Returns (is_real: bool, spoof_score: float) where spoof_score ∈ [0,1]
+    and 0 = definitely real, 1 = definitely spoof.
+    On exception returns (None, None) — caller redistributes weight.
+    """
+    try:
+        from deepface import DeepFace
+        faces = DeepFace.extract_faces(
+            img_path=img_bgr,
+            detector_backend="opencv",
+            anti_spoofing=True,
+            enforce_detection=True,
+        )
+        if not faces:
+            return None, None
+        face = faces[0]
+        is_real   = bool(face.get("is_real", False))
+        raw_score = float(face.get("antispoof_score", 0.5))
+        spoof_score = (1.0 - raw_score) if is_real else raw_score
+        spoof_score = max(0.0, min(1.0, spoof_score))
+        return is_real, spoof_score
+    except Exception as e:
+        _audit.error(f"[FASNET] inference error: {e}")
+        return None, None
+
+
+def combined_spoof_score(
+    img_bgr: np.ndarray,
+    frames_for_temporal: list = None,
+) -> dict:
+    """
+    Run all 5 anti-spoof layers and combine into a single weighted score.
+
+    Args:
+        img_bgr: single frame (primary input for single-frame checks)
+        frames_for_temporal: optional list of 2+ frames for temporal variance.
+            If None or <2 frames, temporal layer is skipped (weight redistributed).
+
+    Returns dict with keys: is_real, combined_score, threshold, layers,
+    weights_used, disagreements.
+
+    Fail behavior: Moiré and Texture fail-close (score=1.0 on error).
+    Fasnet, ONNX, Temporal fail-open (None → weight redistributed to 0).
+    If ALL layers fail → fail-close (is_real=False).
+    """
+    layers = {}
+    active_weights = dict(SPOOF_WEIGHTS)
+
+    # ── Layer 1: Moiré FFT (fail-close) ───────────────────────────────────
+    try:
+        moire = detect_screen_moire([img_bgr], threshold=MOIRE_THRESHOLD_SINGLE)
+        moire_avg = moire["avg_score"]
+        if moire_avg <= 0.40:
+            moire_spoof = 0.0
+        elif moire_avg >= MOIRE_THRESHOLD_SINGLE:
+            moire_spoof = 1.0
+        else:
+            moire_spoof = (moire_avg - 0.40) / (MOIRE_THRESHOLD_SINGLE - 0.40)
+        layers["moire"] = {
+            "spoof_score": round(moire_spoof, 4),
+            "avg_score": moire_avg,
+            "is_screen": moire["is_screen"],
+        }
+    except Exception as e:
+        _audit.error(f"[COMBINED_SPOOF] moire error fail-close: {e}")
+        layers["moire"] = {"spoof_score": 1.0, "avg_score": -1, "is_screen": True, "error": str(e)[:80]}
+
+    # ── Layer 2: Screen Texture FFT (fail-close) ───────────────────────────
+    try:
+        is_screen_tex = detect_screen_texture(img_bgr, min_peaks=30)
+        layers["texture"] = {
+            "spoof_score": 1.0 if is_screen_tex else 0.0,
+            "is_screen": is_screen_tex,
+        }
+    except Exception as e:
+        _audit.error(f"[COMBINED_SPOOF] texture error fail-close: {e}")
+        layers["texture"] = {"spoof_score": 1.0, "is_screen": True, "error": str(e)[:80]}
+
+    # ── Layer 3: Temporal Variance (fail-open if no frames) ────────────────
+    if frames_for_temporal and len(frames_for_temporal) >= 2:
+        try:
+            temporal = detect_static_image(frames_for_temporal)
+            variance = temporal["temporal_variance"]
+            if variance >= TEMPORAL_VAR_THRESHOLD * 2:
+                temporal_spoof = 0.0
+            elif variance <= TEMPORAL_VAR_THRESHOLD / 2:
+                temporal_spoof = 1.0
+            else:
+                temporal_spoof = 1.0 - (variance - TEMPORAL_VAR_THRESHOLD / 2) / (TEMPORAL_VAR_THRESHOLD * 1.5)
+                temporal_spoof = max(0.0, min(1.0, temporal_spoof))
+            layers["temporal"] = {
+                "spoof_score": round(temporal_spoof, 4),
+                "variance": variance,
+                "is_static": temporal["is_static"],
+            }
+        except Exception as e:
+            _audit.warning(f"[COMBINED_SPOOF] temporal error skip: {e}")
+            layers["temporal"] = {"spoof_score": None, "variance": None, "error": str(e)[:80]}
+            active_weights["temporal"] = 0.0
+    else:
+        layers["temporal"] = {"spoof_score": None, "variance": None, "reason": "not_enough_frames"}
+        active_weights["temporal"] = 0.0
+
+    # ── Layer 4: DeepFace Fasnet (primary ML, fail-open) ───────────────────
+    fasnet_is_real, fasnet_spoof = _run_fasnet_antispoof(img_bgr)
+    if fasnet_spoof is not None:
+        layers["fasnet"] = {
+            "spoof_score": round(fasnet_spoof, 4),
+            "is_real": fasnet_is_real,
+        }
+    else:
+        layers["fasnet"] = {"spoof_score": None, "is_real": None, "error": "inference_failed"}
+        active_weights["fasnet"] = 0.0
+
+    # ── Layer 5: Old ONNX (audit layer, fail-open) ─────────────────────────
+    try:
+        onnx_is_real, onnx_raw = _run_antispoof(img_bgr)
+        onnx_spoof = 1.0 - onnx_raw
+        layers["onnx"] = {
+            "spoof_score": round(onnx_spoof, 4),
+            "is_real": onnx_is_real,
+            "raw_real_score": round(onnx_raw, 4),
+        }
+    except Exception as e:
+        _audit.warning(f"[COMBINED_SPOOF] onnx error skip: {e}")
+        layers["onnx"] = {"spoof_score": None, "is_real": None, "raw_real_score": None, "error": str(e)[:80]}
+        active_weights["onnx"] = 0.0
+
+    # ── Normalize active weights so they sum to 1.0 ────────────────────────
+    total_weight = sum(active_weights.values())
+    if total_weight <= 0:
+        _audit.error("[COMBINED_SPOOF] all layers failed — fail-close")
+        return {
+            "is_real": False,
+            "combined_score": 1.0,
+            "threshold": SPOOF_DECISION_THRESHOLD,
+            "layers": layers,
+            "weights_used": active_weights,
+            "disagreements": ["all_layers_failed"],
+        }
+    normalized_weights = {k: v / total_weight for k, v in active_weights.items()}
+
+    # ── Compute weighted combined score ────────────────────────────────────
+    combined = 0.0
+    for layer_name, weight in normalized_weights.items():
+        layer_data = layers.get(layer_name, {})
+        score = layer_data.get("spoof_score")
+        if score is not None and weight > 0:
+            combined += score * weight
+    combined = round(combined, 4)
+
+    is_real = combined < SPOOF_DECISION_THRESHOLD
+
+    # ── Identify layer disagreements for audit ─────────────────────────────
+    disagreements = []
+    for layer_name, layer_data in layers.items():
+        score = layer_data.get("spoof_score")
+        if score is None:
+            continue
+        layer_says_spoof = score >= 0.5
+        final_says_spoof = not is_real
+        if layer_says_spoof != final_says_spoof:
+            disagreements.append(
+                f"{layer_name}(spoof_score={score:.3f},says_{'spoof' if layer_says_spoof else 'real'})"
+            )
+
+    _audit.info(
+        f"[COMBINED_SPOOF] combined={combined:.4f} threshold={SPOOF_DECISION_THRESHOLD} "
+        f"decision={'real' if is_real else 'spoof'} "
+        f"layers=["
+        f"fasnet={layers['fasnet'].get('spoof_score')}, "
+        f"moire={layers['moire'].get('spoof_score')}, "
+        f"temporal={layers['temporal'].get('spoof_score')}, "
+        f"texture={layers['texture'].get('spoof_score')}, "
+        f"onnx={layers['onnx'].get('spoof_score')}] "
+        f"disagreements={disagreements or 'none'}"
+    )
+
+    return {
+        "is_real": is_real,
+        "combined_score": combined,
+        "threshold": SPOOF_DECISION_THRESHOLD,
+        "layers": layers,
+        "weights_used": normalized_weights,
+        "disagreements": disagreements,
+    }
+
+
 def normalize_illumination(img: np.ndarray) -> np.ndarray:
     """Apply CLAHE to L-channel of LAB colorspace to normalize lighting."""
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
@@ -159,75 +362,60 @@ def extract_embedding(base64_image: str) -> list:
 
 def check_anti_spoof(base64_image: str) -> bool:
     """
-    TEMPORARILY BYPASSED — ONNX model produces false rejects on real
-    faces (class 2 dominant at ~99% for all inputs; see audit logs).
-    Upstream defense (Moiré FFT + Screen Texture + Temporal Variance +
-    client-side MediaPipe liveness) still catches actual spoofs.
-
-    Model inference still runs for audit trail and future debugging.
-    TODO: restore strict check after investigating Haar cropping and
-    ONNX export quality (see issue #ANTISPOOF).
+    Real anti-spoof check using combined weighted score (5 layers).
+    Returns True if real face, False if spoof detected.
+    Fails-close on error (treats errors as spoof).
     """
     try:
         img = _decode_image(base64_image)
-        is_real, score = _run_antispoof(img)
-        _audit.warning(
-            f"[ANTISPOOF_BYPASS] model_said is_real={is_real} "
-            f"score={score:.4f} — overridden to True"
-        )
+        result = combined_spoof_score(img)
+        return result["is_real"]
     except Exception as e:
-        _audit.error(f"[ANTISPOOF_BYPASS] model error: {e}")
-    return True
+        _audit.error(f"[ANTISPOOF] check_anti_spoof fail-close: {e}")
+        return False
 
 
 def check_anti_spoof_with_score(base64_image: str) -> tuple:
     """
-    TEMPORARILY BYPASSED — see check_anti_spoof() docstring.
-    Returns (True, model_score) so callers see the real model score
-    but always treat as real.
+    Real anti-spoof check returning (is_real, confidence_score).
+    confidence_score ∈ [0,1] where higher = more confident real
+    (i.e. confidence_score = 1 - combined_spoof_score).
     """
     try:
         img = _decode_image(base64_image)
-        _, score = _run_antispoof(img)
-        _audit.warning(
-            f"[ANTISPOOF_BYPASS] with_score override — "
-            f"real_score={score:.4f} returned as (True, {score:.4f})"
-        )
-        return True, score
+        result = combined_spoof_score(img)
+        confidence = 1.0 - result["combined_score"]
+        return result["is_real"], round(confidence, 4)
     except Exception as e:
-        _audit.error(f"[ANTISPOOF_BYPASS] with_score error: {e}")
-        return True, 1.0
+        _audit.error(f"[ANTISPOOF] check_anti_spoof_with_score fail-close: {e}")
+        return False, 0.0
 
 
 def spoof_check_with_embedding(base64_image: str) -> dict:
     """
-    FaceNet512 embedding extraction with audit-only ONNX anti-spoof.
+    Combined spoof detection + FaceNet512 embedding extraction.
 
-    TEMPORARILY BYPASSED — ONNX layer produces false rejects on real
-    faces. Model still runs for audit logs; decision ignored.
-    Spoof rejection relies on upstream /api/spoof_check Moiré,
-    Screen Texture, and Temporal Variance layers.
+    Returns dict with keys: is_real, confidence, combined_score,
+    embedding (None if spoof or face not found), message, layers.
+
+    Spoof detection runs first via combined_spoof_score (5 layers).
+    Embedding is always attempted for audit but withheld from callers
+    if spoof is detected or face extraction fails.
     """
     from deepface import DeepFace
 
     try:
         img = _decode_image(base64_image)
     except Exception as e:
-        return {"is_real": False, "confidence": 0.0, "embedding": None, "message": str(e)}
+        return {
+            "is_real": False, "confidence": 0.0, "combined_score": 1.0,
+            "embedding": None, "message": str(e), "layers": {},
+        }
 
-    # Run ONNX for audit only — do not use result for gating
-    try:
-        model_is_real, model_score = _run_antispoof(img)
-        _audit.warning(
-            f"[ANTISPOOF_BYPASS] spoof_check_with_embedding — "
-            f"model_said is_real={model_is_real} "
-            f"score={model_score:.4f} — overridden to True"
-        )
-    except Exception as e:
-        _audit.error(f"[ANTISPOOF_BYPASS] spoof_check error: {e}")
-        model_score = 1.0
+    spoof_result = combined_spoof_score(img)
 
-    # Proceed to embedding extraction unconditionally
+    embedding = None
+    error_msg = ""
     try:
         img_clahe = normalize_illumination(img)
         rep = DeepFace.represent(
@@ -238,21 +426,40 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
         )
         embedding = rep[0]["embedding"] if rep else None
         if embedding is None:
-            return {"is_real": False, "confidence": 0.0,
-                    "embedding": None, "message": "ไม่พบใบหน้า"}
-    except ValueError:
-        return {"is_real": False, "confidence": 0.0,
-                "embedding": None, "message": "ไม่พบใบหน้า"}
+            error_msg = "ไม่พบใบหน้าในภาพ"
     except Exception as e:
-        _audit.error(f"[SPOOF_CHECK] embedding error: {e}", exc_info=True)
-        return {"is_real": False, "confidence": 0.0,
-                "embedding": None, "message": "ตรวจสอบไม่สำเร็จ"}
+        error_msg = f"face_detection_failed: {str(e)[:60]}"
+        _audit.warning(f"[SPOOF_CHECK_EMBED] embedding extraction failed: {e}")
+
+    confidence = 1.0 - spoof_result["combined_score"]
+
+    if not spoof_result["is_real"]:
+        return {
+            "is_real": False,
+            "confidence": round(confidence, 4),
+            "combined_score": spoof_result["combined_score"],
+            "embedding": None,
+            "message": "ตรวจพบการปลอมแปลง",
+            "layers": spoof_result["layers"],
+        }
+
+    if embedding is None:
+        return {
+            "is_real": False,
+            "confidence": round(confidence, 4),
+            "combined_score": spoof_result["combined_score"],
+            "embedding": None,
+            "message": error_msg or "ไม่สามารถอ่านใบหน้าได้",
+            "layers": spoof_result["layers"],
+        }
 
     return {
-        "is_real":    True,
-        "confidence": round(float(model_score), 4),
-        "embedding":  embedding,
-        "message":    "ใบหน้าตรวจพบ",
+        "is_real": True,
+        "confidence": round(confidence, 4),
+        "combined_score": spoof_result["combined_score"],
+        "embedding": embedding,
+        "message": "",
+        "layers": spoof_result["layers"],
     }
 
 

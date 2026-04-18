@@ -19,11 +19,19 @@ Downloaded `2.7_80x80_MiniFASNetV2.pth` from the official minivision-ai repo and
 | Input shape | `(1, 3, 80, 80)` — BGR→RGB, /255, NCHW float32 |
 | Output name | `output` |
 | Output shape | `(1, 3)` — raw logits, 3 classes |
-| Class 0 | Spoof |
-| Class 1 | Real |
-| Class 2 | (unused) |
+| Class 0 | Print spoof (printed photo) |
+| Class 1 | Real face |
+| Class 2 | Screen spoof (replay from phone/monitor) |
 
-`real_score = softmax(output)[1]`; threshold 0.5 → is_real.
+### Decision Rule
+
+Decision uses **argmax across all 3 classes** (`is_real = argmax == 1`),
+not a threshold on softmax[1] alone.
+
+A **confidence-margin guard** overrides a spoof verdict when the
+margin between the top two classes is < 0.10 AND class-1 score > 0.25.
+This reduces false rejects since we use only the single 2.7× model
+(not the paired 4.0× + 2.7× ensemble from the official repo).
 
 ### Preprocessing
 

@@ -73,15 +73,43 @@ def _run_antispoof(img_bgr: np.ndarray) -> tuple:
     session    = _get_antispoof_session()
     crop       = _crop_face_for_antispoof(img_bgr)
     rgb        = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    blob       = np.transpose(rgb, (2, 0, 1))[np.newaxis, :]   # (1, 3, 80, 80)
+    blob       = np.transpose(rgb, (2, 0, 1))[np.newaxis, :]
     input_name = session.get_inputs()[0].name
-    raw        = session.run(None, {input_name: blob})[0][0]    # (3,)
-    shifted    = raw - raw.max()
-    exp_out    = np.exp(shifted)
-    probs      = exp_out / (exp_out.sum() + 1e-8)
-    real_score = float(probs[1]) if len(probs) >= 2 else float(probs[0])
-    is_real    = real_score > 0.5
-    _audit.info(f"[ANTISPOOF] score={real_score:.4f} is_real={is_real}")
+    raw        = session.run(None, {input_name: blob})[0][0]   # (3,)
+
+    shifted = raw - raw.max()
+    exp_out = np.exp(shifted)
+    probs   = exp_out / (exp_out.sum() + 1e-8)
+
+    # Official Silent-Face logic: argmax across all 3 classes
+    #   class 0 = printed-photo spoof
+    #   class 1 = real
+    #   class 2 = screen/replay spoof
+    label      = int(np.argmax(probs))
+    real_score = float(probs[1])
+    is_real    = (label == 1)
+
+    # Confidence-margin guard: if argmax picks spoof but class 1 is a
+    # close runner-up, be lenient. Upstream Moiré + Screen Texture +
+    # Temporal Variance already catch obvious spoofs.
+    CONFIDENCE_MARGIN = 0.10
+    sorted_probs = sorted(probs, reverse=True)
+    margin = float(sorted_probs[0] - sorted_probs[1])
+    overridden = False
+    if not is_real and margin < CONFIDENCE_MARGIN and real_score > 0.25:
+        _audit.warning(
+            f"[ANTISPOOF] borderline reject overridden — "
+            f"label={label} real={real_score:.4f} margin={margin:.4f}"
+        )
+        is_real = True
+        overridden = True
+
+    _audit.info(
+        f"[ANTISPOOF] label={label} "
+        f"probs=[spoof={probs[0]:.4f}, real={probs[1]:.4f}, "
+        f"screen={probs[2]:.4f}] margin={margin:.4f} "
+        f"is_real={is_real}{' (overridden)' if overridden else ''}"
+    )
     return is_real, real_score
 
 

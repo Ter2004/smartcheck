@@ -13,9 +13,10 @@ class CheckinFlow {
         this.baselineEAR   = opts.baselineEAR;
         this.apiUrl        = opts.apiUrl || '/api/checkin';
 
-        this._bleRSSI   = null;
-        this._bleSkip   = false;
-        this._camStream = null;
+        this._bleRSSI    = null;
+        this._bleSkip    = false;
+        this._camStream  = null;
+        this._earSamples = [];
     }
 
     start() {
@@ -85,6 +86,7 @@ class CheckinFlow {
     // ─── Step 2: Verify (face detect → countdown → liveness) ─
 
     async _startVerify() {
+        this._earSamples = [];
         this._goToStep(2);
 
         const video    = document.getElementById('videoVerify');
@@ -197,6 +199,7 @@ class CheckinFlow {
             const earL   = this._calcEAR(lm, [33,160,158,133,153,144]);
             const earR   = this._calcEAR(lm, [362,385,387,263,373,380]);
             const earNow = (earL + earR) / 2;
+            this._earSamples.push(earNow);
             const earMin = (this.baselineEAR || 0.25) * 0.75;
             const eyesOk = earNow >= earMin;
 
@@ -359,6 +362,7 @@ class CheckinFlow {
                     liveness_action: livenessAction,
                     liveness_pass:   true,
                     face_image:      faceImage,
+                    ear_samples:     this._earSamples,
                 }),
             });
 

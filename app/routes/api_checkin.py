@@ -40,6 +40,7 @@ def checkin():
     liveness_pass   = data.get("liveness_pass", False)
     liveness_action = data.get("liveness_action", "") or ""
     face_image      = data.get("face_image")
+    ear_samples     = data.get("ear_samples") or []
 
     # M7: whitelist liveness_action — reject arbitrary strings
     _ALLOWED_LIVENESS_ACTIONS = {"", "blink", "nod", "turn_left", "turn_right", "smile", "raise_eyebrows"}
@@ -104,13 +105,36 @@ def checkin():
         if datetime.now(timezone.utc) > deadline:
             return jsonify({"ok": False, "error": f"หมดเวลาเช็คชื่อแล้ว (รับ {checkin_duration} นาที)"}), 400
 
-    # ─── 2. BLE RSSI check (Phase 3/4 — ปิดไว้สำหรับ Final 1) ──────────────
-    # TODO Phase 3: เปิดใช้งานเมื่อมี Beacon จริง
-    ble_pass = True  # Final 1: ข้าม BLE
+    # ─── 2. BLE RSSI check ───────────────────────────────────────────────────
+    if current_app.config.get("BLE_CHECK_ENABLED", False):
+        rssi_threshold = -70  # dBm — must be within range
+        ble_skip       = data.get("ble_skip", False)
+        if not ble_skip and (ble_rssi is None or ble_rssi < rssi_threshold):
+            _log.warning(f"[BLE] RSSI fail: rssi={ble_rssi} threshold={rssi_threshold}")
+            return jsonify({"ok": False, "error": "ไม่พบสัญญาณ Beacon ในห้องเรียน"}), 400
+        ble_pass = True
+    else:
+        _log.debug("[BLE] check skipped (BLE_CHECK_ENABLED=false)")
+        ble_pass = True
 
-    # ─── 3. Liveness check (Phase 3/4 — ปิดไว้สำหรับ Final 1) ──────────────
-    # TODO Phase 3: เปิดใช้งาน server-side liveness challenge
-    pass  # Final 1: ข้าม Liveness
+    # ─── 3. Server-side EAR liveness check ──────────────────────────────────
+    if not ear_samples:
+        _log.warning("[LIVENESS] ear_samples missing — passing with warn (lenient mode)")
+    else:
+        try:
+            import numpy as _np
+            ear_arr = _np.array(ear_samples, dtype=float)
+            ear_std = float(_np.std(ear_arr))
+            ear_min = float(_np.min(ear_arr))
+            _log.info(f"[LIVENESS] ear std={ear_std:.4f} min={ear_min:.4f} n={len(ear_arr)}")
+            if ear_std < 0.03 or ear_min >= 0.18:
+                return jsonify({
+                    "ok":        False,
+                    "error":     "ไม่ผ่านการตรวจสอบความมีชีวิต — กรุณากะพริบตาตามธรรมชาติขณะเช็คชื่อ",
+                    "retry_face": True,
+                }), 400
+        except Exception as ear_err:
+            _log.warning(f"[LIVENESS] EAR validation error (passing): {ear_err}")
 
     # ─── 4a. Moiré / screen-replay detection (FFT — faster than MiniFASNet) ───
     try:

@@ -291,3 +291,42 @@ ALTER TABLE attendance          ENABLE ROW LEVEL SECURITY;
 
 -- All data access goes through supabase_admin (service role) — deny anon by default.
 -- Add fine-grained policies here if you ever switch to per-user JWT access.
+
+-- ---------------------------------------------------------------------------
+-- STORED PROCEDURES
+-- ---------------------------------------------------------------------------
+
+-- Atomically increment enrollment_attempts and check the 24-hour window limit.
+-- Returns (current_attempts int, allowed boolean).
+-- Uses FOR UPDATE to prevent race conditions under concurrent requests.
+CREATE OR REPLACE FUNCTION atomic_enroll_attempt(
+    p_user_id  uuid,
+    p_max      int,
+    p_window_h int
+) RETURNS TABLE(current_attempts int, allowed boolean)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_attempts int;
+    v_last     timestamptz;
+    v_now      timestamptz := now();
+BEGIN
+    SELECT enrollment_attempts, last_enrollment_attempt
+      INTO v_attempts, v_last
+      FROM student_biometrics
+     WHERE user_id = p_user_id
+       FOR UPDATE;
+
+    IF v_last IS NULL OR v_now - v_last > (p_window_h || ' hours')::interval THEN
+        v_attempts := 0;
+    END IF;
+
+    v_attempts := v_attempts + 1;
+
+    UPDATE student_biometrics
+       SET enrollment_attempts      = v_attempts,
+           last_enrollment_attempt  = v_now
+     WHERE user_id = p_user_id;
+
+    RETURN QUERY SELECT v_attempts, (v_attempts <= p_max);
+END;
+$$;

@@ -1,5 +1,4 @@
-# cache-bust: 2026-04-19c
---extra-index-url https://download.pytorch.org/whl/cpu
+# cache-bust: 2026-04-19d
 
 flask==3.1.0
 supabase==2.13.0
@@ -8,14 +7,11 @@ deepface==0.0.93
 gunicorn==23.0.0
 python-dateutil==2.9.0
 opencv-python-headless>=4.8.0
-numpy<2.0,>=1.26.4
-tf-keras
+numpy==1.26.4
+tensorflow==2.15.0
+tf-keras==2.15.1
 Flask-Session==0.8.0
 Flask-Limiter==3.9.0
 APScheduler==3.10.4
 Flask-SQLAlchemy>=3.1.1
 psycopg2-binary>=2.9.9
-
-# CPU-only PyTorch for DeepFace anti_spoofing (Fasnet / MiniVision Silent-Face)
-# torch 2.2.x requires numpy<2.0 — this is why we pin numpy above
-torch==2.2.2+cpu

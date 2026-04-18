@@ -1,7 +1,2 @@
-[phases.setup]
-nixPkgs = ["python311", "postgresql_16.dev", "gcc"]
-
-[phases.install]
-cmds = [
-  "python -m venv --copies /opt/venv && /opt/venv/bin/pip install --no-cache-dir -c constraints.txt -r requirements.txt"
-]
+# Railway uses DOCKERFILE builder (see railway.json). Nixpacks is not active.
+# If switching to nixpacks, recreate the multi-step install logic from Dockerfile.

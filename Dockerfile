@@ -9,7 +9,7 @@ ENV TF_CPP_MIN_LOG_LEVEL=2
 COPY requirements.txt constraints.txt ./
 
 # Change CACHE_BUST to force re-run of all layers below (pip install + model download)
-ARG CACHE_BUST=20260419e
+ARG CACHE_BUST=20260419f
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc libpq-dev && \
     \
@@ -65,6 +65,13 @@ try:
 except Exception as e:
     print(f"Fasnet warn: {e}")
 
+try:
+    from deepface.models.face_detection import YuNet
+    YuNet.YuNetClient()
+    print("YuNet OK")
+except Exception as e:
+    print(f"YuNet warn: {e}")
+
 # Smoke test: actually run Fasnet inference to catch numpy/torch ABI issues
 # that wouldn't appear during model load alone.
 try:
@@ -72,7 +79,7 @@ try:
     dummy = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
     faces = DeepFace.extract_faces(
         img_path=dummy,
-        detector_backend="opencv",
+        detector_backend="yunet",
         anti_spoofing=True,
         enforce_detection=False,
     )

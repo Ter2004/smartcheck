@@ -142,7 +142,7 @@ def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
         from deepface import DeepFace
         faces = DeepFace.extract_faces(
             img_path=img_bgr,
-            detector_backend="opencv",
+            detector_backend="yunet",
             anti_spoofing=True,
             enforce_detection=True,
         )
@@ -432,7 +432,7 @@ def extract_embedding(base64_image: str) -> list:
         img_path=img,
         model_name="Facenet512",
         enforce_detection=True,
-        detector_backend="opencv",
+        detector_backend="yunet",
     )
 
     if not result:
@@ -503,7 +503,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
             img_path=img_clahe,
             model_name="Facenet512",
             enforce_detection=True,
-            detector_backend="opencv",
+            detector_backend="yunet",
         )
         embedding = rep[0]["embedding"] if rep else None
         if embedding is None:

@@ -25,11 +25,13 @@ MOIRE_LOG_RANGE          = (0.45, 0.75)  # log FFT scores near the threshold
 # Each layer outputs spoof_score in [0.0, 1.0] where 0=real, 1=spoof.
 # Final decision: weighted sum > SPOOF_DECISION_THRESHOLD → reject.
 SPOOF_WEIGHTS = {
-    "fasnet":   0.35,
-    "moire":    0.20,
-    "temporal": 0.20,
-    "texture":  0.15,
-    "onnx":     0.10,
+    # Rebalanced: Fasnet demoted — fooled by OLED/high-DPI screens in production.
+    # FFT-based layers (Moiré, Temporal) are more reliable for screen replay attacks.
+    "fasnet":   0.15,   # was 0.35 — demoted; DeepFace Fasnet weak on high-DPI
+    "moire":    0.30,   # was 0.20 — best pixel-grid signal
+    "temporal": 0.30,   # was 0.20 — best static-photo signal
+    "texture":  0.15,   # unchanged — complements Moiré
+    "onnx":     0.10,   # unchanged — audit only, usually disabled
 }
 SPOOF_DECISION_THRESHOLD = 0.50
 FASNET_REAL_THRESHOLD    = 0.50
@@ -276,6 +278,61 @@ def combined_spoof_score(
             "layers": layers,
             "weights_used": active_weights,
             "disagreements": ["fasnet_unavailable_fail_close"],
+        }
+
+    # ── Multi-layer hard-reject rules ──────────────────────────────────────
+    # Weighted scoring can be dominated by Fasnet when it's wrong.
+    # If TWO OR MORE independent layers independently flag suspicious,
+    # reject immediately — real faces never trigger 2+ layers at once.
+
+    def _layer_suspicious(layer_data, threshold):
+        score = layer_data.get("spoof_score")
+        return score is not None and score >= threshold
+
+    moire_suspicious    = _layer_suspicious(layers.get("moire", {}),    0.55)
+    texture_suspicious  = _layer_suspicious(layers.get("texture", {}),  0.50)
+    temporal_suspicious = _layer_suspicious(layers.get("temporal", {}), 0.50)
+    fasnet_suspicious   = _layer_suspicious(layers.get("fasnet", {}),   0.30)
+
+    suspicious_count = sum([moire_suspicious, texture_suspicious, temporal_suspicious, fasnet_suspicious])
+
+    if suspicious_count >= 2:
+        suspicious_names = []
+        if moire_suspicious:    suspicious_names.append(f"moire({layers['moire']['spoof_score']:.3f})")
+        if texture_suspicious:  suspicious_names.append(f"texture({layers['texture']['spoof_score']:.3f})")
+        if temporal_suspicious: suspicious_names.append(f"temporal({layers['temporal']['spoof_score']:.3f})")
+        if fasnet_suspicious:   suspicious_names.append(f"fasnet({layers['fasnet']['spoof_score']:.3f})")
+        _audit.warning(
+            f"[COMBINED_SPOOF] HARD-REJECT: {suspicious_count} layers suspicious "
+            f"({', '.join(suspicious_names)}) — bypassing weighted score"
+        )
+        return {
+            "is_real": False,
+            "combined_score": 1.0,
+            "threshold": SPOOF_DECISION_THRESHOLD,
+            "layers": layers,
+            "weights_used": active_weights,
+            "disagreements": [f"hard_reject_{suspicious_count}_layers_agree"],
+            "hard_reject": True,
+            "suspicious_layers": suspicious_names,
+        }
+
+    # Moiré alone above 0.75 = conclusive screen (real faces never exceed 0.60)
+    moire_score = layers.get("moire", {}).get("spoof_score")
+    if moire_score is not None and moire_score >= 0.75:
+        _audit.warning(
+            f"[COMBINED_SPOOF] HARD-REJECT: Moiré alone exceeds strong threshold "
+            f"({moire_score:.3f} >= 0.75)"
+        )
+        return {
+            "is_real": False,
+            "combined_score": 1.0,
+            "threshold": SPOOF_DECISION_THRESHOLD,
+            "layers": layers,
+            "weights_used": active_weights,
+            "disagreements": ["hard_reject_moire_strong"],
+            "hard_reject": True,
+            "suspicious_layers": [f"moire({moire_score:.3f})"],
         }
 
     # ── Normalize active weights so they sum to 1.0 ────────────────────────

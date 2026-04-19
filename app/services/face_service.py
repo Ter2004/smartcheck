@@ -317,12 +317,14 @@ def combined_spoof_score(
             "suspicious_layers": suspicious_names,
         }
 
-    # Moiré alone above 0.75 = conclusive screen (real faces never exceed 0.60)
+    # Moiré alone above strong threshold = definite screen.
+    # Lowered from 0.75 to 0.70 — Tony Stark on iPhone scored 0.737 which slipped
+    # through at 0.75. Real face max observed is 0.573, leaving 0.13 safety margin.
     moire_score = layers.get("moire", {}).get("spoof_score")
-    if moire_score is not None and moire_score >= 0.75:
+    if moire_score is not None and moire_score >= 0.70:
         _audit.warning(
             f"[COMBINED_SPOOF] HARD-REJECT: Moiré alone exceeds strong threshold "
-            f"({moire_score:.3f} >= 0.75)"
+            f"({moire_score:.3f} >= 0.70)"
         )
         return {
             "is_real": False,

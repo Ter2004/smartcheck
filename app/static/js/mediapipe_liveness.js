@@ -479,7 +479,7 @@ class InteractiveChallengeDetector {
 
 // ─── Random challenge helpers ─────────────────────────────────────────────────
 
-const CHALLENGE_POOL = ['blink', 'smile', 'turn_left', 'turn_right', 'nod', 'raise_eyebrows'];
+const CHALLENGE_POOL = ['blink', 'smile', 'turn_left', 'turn_right', 'nod'];
 
 /** Pick N unique actions at random from the full pool */
 function randomChallengeActions(count = 2) {

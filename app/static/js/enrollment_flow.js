@@ -672,7 +672,6 @@ const CHALLENGE_ACTION_LABELS = {
     turn_left:      'หันหน้าไปทางซ้าย',
     turn_right:     'หันหน้าไปทางขวา',
     nod:            'พยักหน้าขึ้น-ลง',
-    raise_eyebrows: 'ยกคิ้วขึ้น',
 };
 
 function _buildChallengePills(actions, currentIdx) {

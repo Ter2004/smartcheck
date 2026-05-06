@@ -172,10 +172,13 @@
         </div>
         <form method="POST" action="{{ url_for('admin.course_enroll', course_id=course.id) }}" class="px-6 py-5 space-y-4">
             <p class="text-xs text-slate-400">เลือกได้หลายคน (กด Ctrl/Cmd ค้างไว้)</p>
+            <input type="text" id="studentSearch" placeholder="ค้นหาชื่อหรือรหัสนักศึกษา..."
+                   class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2"
+                   oninput="filterStudents(this.value)">
             <select name="student_ids" multiple
                     class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 h-48" required>
                 {% for s in available %}
-                <option value="{{ s.id }}">{{ s.full_name }} ({{ s.student_id or s.email }})</option>
+                <option value="{{ s.id }}" data-label="{{ s.full_name|lower }} {{ s.student_id or '' }} {{ s.email }}">{{ s.full_name }} ({{ s.student_id or s.email }})</option>
                 {% endfor %}
             </select>
             <div class="flex gap-2.5">
@@ -211,9 +214,16 @@
             <form method="POST" action="{{ url_for('admin.course_import_csv', course_id=course.id) }}" enctype="multipart/form-data" class="space-y-4">
                 <div>
                     <label class="block text-xs font-medium text-slate-600 mb-1.5">ไฟล์ CSV</label>
-                    <input type="file" name="csv_file" accept=".csv"
+                    <input type="file" id="csvFile" name="csv_file" accept=".csv" onchange="previewCSV(this)"
                            class="w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
                            required>
+                    <div id="csvPreview" class="hidden mt-3">
+                        <p class="text-xs font-medium text-slate-600 mb-1.5">ตัวอย่างข้อมูล (5 แถวแรก)</p>
+                        <div class="overflow-x-auto rounded-lg border border-slate-200">
+                            <table class="w-full text-xs" id="csvPreviewTable"></table>
+                        </div>
+                        <p id="csvSummary" class="text-xs text-slate-500 mt-2"></p>
+                    </div>
                 </div>
                 <div class="flex gap-2.5">
                     <button type="button" onclick="hideModal('importModal')"
@@ -245,5 +255,39 @@ function hideModal(id) {
 }
 document.querySelectorAll('[id$="Modal"]').forEach(o =>
     o.addEventListener('click', e => { if (e.target === o) hideModal(o.id) }));
+
+function filterStudents(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('#addModal select option').forEach(o => {
+        o.hidden = !o.dataset.label.includes(q);
+    });
+}
+
+function previewCSV(input) {
+    const preview = document.getElementById('csvPreview');
+    const table   = document.getElementById('csvPreviewTable');
+    const summary = document.getElementById('csvSummary');
+    if (!input.files || !input.files[0]) { preview.classList.add('hidden'); return; }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const rows = e.target.result.split('\n').map(r => r.trim()).filter(r => r);
+        if (!rows.length) return;
+        const header = rows[0].split(',');
+        const dataRows = rows.slice(1);
+        table.innerHTML =
+            '<thead class="bg-slate-50"><tr>' +
+            header.map(h => '<th class="px-2 py-1.5 text-left font-medium text-slate-600 border-b border-slate-200">' + h + '</th>').join('') +
+            '</tr></thead><tbody>' +
+            dataRows.slice(0, 5).map(r =>
+                '<tr class="border-b border-slate-100">' +
+                r.split(',').map(c => '<td class="px-2 py-1.5 text-slate-700">' + c + '</td>').join('') +
+                '</tr>'
+            ).join('') +
+            '</tbody>';
+        summary.textContent = 'พบ ' + dataRows.length + ' แถว (ไม่นับ header)';
+        preview.classList.remove('hidden');
+    };
+    reader.readAsText(input.files[0]);
+}
 </script>
 {% endblock %}

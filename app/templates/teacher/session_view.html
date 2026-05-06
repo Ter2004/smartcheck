@@ -99,11 +99,30 @@
                class="flex-1 text-sm text-slate-700 placeholder-slate-400 focus:outline-none bg-transparent"
                oninput="filterTable(this.value)">
     </div>
+    <!-- Bulk action bar -->
+    <div id="bulkBar" class="hidden px-5 py-3 border-b border-slate-100 bg-indigo-50 flex items-center gap-3">
+        <span id="bulkCount" class="text-xs font-medium text-indigo-700"></span>
+        <select id="bulkStatus" class="text-xs border border-indigo-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none">
+            <option value="present">มาเรียน</option>
+            <option value="late">มาสาย</option>
+            <option value="absent">ขาดเรียน</option>
+            <option value="manual">Manual</option>
+        </select>
+        <input id="bulkReason" type="text" placeholder="เหตุผล (ถ้ามี)"
+               class="text-xs border border-indigo-200 rounded-lg px-2 py-1.5 flex-1 focus:outline-none">
+        <button onclick="submitBulk()"
+                class="text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+            บันทึกที่เลือก
+        </button>
+    </div>
 
     <div class="overflow-x-auto">
         <table class="w-full" id="attendTable">
             <thead>
                 <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="px-5 py-3">
+                        <input type="checkbox" id="checkAll" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                    </th>
                     <th class="text-left text-xs font-medium text-slate-500 px-5 py-3">รหัสนักศึกษา</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">ชื่อ-นามสกุล</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">สถานะ</th>
@@ -118,6 +137,10 @@
                 {% set u = s.users %}
                 {% set a = att_map.get(u.id) %}
                 <tr class="hover:bg-slate-50 transition-colors" data-search="{{ u.full_name|lower }} {{ u.student_id or '' }}">
+                    <td class="px-5 py-3.5">
+                        <input type="checkbox" class="row-check rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                               value="{{ u.id }}">
+                    </td>
                     <td class="px-5 py-3.5">
                         <span class="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded-md">{{ u.student_id or '—' }}</span>
                     </td>
@@ -162,7 +185,7 @@
                     </td>
                 </tr>
             {% else %}
-                <tr><td colspan="7" class="px-5 py-12 text-center text-sm text-slate-400">ไม่มีนักศึกษาในวิชานี้</td></tr>
+                <tr><td colspan="8" class="px-5 py-12 text-center text-sm text-slate-400">ไม่มีนักศึกษาในวิชานี้</td></tr>
             {% endfor %}
             </tbody>
         </table>
@@ -240,6 +263,45 @@ function filterTable(q) {
     rows.forEach(r => {
         r.style.display = r.dataset.search.includes(q) ? '' : 'none';
     });
+}
+
+// Bulk override
+const overrideUrl = "{{ url_for('teacher.override_attendance', session_id=sess.id) }}";
+const csrfToken   = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+document.getElementById('checkAll').addEventListener('change', function() {
+    document.querySelectorAll('.row-check').forEach(cb => cb.checked = this.checked);
+    updateBulkBar();
+});
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('row-check')) updateBulkBar();
+});
+
+function updateBulkBar() {
+    const checked = document.querySelectorAll('.row-check:checked');
+    const bar = document.getElementById('bulkBar');
+    if (checked.length > 0) {
+        bar.classList.remove('hidden');
+        document.getElementById('bulkCount').textContent = 'เลือก ' + checked.length + ' คน';
+    } else {
+        bar.classList.add('hidden');
+    }
+}
+
+async function submitBulk() {
+    const checked = [...document.querySelectorAll('.row-check:checked')];
+    const status  = document.getElementById('bulkStatus').value;
+    const reason  = document.getElementById('bulkReason').value;
+    if (!checked.length) return;
+    for (const cb of checked) {
+        const fd = new FormData();
+        fd.append('student_id', cb.value);
+        fd.append('status', status);
+        fd.append('reason', reason);
+        fd.append('csrf_token', csrfToken);
+        await fetch(overrideUrl, { method: 'POST', body: fd });
+    }
+    location.reload();
 }
 </script>
 {% endblock %}

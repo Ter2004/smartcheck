@@ -99,7 +99,7 @@ def dashboard():
         .select("*, courses(code, name)")
         .in_("course_id", [c["id"] for c in courses] or ["00000000-0000-0000-0000-000000000000"])
         .order("start_time", desc=True)
-        .limit(10)
+        .limit(30)
         .execute()
         .data or []
     )
@@ -285,8 +285,10 @@ def session_toggle(session_id):
                     continue
                 parts_s = sch["start_time"].split(":")
                 parts_e = sch["end_time"].split(":")
-                s_time  = dtime(int(parts_s[0]), int(parts_s[1]))
-                e_time  = dtime(int(parts_e[0]), int(parts_e[1]))
+                from datetime import datetime as _dt
+                _buffer = timedelta(minutes=30)
+                s_time = (_dt.combine(_dt.today(), dtime(int(parts_s[0]), int(parts_s[1]))) - _buffer).time()
+                e_time = (_dt.combine(_dt.today(), dtime(int(parts_e[0]), int(parts_e[1]))) + _buffer).time()
                 if s_time <= now_time <= e_time:
                     in_window = True
                     break

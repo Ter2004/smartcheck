@@ -127,12 +127,28 @@ def dashboard():
         else:
             s["thai_date"] = ""
 
+    import datetime as _datetime_mod
+    _TH = _datetime_mod.timezone(_datetime_mod.timedelta(hours=7))
+    _today_th = _datetime_mod.datetime.now(_TH).date()
+
+    today_sessions = (
+        supabase_admin.table("sessions")
+        .select("*, courses(id, code, name, teacher_id), beacons(room_name)")
+        .in_("course_id", [c["id"] for c in courses] or ["00000000-0000-0000-0000-000000000000"])
+        .gte("start_time", f"{_today_th}T00:00:00+07:00")
+        .lte("start_time", f"{_today_th}T23:59:59+07:00")
+        .order("start_time")
+        .execute()
+        .data or []
+    )
+
     return render_template(
         "teacher/dashboard.html",
         courses=courses,
         recent_sessions=recent_sessions,
         beacons=beacons,
         today_str=date.today().isoformat(),
+        today_sessions=today_sessions,
     )
 
 

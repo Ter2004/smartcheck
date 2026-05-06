@@ -470,16 +470,26 @@ def course_detail(course_id):
 
     schedules = (
         supabase_admin.table("schedules")
-        .select("*")
+        .select("*, beacons(room_name)")
         .eq("course_id", course_id)
         .order("day_of_week")
         .execute()
         .data or []
     )
 
+    beacons = (
+        supabase_admin.table("beacons")
+        .select("id, room_name")
+        .eq("is_active", True)
+        .order("room_name")
+        .execute()
+        .data or []
+    )
+
     return render_template("admin/course_detail.html",
                            course=course, enrolled=enrolled,
-                           available=available, schedules=schedules)
+                           available=available, schedules=schedules,
+                           beacons=beacons)
 
 
 @admin_bp.route("/courses/<course_id>/enroll", methods=["POST"])
@@ -617,6 +627,7 @@ def schedule_add(course_id):
     day_of_week = request.form.get("day_of_week")
     start_time  = request.form.get("start_time")
     end_time    = request.form.get("end_time")
+    beacon_id   = request.form.get("beacon_id") or None
 
     if not all([day_of_week, start_time, end_time]):
         flash("กรุณากรอกข้อมูลให้ครบ", "danger")
@@ -628,6 +639,7 @@ def schedule_add(course_id):
             "day_of_week": int(day_of_week),
             "start_time":  start_time,
             "end_time":    end_time,
+            "beacon_id":   beacon_id,
         }).execute()
         flash("เพิ่มตารางเรียนสำเร็จ", "success")
     except Exception as e:

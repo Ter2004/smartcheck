@@ -154,6 +154,46 @@ def checkin():
         if res and res.data:
             already_checked = True
 
+    import datetime as _dt_mod
+    _TH_S = _dt_mod.timezone(_dt_mod.timedelta(hours=7))
+    _now_th = _dt_mod.datetime.now(_TH_S)
+    _week_start = (_now_th.date() - _dt_mod.timedelta(days=_now_th.weekday())).isoformat()
+    _week_end   = (_now_th.date() + _dt_mod.timedelta(days=6 - _now_th.weekday())).isoformat()
+
+    week_schedules = (
+        supabase_admin.table("schedules")
+        .select("*, courses(id, code, name), beacons(room_name)")
+        .in_("course_id", list(enrolled_course_ids))
+        .order("day_of_week")
+        .execute()
+        .data or []
+    ) if enrolled_course_ids else []
+
+    week_sessions = (
+        supabase_admin.table("sessions")
+        .select("id, course_id, is_open, start_time, end_time")
+        .in_("course_id", list(enrolled_course_ids))
+        .gte("start_time", f"{_week_start}T00:00:00+07:00")
+        .lte("start_time", f"{_week_end}T23:59:59+07:00")
+        .execute()
+        .data or []
+    ) if enrolled_course_ids else []
+
+    week_session_map = {s["course_id"]: s for s in week_sessions}
+
+    checked_session_ids = set()
+    if week_sessions:
+        _wids = [s["id"] for s in week_sessions]
+        _wa = (
+            supabase_admin.table("attendance")
+            .select("session_id")
+            .eq("student_id", user_id)
+            .in_("session_id", _wids)
+            .execute()
+            .data or []
+        )
+        checked_session_ids = {a["session_id"] for a in _wa}
+
     ua = request.headers.get("User-Agent", "")
     ios_warning = bool(re.search(r"iPhone|iPad|iPod", ua, re.I))
 
@@ -163,6 +203,10 @@ def checkin():
         baseline_ear=baseline_ear,
         ios_warning=ios_warning,
         already_checked=already_checked,
+        week_schedules=week_schedules,
+        week_session_map=week_session_map,
+        checked_session_ids=checked_session_ids,
+        today_dow=_now_th.weekday(),
     )
 
 

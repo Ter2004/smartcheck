@@ -74,12 +74,13 @@ def auto_manage_sessions():
                 .execute()
                 .data or []
             )
-            if not existing and default_beacon_id:
+            beacon_id_to_use = sch.get("beacon_id") or default_beacon_id
+            if not existing and beacon_id_to_use:
                 day_name  = DAY_NAMES[today_dow]
                 title     = f"{course['code']} {day_name} {today_date} ({sch_start}–{sch_end})"
                 sb.table("sessions").insert({
                     "course_id":  course_id,
-                    "beacon_id":  default_beacon_id,
+                    "beacon_id":  beacon_id_to_use,
                     "title":      title,
                     "start_time": sched_start_dt.isoformat(),
                     "end_time":   None,

@@ -63,6 +63,73 @@
     </a>
     <h1 class="text-xl font-semibold text-slate-900 mb-6">เช็คชื่อเข้าเรียน</h1>
 
+    <!-- ─── ตารางเรียนสัปดาห์นี้ ─── -->
+    {% set day_names_short = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.'] %}
+    {% if week_schedules %}
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+        <div class="px-5 py-4 border-b border-slate-100">
+            <h2 class="text-sm font-semibold text-slate-800">ตารางเรียนสัปดาห์นี้</h2>
+        </div>
+        <table class="w-full">
+            <thead>
+                <tr class="bg-slate-50 border-b border-slate-200">
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">วัน</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">วิชา</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5 hidden sm:table-cell">เวลา</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">สถานะ</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+            {% for sch in week_schedules %}
+                {% set ws = week_session_map.get(sch.course_id) %}
+                {% set is_today = (sch.day_of_week == today_dow) %}
+                <tr class="{% if is_today %}bg-indigo-50/50 border-l-2 border-l-indigo-400{% endif %} hover:bg-slate-50 transition-colors">
+                    <td class="px-4 py-3 text-xs font-medium {% if is_today %}text-indigo-700{% else %}text-slate-600{% endif %}">
+                        {{ day_names_short[sch.day_of_week] }}
+                    </td>
+                    <td class="px-4 py-3">
+                        <p class="text-sm font-medium text-slate-800">{{ sch.courses.code }}</p>
+                        <p class="text-xs text-slate-400">{{ sch.beacons.room_name if sch.beacons else '—' }}</p>
+                    </td>
+                    <td class="px-4 py-3 hidden sm:table-cell">
+                        <span class="font-mono text-xs text-slate-500">{{ sch.start_time[:5] }}–{{ sch.end_time[:5] }}</span>
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if not ws %}
+                        <span class="inline-flex items-center gap-1 text-xs text-slate-400">
+                            <span class="w-2 h-2 bg-slate-300 rounded-full"></span>ยังไม่เปิด
+                        </span>
+                        {% elif ws.is_open %}
+                        <div class="flex items-center gap-2">
+                            <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                                <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>เปิดอยู่
+                            </span>
+                            <button onclick="var el=document.getElementById('checkin-camera');if(el)el.scrollIntoView({behavior:'smooth'})"
+                                    class="text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg transition-colors">
+                                เช็คชื่อ
+                            </button>
+                        </div>
+                        {% elif ws.id in checked_session_ids %}
+                        <span class="inline-flex items-center gap-1 text-xs font-medium text-indigo-600">
+                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>เช็คแล้ว
+                        </span>
+                        {% elif ws.end_time %}
+                        <span class="inline-flex items-center gap-1 text-xs text-rose-500">
+                            <span class="w-2 h-2 bg-rose-400 rounded-full"></span>ปิดแล้ว
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 text-xs text-slate-400">
+                            <span class="w-2 h-2 bg-slate-300 rounded-full"></span>ยังไม่เปิด
+                        </span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
     {% if not session_data %}
     <div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3">
         <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -87,7 +154,7 @@
     {% else %}
 
     <!-- Step indicator (Final 1: 2 ขั้น) -->
-    <div class="flex items-center gap-2 mb-6">
+    <div id="checkin-camera" class="flex items-center gap-2 mb-6">
         <div class="ci-dot active" id="dot1">1</div>
         <div class="flex-1 h-0.5 bg-slate-200"></div>
         <div class="ci-dot" id="dot2">2</div>

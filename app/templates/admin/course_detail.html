@@ -43,6 +43,7 @@
                 <th class="text-left text-xs font-medium text-slate-500 px-5 py-2.5">วัน</th>
                 <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">เวลาเริ่ม</th>
                 <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">เวลาจบ</th>
+                <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">ห้อง</th>
                 <th class="px-4 py-2.5"></th>
             </tr>
         </thead>
@@ -52,6 +53,7 @@
                 <td class="px-5 py-3 text-sm text-slate-700">{{ day_names[s.day_of_week] }}</td>
                 <td class="px-4 py-3 font-mono text-sm text-slate-600">{{ s.start_time[:5] }}</td>
                 <td class="px-4 py-3 font-mono text-sm text-slate-600">{{ s.end_time[:5] }}</td>
+                <td class="px-4 py-3 text-sm text-slate-600">{{ s.beacons.room_name if s.beacons else '—' }}</td>
                 <td class="px-4 py-3 text-right">
                     <form method="POST" action="{{ url_for('admin.schedule_delete', course_id=course.id, schedule_id=s.id) }}"
                           onsubmit="return confirm('ลบตารางนี้?')">
@@ -64,7 +66,7 @@
             </tr>
         {% else %}
             <tr>
-                <td colspan="4" class="px-5 py-8 text-center text-sm text-slate-400">ยังไม่มีตารางเรียน</td>
+                <td colspan="5" class="px-5 py-8 text-center text-sm text-slate-400">ยังไม่มีตารางเรียน</td>
             </tr>
         {% endfor %}
         </tbody>
@@ -136,6 +138,16 @@
                     <option value="4">ศุกร์</option>
                     <option value="5">เสาร์</option>
                     <option value="6">อาทิตย์</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">ห้องเรียน (Beacon)</label>
+                <select name="beacon_id"
+                        class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="">— ไม่ระบุ —</option>
+                    {% for b in beacons %}
+                    <option value="{{ b.id }}">{{ b.room_name }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="grid grid-cols-2 gap-3">

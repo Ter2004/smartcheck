@@ -101,7 +101,7 @@
 | **Q-11** | BLE FAIL-OPEN by default (`BLE_CHECK_ENABLED=False`) | api_checkin.py:124 | config 🟡 | ต่ำ (env var) | ยังไม่แก้ |
 | **Q-12** | Frame validation (0b) ก่อน session check (1) — เสีย CPU | api_checkin.py:75, 85 | quality 🟡 | ต่ำ | ยังไม่แก้ |
 | **Q-13** | api_enroll docstring ล้าสมัย (9 steps vs 15 จริง) | student.py:261 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
-| **L-1** | `api_withdraw_consent` ไม่มี front-end trigger | student.py:1107 | legal/PDPA 🟡 | ต่ำ (เพิ่ม UI) | ยังไม่แก้ |
+| **L-1** | `api_withdraw_consent` ไม่มี front-end trigger | student.py:1107 | legal/PDPA 🟡 | ต่ำ (เพิ่ม UI) | **แก้แล้ว** (commit ed342e0) |
 | **D-1** | `onnxruntime` ไม่อยู่ใน requirements.txt | requirements.txt | deploy ⚠️ | ต่ำมาก | **แก้แล้ว** (commit 948885b) |
 | **D-2** | PRE-HARDREJECT log ถอดหลัง F-5 สรุปเสร็จ | face_service.py:~298 | cleanup 🟢 | ต่ำมาก | รอ F-5 สรุป |
 | **F-8** | Device token หมดอายุ 120 วัน — ไม่มี revocation กลางสาย | security_service.py:24 | security 🟡 | ปานกลาง | ยังไม่แก้ |
@@ -120,8 +120,8 @@
 | ~~—~~ | ~~P-1~~ | ~~ย้าย Haar Cascade ไป module-level~~ | ~~10 นาที~~ | ~~-62 ms/request~~ | **แก้แล้ว** commit 948885b |
 | ~~—~~ | ~~CC-1a~~ | ~~แทน data.get("flow_mode") → current_app.config~~ | ~~10 นาที~~ | ~~client ควบคุม threshold ไม่ได้~~ | **แก้แล้ว** commit 948885b |
 | ~~—~~ | ~~P-2~~ | ~~combined_spoof_score(raw_frame) แทน check_anti_spoof(face_image)~~ | ~~10 นาที~~ | ~~-13 ms/request~~ | **แก้แล้ว** commit 7f764c5 |
-| 1 | L-1 | เพิ่ม Withdraw Consent button ใน dashboard.html หรือ enroll_face.html | **30 นาที** | ผู้ใช้ใช้สิทธิ์ PDPA ได้จาก UI จริง | PDPA compliance — endpoint มีแต่ใช้ไม่ได้ |
-| 3 | F-5 | ปรับ `fasnet_suspicious: 0.30 → 0.50` หลังดู PRE-HARDREJECT log | **15 นาที** (+ รอ log) | ลด FRR เมื่อ borderline real face อยู่ใน dim light | รอข้อมูลก่อน ห้ามแก้ตอนนี้ |
+| ~~—~~ | ~~L-1~~ | ~~Withdraw Consent button ใน dashboard.html~~ | ~~30 นาที~~ | ~~ผู้ใช้ใช้สิทธิ์ PDPA ได้จาก UI~~ | **แก้แล้ว** commit ed342e0 |
+| 1 | F-5 | ปรับ `fasnet_suspicious: 0.30 → 0.50` หลังดู PRE-HARDREJECT log | **15 นาที** (+ รอ log) | ลด FRR เมื่อ borderline real face อยู่ใน dim light | รอข้อมูลก่อน ห้ามแก้ตอนนี้ |
 | 4 | Q-6 | ลบ dead code 11 รายการใน enrollment_flow.js | **30 นาที** | -~50 LOC; ลด confusion trace `_deviceFingerprint` / `calcEAR` | ไม่มี risk, cleaner codebase |
 | 5 | F-1 + CC-1b | Server-side challenge token: server สุ่ม + เก็บใน session ก่อน challenge; ตรวจตอน submit | **2–4 ชั่วโมง** | ปิด liveness bypass ทั้ง F-1 (check-in) และ F-6 (enrollment) พร้อมกัน | design change ใหญ่ รอเวลาที่เหมาะสม |
 | 6 | Q-1, Q-2, Q-3, Q-4 | SPLIT api_enroll / checkin / combined_spoof_score / startCaptureWithDetection | **1–2 วัน** | แต่ละ security layer test ได้อิสระ; onboard ง่าย | refactor ใหญ่ ทำหลัง security fix ทั้งหมด |
@@ -169,7 +169,7 @@
 
 | เรื่อง | ไฟล์:line | ความรุนแรง |
 |---|---|---|
-| **ไม่มี front-end trigger สำหรับ withdrawal** — endpoint มีแต่ผู้ใช้กด ไม่ได้ | student.py:1107 | 🟡 L-1 |
+| ~~ไม่มี front-end trigger สำหรับ withdrawal~~ — **แก้แล้ว** commit ed342e0 | student.py:1107 | ✅ L-1 |
 | `consent_version` hardcode `"1.0"` — ไม่มีกลไก bump version เมื่อ policy เปลี่ยน | student.py:237, 1123 | 🟡 |
 | ไม่มี data retention policy ใน code — ระบบไม่ auto-delete biometrics ของ user ที่ไม่ active | — | 🟡 (นโยบาย ไม่ใช่ bug) |
 | face-images bucket privacy ไม่ได้ verified จาก code — ต้องตรวจ Supabase Dashboard | student.py:901 | 🟡 (ต้องตรวจ manually) |
@@ -178,7 +178,8 @@
 ### สรุปสถานะ PDPA
 
 enrollment consent flow ออกแบบถูกต้องตาม PDPA — audit trail ก่อน, delete ทีหลัง, fail-loud ถ้า delete ล้มเหลว  
-**gap เดียวที่ต้องแก้ก่อน deploy:** เพิ่ม UI trigger สำหรับ withdrawal (L-1) เพื่อให้ผู้ใช้ใช้สิทธิ์จริงได้
+**gap ที่แก้แล้ว:** L-1 — เพิ่ม withdrawal UI ใน dashboard.html (commit ed342e0)  
+**gap ที่เหลือก่อน deploy:** ตรวจ face-images bucket privacy ใน Supabase Dashboard (manual)
 
 ---
 
@@ -189,8 +190,8 @@ enrollment consent flow ออกแบบถูกต้องตาม PDPA �
 | security 🔴🟠🟡 | 9 | 3 (F-3, F-7, CC-1a) | 4 |
 | perf 🟡 | 3 | 2 (P-1, P-2) | 2 |
 | quality 🟢 | 14 | 0 | 10 |
-| legal/PDPA 🟡 | 1 | 0 | 1 |
+| legal/PDPA 🟡 | 1 | 1 (L-1) | 1 |
 | deploy ⚠️ | 2 | 1 (D-1) | 2 |
-| **รวม** | **29** | **6** | **19** |
+| **รวม** | **29** | **7** | **19** |
 
 ไฟล์ที่ review ครอบคลุม ~4 036 LOC จากทั้งหมด ~10 741 LOC (~38%) — auth.py และ security_service.py review เสร็จแล้ว

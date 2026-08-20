@@ -46,6 +46,10 @@ _ANTISPOOF_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "antis
 _ANTISPOOF_INPUT_SIZE = 80
 _ANTISPOOF_SCALE      = 2.7
 
+_face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+)
+
 
 def _get_antispoof_session():
     global _antispoof_session
@@ -68,9 +72,8 @@ def _get_antispoof_session():
 
 
 def _crop_face_for_antispoof(img_bgr: np.ndarray, scale: float = 2.7, size: int = 80) -> np.ndarray:
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     gray  = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40))
+    faces = _face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40))
     h_img, w_img = img_bgr.shape[:2]
     if len(faces) > 0:
         x, y, w, h = faces[0]
@@ -825,11 +828,8 @@ def detect_static_image(frames: list, threshold: float = TEMPORAL_VAR_THRESHOLD)
         return {"is_static": False, "temporal_variance": 0.0}
 
     # ── Detect face ROI from first frame (Haar cascade — bundled in OpenCV) ──
-    face_cascade = cv2.CascadeClassifier(
-        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-    )
     first_gray = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
-    detected = face_cascade.detectMultiScale(
+    detected = _face_cascade.detectMultiScale(
         first_gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40)
     )
     crop = None

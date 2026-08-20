@@ -580,7 +580,7 @@ def api_enroll():
     # Circular mode sends varied poses (front/right/left/up/down); cross-pose
     # cosine similarity with FaceNet512 can be 0.75–0.85, so use a slightly
     # lower threshold. Classic mode keeps the stricter 0.80 (all frontal frames).
-    _flow_mode = data.get("flow_mode", "classic")
+    _flow_mode = current_app.config["ENROLL_FLOW_MODE"]
     _consistency_threshold = 0.75 if _flow_mode == "circular" else 0.80
     _log(user_id, "consistency_threshold", "set",
          f"flow_mode={_flow_mode} threshold={_consistency_threshold}")

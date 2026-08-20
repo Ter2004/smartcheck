@@ -86,7 +86,7 @@
 | **CC-1a** | `flow_mode` client-controlled consistency threshold | student.py:583 | security 🟠 | ต่ำ (1 บรรทัด) | **แก้แล้ว** (commit 948885b) |
 | **CC-1b** | liveness challenge ไม่มีหลักฐานบน server (root) | api_checkin.py, student.py | security 🟠 | สูง | ยังไม่แก้ |
 | **P-1** | Haar Cascade โหลดซ้ำ 2 จุด (~62 ms/request) | face_service.py:71, 803 | perf 🟡 | ต่ำมาก | **แก้แล้ว** (commit 948885b) |
-| **P-2** | Double decode + double Moiré (~13 ms/request) | api_checkin.py:166, 247 | perf 🟡 | ต่ำ | ยังไม่แก้ |
+| **P-2** | Double decode + double Moiré (~13 ms/request) | api_checkin.py:166, 247 | perf 🟡 | ต่ำ | **แก้แล้ว** (commit 7f764c5) |
 | **P-3** | `checkin()` 7 SELECT ต่อ GET page load | student.py:103 | perf 🟡 | ปานกลาง | ยังไม่แก้ |
 | **Q-1** | `api_enroll` 475 LOC, 15 pipeline steps | student.py:257 | quality 🟢 | สูง (SPLIT) | ยังไม่แก้ |
 | **Q-2** | `checkin()` (api_checkin) 368 LOC, 14 pipeline steps | api_checkin.py:26 | quality 🟢 | สูง (SPLIT) | ยังไม่แก้ |
@@ -119,8 +119,8 @@
 | ~~—~~ | ~~D-1~~ | ~~เพิ่ม onnxruntime ใน requirements.txt~~ | ~~2 นาที~~ | ~~deploy ไม่พัง~~ | **แก้แล้ว** commit 948885b |
 | ~~—~~ | ~~P-1~~ | ~~ย้าย Haar Cascade ไป module-level~~ | ~~10 นาที~~ | ~~-62 ms/request~~ | **แก้แล้ว** commit 948885b |
 | ~~—~~ | ~~CC-1a~~ | ~~แทน data.get("flow_mode") → current_app.config~~ | ~~10 นาที~~ | ~~client ควบคุม threshold ไม่ได้~~ | **แก้แล้ว** commit 948885b |
-| 1 | P-2 | ใช้ `combined_spoof_score(raw_frame)` แทน `check_anti_spoof(face_image)` ใน api_checkin.py:247 | **10 นาที** | -13 ms ทุก check-in (decode+moiré ซ้ำหายไป) | ไม่แก้ face_service เลย |
-| 2 | L-1 | เพิ่ม Withdraw Consent button ใน dashboard.html หรือ enroll_face.html | **30 นาที** | ผู้ใช้ใช้สิทธิ์ PDPA ได้จาก UI จริง | PDPA compliance — endpoint มีแต่ใช้ไม่ได้ |
+| ~~—~~ | ~~P-2~~ | ~~combined_spoof_score(raw_frame) แทน check_anti_spoof(face_image)~~ | ~~10 นาที~~ | ~~-13 ms/request~~ | **แก้แล้ว** commit 7f764c5 |
+| 1 | L-1 | เพิ่ม Withdraw Consent button ใน dashboard.html หรือ enroll_face.html | **30 นาที** | ผู้ใช้ใช้สิทธิ์ PDPA ได้จาก UI จริง | PDPA compliance — endpoint มีแต่ใช้ไม่ได้ |
 | 3 | F-5 | ปรับ `fasnet_suspicious: 0.30 → 0.50` หลังดู PRE-HARDREJECT log | **15 นาที** (+ รอ log) | ลด FRR เมื่อ borderline real face อยู่ใน dim light | รอข้อมูลก่อน ห้ามแก้ตอนนี้ |
 | 4 | Q-6 | ลบ dead code 11 รายการใน enrollment_flow.js | **30 นาที** | -~50 LOC; ลด confusion trace `_deviceFingerprint` / `calcEAR` | ไม่มี risk, cleaner codebase |
 | 5 | F-1 + CC-1b | Server-side challenge token: server สุ่ม + เก็บใน session ก่อน challenge; ตรวจตอน submit | **2–4 ชั่วโมง** | ปิด liveness bypass ทั้ง F-1 (check-in) และ F-6 (enrollment) พร้อมกัน | design change ใหญ่ รอเวลาที่เหมาะสม |
@@ -187,10 +187,10 @@ enrollment consent flow ออกแบบถูกต้องตาม PDPA �
 | หมวด | จำนวน finding | แก้แล้ว | แก้ได้ < 1 ชั่วโมง |
 |---|---|---|---|
 | security 🔴🟠🟡 | 9 | 3 (F-3, F-7, CC-1a) | 4 |
-| perf 🟡 | 3 | 1 (P-1) | 2 |
+| perf 🟡 | 3 | 2 (P-1, P-2) | 2 |
 | quality 🟢 | 14 | 0 | 10 |
 | legal/PDPA 🟡 | 1 | 0 | 1 |
 | deploy ⚠️ | 2 | 1 (D-1) | 2 |
-| **รวม** | **29** | **5** | **19** |
+| **รวม** | **29** | **6** | **19** |
 
 ไฟล์ที่ review ครอบคลุม ~4 036 LOC จากทั้งหมด ~10 741 LOC (~38%) — auth.py และ security_service.py review เสร็จแล้ว

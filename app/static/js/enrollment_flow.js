@@ -5,13 +5,9 @@
 // ─────────────────────────────────────────────
 let currentStep  = 1;
 let baselineEAR  = 0.25;   // default — EAR calibration step removed
-let calibStream  = null;
 let captureStream = null;
-let verifyStream = null;
 let faceMeshCapture = null;
 let captureCamera   = null;
-let calibEARValues  = [];
-let calibrating     = false;
 
 // ─── Shared FaceMesh singleton ────────────────
 // MediaPipe WASM can only be initialised once per page.
@@ -99,7 +95,7 @@ function _getSessionId() {
 }
 
 // ─── Debug logging ────────────────────────────────────────────────────────────
-const DEBUG = false;
+const DEBUG = localStorage.getItem('sc_debug') === '1';
 function _log(...args)  { if (DEBUG) console.log('[SmartCheck]', ...args); }
 function _warn(...args) { if (DEBUG) console.warn('[SmartCheck]', ...args); }
 
@@ -200,16 +196,6 @@ function _csrfToken() {
     return el.content || '';
 }
 
-function _deviceFingerprint() {
-    let fp = localStorage.getItem('sc_device_fp');
-    if (!fp) {
-        fp = (crypto.randomUUID ? crypto.randomUUID()
-              : Date.now().toString(36) + Math.random().toString(36).slice(2));
-        localStorage.setItem('sc_device_fp', fp);
-    }
-    return fp;
-}
-
 // ─── Spoof check helpers ──────────────────────────────────────────────────────
 
 function _captureFrameFromVideo(videoEl) {
@@ -270,10 +256,10 @@ async function _callSpoofCheckSafe(imageB64) {
 function _stopAllStreams() {
     stopLightCheck();
     stopEarCheck();
-    [calibStream, captureStream, verifyStream, livenessStream].forEach(s => {
+    [captureStream, livenessStream].forEach(s => {
         if (s) { try { s.getTracks().forEach(t => t.stop()); } catch(e) {} }
     });
-    calibStream = captureStream = verifyStream = livenessStream = null;
+    captureStream = livenessStream = null;
     _stopStepCamera();
 }
 
@@ -327,44 +313,8 @@ async function goToLiveness() {
     startLightCheck();
 }
 
-// ─────────────────────────────────────────────
-// Camera helpers
-// ─────────────────────────────────────────────
-async function startCamera(videoId, onStream) {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: 640, height: 480 }
-        });
-        const vcCheck = await detectVirtualCamera(stream);
-        if (vcCheck.blocked) {
-            stream.getTracks().forEach(t => t.stop());
-            alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
-            throw new Error('Virtual Camera Detected');
-        }
-        const video = document.getElementById(videoId);
-        video.srcObject = stream;
-        if (onStream) onStream(stream);
-    } catch (e) {
-        if (e.message !== 'Virtual Camera Detected') {
-            alert('ไม่สามารถเปิดกล้องได้: ' + e.message);
-        }
-    }
-}
-
 function stopStream(stream) {
     if (stream) stream.getTracks().forEach(t => t.stop());
-}
-
-// ─────────────────────────────────────────────
-// EAR calculation
-// ─────────────────────────────────────────────
-function dist(a, b) {
-    return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function calcEAR(landmarks, indices) {
-    const [p1, p2, p3, p4, p5, p6] = indices.map(i => landmarks[i]);
-    return (dist(p2, p6) + dist(p3, p5)) / (2.0 * dist(p1, p4));
 }
 
 // ─────────────────────────────────────────────
@@ -1375,14 +1325,6 @@ const _PROGRESS_MSGS_ENROLL = [
     { at: 28000,pct: 78, msg: 'บันทึกลงฐานข้อมูล...' },
     { at: 45000,pct: 88, msg: 'ใกล้เสร็จแล้ว...' },
 ];
-const _PROGRESS_MSGS_VERIFY = [
-    { at: 0,    pct: 8,  msg: 'กำลังส่งรูปยืนยัน...' },
-    { at: 3000, pct: 30, msg: 'ตรวจสอบ anti-spoofing...' },
-    { at: 8000, pct: 55, msg: 'เปรียบเทียบใบหน้า...' },
-    { at: 15000,pct: 78, msg: 'บันทึกผลลัพธ์...' },
-    { at: 25000,pct: 90, msg: 'ใกล้เสร็จแล้ว...' },
-];
-
 function _startProgress(msgs) {
     _clearProgress();
     const bar   = document.getElementById('enrollProgressBar');

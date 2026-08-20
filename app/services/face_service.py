@@ -55,10 +55,10 @@ def _get_antispoof_session():
                 try:
                     import onnxruntime as ort
                 except ImportError:
-                    _audit.info("[ANTISPOOF] onnxruntime not installed — ONNX audit layer disabled")
+                    _audit.warning("[ANTISPOOF] onnxruntime not installed — ONNX audit layer disabled")
                     return None
                 if not os.path.exists(_ANTISPOOF_MODEL_PATH):
-                    _audit.info(f"[ANTISPOOF] ONNX model not found at {_ANTISPOOF_MODEL_PATH} — audit layer disabled")
+                    _audit.warning(f"[ANTISPOOF] ONNX model not found at {_ANTISPOOF_MODEL_PATH} — audit layer disabled")
                     return None
                 _antispoof_session = ort.InferenceSession(
                     _ANTISPOOF_MODEL_PATH, providers=["CPUExecutionProvider"]
@@ -296,6 +296,31 @@ def combined_spoof_score(
     fasnet_suspicious   = _layer_suspicious(layers.get("fasnet", {}),   0.30)
 
     suspicious_count = sum([moire_suspicious, texture_suspicious, temporal_suspicious, fasnet_suspicious])
+
+    if suspicious_count >= 1:
+        _tw = sum(active_weights.values())
+        _wbc = round(sum(
+            layers[k]["spoof_score"] * v / _tw
+            for k, v in active_weights.items()
+            if layers.get(k, {}).get("spoof_score") is not None
+        ), 4) if _tw > 0 else 1.0
+        _pre_susp = (
+            ([f"moire({layers['moire']['spoof_score']:.4f})"]     if moire_suspicious    else []) +
+            ([f"texture({layers['texture']['spoof_score']:.4f})"] if texture_suspicious  else []) +
+            ([f"temporal({layers['temporal']['spoof_score']:.4f})"] if temporal_suspicious else []) +
+            ([f"fasnet({layers['fasnet']['spoof_score']:.4f})"]   if fasnet_suspicious   else [])
+        )
+        _audit.warning(
+            f"[COMBINED_SPOOF] PRE-HARDREJECT "
+            f"all=[fasnet={layers['fasnet'].get('spoof_score')} "
+            f"moire={layers['moire'].get('spoof_score')} "
+            f"temporal={layers['temporal'].get('spoof_score')} "
+            f"texture={layers['texture'].get('spoof_score')} "
+            f"onnx={layers['onnx'].get('spoof_score')}] "
+            f"suspicious={_pre_susp or ['none']} "
+            f"count={suspicious_count} "
+            f"would_be_combined={_wbc}"
+        )
 
     if suspicious_count >= 2:
         suspicious_names = []

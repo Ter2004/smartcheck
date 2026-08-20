@@ -93,7 +93,7 @@
 | **Q-3** | `combined_spoof_score` 234 LOC | face_service.py:163 | quality 🟢 | ปานกลาง (SPLIT) | ยังไม่แก้ |
 | **Q-4** | `startCaptureWithDetection` 223 LOC, onResults 170+ LOC | enrollment_flow.js:1056 | quality 🟢 | ปานกลาง (SPLIT) | ยังไม่แก้ |
 | **Q-5** | `api_self_verify` 201 LOC — dead endpoint ไม่มี caller | student.py:743 | quality 🟡 | ต่ำ (ยืนยันก่อน delete) | ยังไม่แก้ |
-| **Q-6** | Dead code 11 รายการ ใน enrollment_flow.js | enrollment_flow.js | quality 🟢 | ต่ำ | ยังไม่แก้ |
+| **Q-6** | Dead code 11 รายการ ใน enrollment_flow.js | enrollment_flow.js | quality 🟢 | ต่ำ | **แก้แล้ว** (commit 22d07d7) |
 | **Q-7** | Dead code: `FASNET_REAL_THRESHOLD`, `else: raise ValueError`, whitelist 4 ค่า | face_service.py:38, api_checkin.py:45, 236 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
 | **Q-8** | `_cosine_sim` duplicate ใน student.py vs face_service.py | student.py:48 | quality 🟢 | ต่ำ (MERGE) | ยังไม่แก้ |
 | **Q-9** | `check_anti_spoof` + `check_anti_spoof_with_score` near-duplicate | face_service.py:443, 458 | quality 🟢 | ต่ำ (MERGE) | ยังไม่แก้ |
@@ -121,6 +121,7 @@
 | ~~—~~ | ~~CC-1a~~ | ~~แทน data.get("flow_mode") → current_app.config~~ | ~~10 นาที~~ | ~~client ควบคุม threshold ไม่ได้~~ | **แก้แล้ว** commit 948885b |
 | ~~—~~ | ~~P-2~~ | ~~combined_spoof_score(raw_frame) แทน check_anti_spoof(face_image)~~ | ~~10 นาที~~ | ~~-13 ms/request~~ | **แก้แล้ว** commit 7f764c5 |
 | ~~—~~ | ~~L-1~~ | ~~Withdraw Consent button ใน dashboard.html~~ | ~~30 นาที~~ | ~~ผู้ใช้ใช้สิทธิ์ PDPA ได้จาก UI~~ | **แก้แล้ว** commit ed342e0 |
+| ~~—~~ | ~~Q-6~~ | ~~ลบ dead code 9 รายการใน enrollment_flow.js~~ | ~~30 นาที~~ | ~~-58 LOC (1518→1460)~~ | **แก้แล้ว** commit 22d07d7 |
 | 1 | F-5 | ปรับ `fasnet_suspicious: 0.30 → 0.50` หลังดู PRE-HARDREJECT log | **15 นาที** (+ รอ log) | ลด FRR เมื่อ borderline real face อยู่ใน dim light | รอข้อมูลก่อน ห้ามแก้ตอนนี้ |
 | 4 | Q-6 | ลบ dead code 11 รายการใน enrollment_flow.js | **30 นาที** | -~50 LOC; ลด confusion trace `_deviceFingerprint` / `calcEAR` | ไม่มี risk, cleaner codebase |
 | 5 | F-1 + CC-1b | Server-side challenge token: server สุ่ม + เก็บใน session ก่อน challenge; ตรวจตอน submit | **2–4 ชั่วโมง** | ปิด liveness bypass ทั้ง F-1 (check-in) และ F-6 (enrollment) พร้อมกัน | design change ใหญ่ รอเวลาที่เหมาะสม |
@@ -189,9 +190,9 @@ enrollment consent flow ออกแบบถูกต้องตาม PDPA �
 |---|---|---|---|
 | security 🔴🟠🟡 | 9 | 3 (F-3, F-7, CC-1a) | 4 |
 | perf 🟡 | 3 | 2 (P-1, P-2) | 2 |
-| quality 🟢 | 14 | 0 | 10 |
+| quality 🟢 | 14 | 1 (Q-6) | 10 |
 | legal/PDPA 🟡 | 1 | 1 (L-1) | 1 |
 | deploy ⚠️ | 2 | 1 (D-1) | 2 |
-| **รวม** | **29** | **7** | **19** |
+| **รวม** | **29** | **8** | **19** |
 
 ไฟล์ที่ review ครอบคลุม ~4 036 LOC จากทั้งหมด ~10 741 LOC (~38%) — auth.py และ security_service.py review เสร็จแล้ว

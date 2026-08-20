@@ -13,6 +13,7 @@ from app.services.face_service import (
     check_anti_spoof, check_anti_spoof_with_score,
     detect_screen_moire, detect_screen_texture,
     MOIRE_THRESHOLD_SINGLE, _decode_image, server_validate_frame,
+    SAME_DEVICE_THRESHOLD, NEW_DEVICE_THRESHOLD,
 )
 from app.services.security_service import (
     verify_device_token, verify_embedding_integrity, csrf_protect,
@@ -22,10 +23,6 @@ from app import limiter as _limiter
 api_checkin_bp = Blueprint("api_checkin", __name__)
 
 # ─── Face verification thresholds (FaceNet512) ───────────────────────────────
-FACE_THRESHOLD_TRUSTED = 0.70   # trusted / previously bound device
-FACE_THRESHOLD_NEW     = 0.80   # new or unbound device
-
-
 @api_checkin_bp.route("/api/checkin", methods=["POST"])
 @login_required
 @role_required("student")
@@ -40,13 +37,12 @@ def checkin():
 
     session_id      = data.get("session_id")
     ble_rssi        = data.get("ble_rssi")
-    liveness_pass   = data.get("liveness_pass", False)
     liveness_action = data.get("liveness_action", "") or ""
     face_image      = data.get("face_image")
     ear_samples     = data.get("ear_samples") or []
 
     # M7: whitelist liveness_action — reject arbitrary strings
-    _ALLOWED_LIVENESS_ACTIONS = {"", "blink", "nod", "turn_left", "turn_right", "smile", "raise_eyebrows"}
+    _ALLOWED_LIVENESS_ACTIONS = {"passive", "blink", "nod", "turn_left", "turn_right", "smile", "raise_eyebrows"}
     if liveness_action not in _ALLOWED_LIVENESS_ACTIONS:
         return jsonify({"ok": False, "error": "ข้อมูลไม่ถูกต้อง"}), 400
 
@@ -88,7 +84,7 @@ def checkin():
     # ─── 1. Verify session is still open ─────────────────────────────────────
     sess_res = (
         supabase_admin.table("sessions")
-        .select("id, is_open, beacon_id, start_time, end_time, checkin_duration, beacons(rssi_threshold)")
+        .select("id, course_id, is_open, beacon_id, start_time, end_time, checkin_duration, beacons(rssi_threshold)")
         .eq("id", session_id)
         .maybe_single()
         .execute()
@@ -98,6 +94,22 @@ def checkin():
     sess = sess_res.data
     if not sess.get("is_open"):
         return jsonify({"ok": False, "error": "คาบเรียนนี้ปิดการเช็คชื่อแล้ว"}), 400
+
+    # A session id is not authorization. The student must belong to the course.
+    enrollment = (
+        supabase_admin.table("course_enrollments")
+        .select("id")
+        .eq("course_id", sess["course_id"])
+        .eq("student_id", student_id)
+        .maybe_single()
+        .execute()
+    )
+    if not enrollment or not enrollment.data:
+        _log.warning(
+            f"[CHECKIN] student={student_id} attempted session={session_id} "
+            "without course enrollment"
+        )
+        return jsonify({"ok": False, "error": "คุณไม่ได้ลงทะเบียนในรายวิชานี้"}), 403
 
     # ─── Check-in window (checkin_duration minutes from start) ───────────────
     checkin_duration = sess.get("checkin_duration")
@@ -121,11 +133,17 @@ def checkin():
         ble_pass = True
 
     # ─── 3. Server-side EAR liveness check ──────────────────────────────────
-    if not ear_samples:
-        _log.warning("[LIVENESS] ear_samples missing — passing with warn (lenient mode)")
-    else:
-        try:
-            ear_arr = np.array(ear_samples, dtype=float)
+    server_liveness_pass = False
+    try:
+        ear_arr = np.asarray(ear_samples, dtype=float)
+        if ear_arr.ndim != 1 or len(ear_arr) < 2 or not np.all(np.isfinite(ear_arr)):
+            raise ValueError("invalid EAR samples")
+        if np.any((ear_arr < 0.0) | (ear_arr > 1.0)):
+            raise ValueError("EAR samples out of range")
+
+        # Only a blink challenge can be proven from EAR. Other challenge types
+        # still have to pass temporal and anti-spoof checks below.
+        if liveness_action == "blink":
             ear_std = float(np.std(ear_arr))
             ear_min = float(np.min(ear_arr))
             _log.info(f"[LIVENESS] ear std={ear_std:.4f} min={ear_min:.4f} n={len(ear_arr)}")
@@ -135,8 +153,13 @@ def checkin():
                     "error":     "ไม่ผ่านการตรวจสอบความมีชีวิต — กรุณากะพริบตาตามธรรมชาติขณะเช็คชื่อ",
                     "retry_face": True,
                 }), 400
-        except Exception as ear_err:
-            _log.warning(f"[LIVENESS] EAR validation error (passing): {ear_err}")
+    except (ValueError, TypeError) as ear_err:
+        _log.warning(f"[LIVENESS] EAR validation failed: {ear_err}")
+        return jsonify({
+            "ok": False,
+            "error": "ข้อมูลตรวจสอบความมีชีวิตไม่ถูกต้อง กรุณาลองใหม่",
+            "retry_face": True,
+        }), 400
 
     # ─── 4a. Moiré / screen-replay detection (FFT — faster than MiniFASNet) ───
     try:
@@ -179,6 +202,12 @@ def checkin():
 
     # ─── 4a-3. Temporal Variance (catches printed photos / static images) ─
     face_images_list = data.get("face_images")
+    if not isinstance(face_images_list, list) or len(face_images_list) < 2:
+        return jsonify({
+            "ok": False,
+            "error": "ข้อมูลภาพต่อเนื่องไม่ครบ กรุณาลองใหม่",
+            "retry_face": True,
+        }), 400
     if isinstance(face_images_list, list) and len(face_images_list) >= 2:
         try:
             frames_gray = []
@@ -203,8 +232,15 @@ def checkin():
                         "spoof": True,
                         "retry_face": True,
                     }), 400
+            else:
+                raise ValueError("not enough valid temporal frames")
         except Exception as temp_err:
-            _log.error(f"[TEMPORAL] check error (non-blocking): {temp_err}")
+            _log.error(f"[TEMPORAL] check error (fail-close): {temp_err}")
+            return jsonify({
+                "ok": False,
+                "error": "ไม่สามารถตรวจสอบภาพต่อเนื่องได้ กรุณาลองใหม่",
+                "retry_face": True,
+            }), 400
 
     # ─── 4b. Anti-spoofing via MiniFASNet ────────────────────────────────────
     try:
@@ -216,6 +252,7 @@ def checkin():
                 "spoof": True,
                 "retry_face": True,
             }), 400
+        server_liveness_pass = True
     except Exception as e:
         _log.error(f"[ANTISPOOF] check error (fail-close): {e}")
         return jsonify({
@@ -256,7 +293,7 @@ def checkin():
     token_trusted  = device_payload is not None   # cryptographic proof of device
     db_trusted     = bool(user_device and device_id and user_device == device_id)
     device_trusted = token_trusted or db_trusted
-    face_threshold = FACE_THRESHOLD_TRUSTED if device_trusted else FACE_THRESHOLD_NEW
+    face_threshold = SAME_DEVICE_THRESHOLD if device_trusted else NEW_DEVICE_THRESHOLD
 
     # ─── 6. Face verification (multi-embedding) ───────────────────────────────
     bio_res = (
@@ -335,7 +372,7 @@ def checkin():
             "student_id":      student_id,
             "ble_rssi":        ble_rssi,  # already int or None from validation above
             "ble_pass":        ble_pass,
-            "liveness_pass":   False,
+            "liveness_pass":   server_liveness_pass,
             "liveness_action": liveness_action or "",
             "face_score":      round(score, 4),
             "face_pass":       True,

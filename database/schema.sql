@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS student_biometrics (
     consent_at               timestamptz,
     enrolled_at              timestamptz,
     enrollment_attempts      int         NOT NULL DEFAULT 0,
+    verify_attempts          int         NOT NULL DEFAULT 0,
     last_enrollment_attempt  timestamptz,
     integrity_hash           text,                            -- HMAC-SHA256 of embeddings
     updated_at               timestamptz NOT NULL DEFAULT now()

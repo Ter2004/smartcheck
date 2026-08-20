@@ -7,11 +7,12 @@ import cv2
 import json
 
 # ─── Thresholds (edit here to tune) ──────────────────────────────────────────
-SELF_VERIFY_THRESHOLD    = 0.75   # enrollment self-verify (overridden to 0.80 in student.py)
+SELF_VERIFY_THRESHOLD    = 0.80   # enrollment self-verify
 SAME_DEVICE_THRESHOLD    = 0.70   # check-in, trusted device
 NEW_DEVICE_THRESHOLD     = 0.80   # check-in, new / unbound device
 CONSISTENCY_THRESHOLD    = 0.80   # pairwise consistency during enrollment
 DUPLICATE_THRESHOLD      = 0.65   # reject if another student matches this closely
+CONTINUITY_THRESHOLD     = 0.80   # liveness -> capture identity continuity
 MOIRE_THRESHOLD          = 0.60   # high-freq energy ratio; above = likely screen replay (multi-frame /api/enroll)  # TODO: If False Rejections occur in low light due to camera noise, consider increasing this to 0.65 - 0.70.
 MOIRE_THRESHOLD_SINGLE   = 0.70   # middle ground — real faces 0.40-0.55, phone screens 0.55-0.75.
                                   # With Fasnet as primary detector (35% weight), Moiré only needs to catch obvious cases.
@@ -317,14 +318,12 @@ def combined_spoof_score(
             "suspicious_layers": suspicious_names,
         }
 
-    # Moiré alone above strong threshold = definite screen.
-    # Lowered from 0.75 to 0.70 — Tony Stark on iPhone scored 0.737 which slipped
-    # through at 0.75. Real face max observed is 0.573, leaving 0.13 safety margin.
+    # Moiré alone above the strong threshold is treated as a screen replay.
     moire_score = layers.get("moire", {}).get("spoof_score")
     if moire_score is not None and moire_score >= 0.85:
         _audit.warning(
             f"[COMBINED_SPOOF] HARD-REJECT: Moiré alone exceeds strong threshold "
-            f"({moire_score:.3f} >= 0.70)"
+            f"({moire_score:.3f} >= 0.85)"
         )
         return {
             "is_real": False,

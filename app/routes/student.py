@@ -8,17 +8,18 @@ from app.services.security_service import (
     create_device_token, csrf_protect,
     compute_embedding_integrity_hash,
 )
+from app.services.face_service import (
+    SELF_VERIFY_THRESHOLD,
+    DUPLICATE_THRESHOLD,
+    DUPLICATE_GRAY_ZONE,
+    CONTINUITY_THRESHOLD,
+)
 from app import limiter as _limiter
 
 student_bp = Blueprint("student", __name__)
 
 # ─── Enrollment thresholds ────────────────────────────────────────────────────
-SELF_VERIFY_THRESHOLD = 0.80   # A7: raised from 0.75 — must match enrollment consistency
-DUPLICATE_THRESHOLD   = 0.65   # reject if another student matches this closely
-DUPLICATE_GRAY_ZONE   = (0.60, 0.70)  # A6: log matches in this range for future tuning
 MAX_RETRY             = 3      # max outlier-retry rounds (server-enforced — A4)
-# M1: module-level constant — used in both /api/enroll and /api/self_verify
-CONTINUITY_THRESHOLD  = 0.80   # liveness→capture / liveness→self_verify similarity gate
 
 # ─── Audit logger (D1) ───────────────────────────────────────────────────────
 _audit = logging.getLogger("smartcheck.enrollment")

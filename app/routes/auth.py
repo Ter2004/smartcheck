@@ -5,6 +5,7 @@ from app import supabase, supabase_admin
 from app import limiter as _limiter
 from flask_limiter.util import get_remote_address
 from app.models.user_model import get_user_by_id
+from app.services.security_service import csrf_protect_form
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -116,11 +117,13 @@ def login():
 
 @auth_bp.route("/change-password", methods=["GET", "POST"])
 @login_required
+@csrf_protect_form
 def change_password():
     """Force password change — ต้องทำก่อนเข้าระบบครั้งแรกหลัง CSV import"""
     if request.method == "GET":
         return render_template("auth/change_password.html")
 
+    current_pw  = request.form.get("current_password", "")
     new_pw      = request.form.get("new_password", "")
     confirm_pw  = request.form.get("confirm_password", "")
 
@@ -132,8 +135,21 @@ def change_password():
         flash("รหัสผ่านทั้งสองช่องไม่ตรงกัน", "danger")
         return render_template("auth/change_password.html")
 
+    # Verify current password before allowing change — ป้องกัน CSRF account takeover
+    user_id = session["user_id"]
     try:
-        user_id = session["user_id"]
+        user = get_user_by_id(user_id)
+        if not user or not user.get("email"):
+            raise ValueError("user not found")
+        supabase.auth.sign_in_with_password({
+            "email":    user["email"],
+            "password": current_pw,
+        })
+    except Exception:
+        flash("ข้อมูลไม่ถูกต้อง", "danger")
+        return render_template("auth/change_password.html")
+
+    try:
         # Update password via Supabase Auth admin API
         supabase_admin.auth.admin.update_user_by_id(user_id, {"password": new_pw})
         # Clear the force-change flag
@@ -143,8 +159,8 @@ def change_password():
         flash("เปลี่ยนรหัสผ่านสำเร็จ — กรุณาเข้าสู่ระบบอีกครั้ง", "success")
         session.clear()
         return redirect(url_for("auth.login"))
-    except Exception as e:
-        flash(f"เปลี่ยนรหัสผ่านไม่สำเร็จ: {e}", "danger")
+    except Exception:
+        flash("เปลี่ยนรหัสผ่านไม่สำเร็จ กรุณาลองใหม่", "danger")
         return render_template("auth/change_password.html")
 
 

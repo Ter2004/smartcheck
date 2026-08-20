@@ -399,6 +399,7 @@ def checkin():
 @login_required
 @role_required("student")
 @_limiter.limit("20 per minute")
+@csrf_protect
 def antispoof_passive():
     data       = request.get_json()
     face_image = data.get("face_image") if data else None

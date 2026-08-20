@@ -10,7 +10,7 @@ from app import supabase_admin
 _log = logging.getLogger("smartcheck.checkin")
 from app.services.face_service import (
     extract_embedding, verify_face_multi,
-    check_anti_spoof, check_anti_spoof_with_score,
+    check_anti_spoof, check_anti_spoof_with_score, combined_spoof_score,
     detect_screen_moire, detect_screen_texture,
     MOIRE_THRESHOLD_SINGLE, _decode_image, server_validate_frame,
     SAME_DEVICE_THRESHOLD, NEW_DEVICE_THRESHOLD,
@@ -244,7 +244,8 @@ def checkin():
 
     # ─── 4b. Anti-spoofing via MiniFASNet ────────────────────────────────────
     try:
-        is_real = check_anti_spoof(face_image)
+        spoof_result = combined_spoof_score(raw_frame)
+        is_real = spoof_result["is_real"]
         if not is_real:
             return jsonify({
                 "ok": False,

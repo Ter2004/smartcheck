@@ -99,7 +99,7 @@
 → ถ้า session ปิดบ่อย เสีย CPU ไปกับ frame validation ที่ไม่จำเป็น  
 → อาจย้าย session check ขึ้นก่อน 0b ได้ (ถูกกว่า 1 DB query vs full image decode)
 
-### 4. Redundant `if` ที่ line 211
+### 4. Redundant `if` ที่ line 211 — แก้บางส่วนแล้ว (ดู F-4 ด้านล่าง)
 ```python
 # line 205-210 (outer guard):
 if not isinstance(face_images_list, list) or len(face_images_list) < 2:
@@ -107,9 +107,13 @@ if not isinstance(face_images_list, list) or len(face_images_list) < 2:
 
 # line 211 (inner check — always True after outer guard):
 if isinstance(face_images_list, list) and len(face_images_list) >= 2:
+    ...
+else:
+    raise ValueError("not enough valid temporal frames")  # line 236
 ```
-เงื่อนไข `line 211` เป็น `True` เสมอหลังผ่าน outer guard — `else: raise ValueError` ที่ line 236 ไม่มีทางถูกเรียก  
-→ dead code; ลบ inner `if` ออก เหลือแค่ body ข้างใน
+**แก้ไข (2026-08-23):** วิเคราะห์เดิมผิด — `else: raise ValueError` ที่ line 236 **ไม่ใช่** dead code มันผูกกับ `if len(frames_gray) >= 2:` (จำนวนเฟรมที่ decode สำเร็จหลัง loop ข้างใน) ซึ่งเป็นคนละเงื่อนไขกับ wrapper `if isinstance(face_images_list, list) and len(face_images_list) >= 2:` ที่ line 211 (ตรวจ `face_images_list` ก่อนเข้า loop) — `frames_gray` มีจำนวนน้อยกว่า `face_images_list` ได้จริงถ้าบางเฟรม decode fail ใน loop (`except Exception: continue`) จึง branch นี้ **reachable จริง** และเป็น fail-close path ที่จำเป็น ห้ามลบ
+
+เฉพาะ wrapper `if` ที่ line 211 เท่านั้นที่เป็น dead condition จริง (`True` เสมอหลัง outer guard 205–210) — ลบแล้ว, unindent body, ไม่กระทบ logic ใดๆ (`else: raise ValueError` ที่ 236 ยังอยู่ครบ ไม่ถูกแตะ)
 
 ### 5. `from datetime import timedelta` อยู่ในฟังก์ชัน (line 117)
 Python cache module ไว้แล้ว แต่การ import ใน function scope ยังมี overhead เล็กน้อยทุก call  
@@ -240,20 +244,22 @@ endpoint ไม่มี CSRF guard ต่างจาก `checkin()` ที่�
 
 ---
 
-### F-4 — `else: raise ValueError` unreachable (line 236)
+### F-4 — Redundant wrapper `if` ที่ line 211 — **แก้บางส่วนแล้ว** (ดูหมายเหตุ)
 
-**ตำแหน่ง:** `api_checkin.py:211`, `api_checkin.py:236`
+**ตำแหน่ง:** `api_checkin.py:211` (เดิมระบุ 236 ด้วย — ยกเลิก ดูหมายเหตุ)
 
 ```python
 # line 205–210: outer guard — early return ถ้า list ไม่ครบ
 if not isinstance(face_images_list, list) or len(face_images_list) < 2:
     return ...
 
-# line 211: inner check — condition นี้ True เสมอหลัง outer guard
+# line 211 (เดิม): inner check — condition นี้ True เสมอหลัง outer guard → ลบแล้ว
 if isinstance(face_images_list, list) and len(face_images_list) >= 2:
     ...
 else:
-    raise ValueError("not enough valid temporal frames")  # line 236 — ไม่มีทางถึง
+    raise ValueError("not enough valid temporal frames")  # line 236 — เก็บไว้ ยังเรียกได้จริง
 ```
 
-`else` ที่ line 236 เป็น dead code — ไม่กระทบ security แต่ทำให้โค้ดอ่านเข้าใจผิดว่า path นั้นเป็นไปได้
+**หมายเหตุ (แก้ไข 2026-08-23):** การวิเคราะห์เดิมที่ระบุว่า `else: raise ValueError` ที่ line 236 "ไม่มีทางถึง" นั้น **ผิด** — `else` นั้นผูกกับ `if len(frames_gray) >= 2:` (จำนวนเฟรมที่ decode **สำเร็จ** ในลูปข้างใน) ไม่ใช่ผูกกับ wrapper `if` ที่ line 211 (ซึ่งตรวจ `face_images_list` ก่อนเข้าลูป) — สองเงื่อนไขนี้แยกกัน `frames_gray` ต่ำกว่า 2 ได้จริงแม้ `face_images_list` จะผ่าน outer guard แล้ว ถ้าบางเฟรม decode fail ใน loop (`except Exception: continue`) ดังนั้น branch นี้ **reachable จริงและจำเป็น** (fail-close path) — **ไม่ถูกลบ**
+
+สิ่งที่ลบจริงมีแค่ wrapper `if isinstance(face_images_list, list) and len(face_images_list) >= 2:` ที่ line 211 ซึ่งเป็น dead condition จริง (`True` เสมอหลัง outer guard 205–210) — ลบแล้ว unindent body ที่เหลือ ไม่กระทบ logic

@@ -35,7 +35,6 @@ SPOOF_WEIGHTS = {
     "onnx":     0.10,   # unchanged — audit only, usually disabled
 }
 SPOOF_DECISION_THRESHOLD = 0.50
-FASNET_REAL_THRESHOLD    = 0.50
 
 _audit = logging.getLogger("smartcheck.enrollment")
 

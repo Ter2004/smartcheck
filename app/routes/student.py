@@ -13,6 +13,7 @@ from app.services.face_service import (
     DUPLICATE_THRESHOLD,
     DUPLICATE_GRAY_ZONE,
     CONTINUITY_THRESHOLD,
+    cosine_similarity,
 )
 from app import limiter as _limiter
 
@@ -43,15 +44,6 @@ def _log(student_id, step, result, details=""):
     ip = _safe_ip()
     ua = request.headers.get("User-Agent", "unknown")[:80]
     _audit.info(f"student={student_id} step={step} result={result} details={details} ip={ip} ua={ua}")
-
-
-def _cosine_sim(a: list, b: list) -> float:
-    """Cosine similarity ระหว่าง 2 embedding vectors (list of float)."""
-    import math
-    dot = sum(x * y for x, y in zip(a, b))
-    na  = math.sqrt(sum(x * x for x in a))
-    nb  = math.sqrt(sum(y * y for y in b))
-    return dot / (na * nb) if na > 0 and nb > 0 else 0.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -258,16 +250,26 @@ def api_enroll():
     """
     Receive 5 frontal frames, run full anti-spoof pipeline, check consistency, save pending.
 
-    Pipeline order (A1):
-      1. Validate input
-      2. Decode frames
-      3. Moiré FFT (all 5 frames)
-      4. Screen Texture Detection (all 5 frames)
-      5. MiniFASNet Anti-Spoof (all 5 frames)  ← A2: was [:2]
-      6. Extract FaceNet512 embeddings (all 5 frames, face detection happens here)
-      7. Embedding consistency check (B1: handles multi-outlier)
-      8. Duplicate face check (A6: gray-zone logging)
-      9. Save pending to DB
+    Pipeline order (A1) — see docs/review/04-student.md "Enrollment Pipeline Order":
+      1a. Consent check — session (consent_given_at)
+      1b. Consent check — DB (latest consent_logs row)
+      1c. Input: frame count == 5
+      1d. Input: baseline_ear range + type
+      1e. Retry limit: session["enroll_retry"] >= MAX_RETRY
+      2.  DB attempt limit: atomic_enroll_attempt RPC (max 5/24h)
+      3.  Zero-trust frame validation: server_validate_frame x5
+      4.  Pre-duplicate check (vs session["liveness_embeddings"])
+      5.  Decode all 5 frames (_decode_image)
+      6.  Moiré FFT: detect_screen_moire, all 5 frames
+      7.  Screen Texture Detection: detect_screen_texture, all 5 frames (>=2/5)
+      8.  Temporal variance: detect_static_image
+      9.  EAR std (client-reported, logged only — not blocking)
+      10. MiniFASNet Anti-Spoof: check_anti_spoof x5 (>=4/5 must pass)
+      11. Extract FaceNet512 embeddings (all 5 frames, face detection happens here)
+      12. Embedding consistency check (B1: handles multi-outlier)
+      13. Face continuity vs session["liveness_embeddings"] (CONTINUITY_THRESHOLD)
+      14. Duplicate face check (A6: gray-zone logging)
+      15. Save pending to DB + profile image upload
 
     Response statuses:
       pending_verify   : all 5 consistent, saved as pending (consent_given=False)
@@ -624,7 +626,7 @@ def api_enroll():
     # M1: use module-level CONTINUITY_THRESHOLD (defined at top of file)
     for idx, emb in enumerate(embeddings):
         max_sim = max(
-            _cosine_sim(emb, ref) for ref in liveness_embeddings
+            cosine_similarity(emb, ref) for ref in liveness_embeddings
         )
         if max_sim < CONTINUITY_THRESHOLD:
             _log(user_id, "continuity", "fail",
@@ -833,7 +835,7 @@ def api_self_verify():
             "message": "กรุณาทำ Liveness Check ก่อน — กรุณาเริ่มใหม่",
         }), 400
 
-    max_sim = max(_cosine_sim(live_emb, ref) for ref in liveness_embeddings)
+    max_sim = max(cosine_similarity(live_emb, ref) for ref in liveness_embeddings)
     if max_sim < CONTINUITY_THRESHOLD:
         _log(user_id, "self_verify_continuity", "fail", f"max_sim={max_sim:.4f} threshold={CONTINUITY_THRESHOLD}")
         return jsonify({
@@ -1124,7 +1126,7 @@ def api_withdraw_consent():
             "consent_type":    "biometric_enrollment",
             "consent_given":   False,
             "consent_version": "1.0",
-            "ip_address":      request.headers.get("X-Forwarded-For", request.remote_addr),
+            "ip_address":      _safe_ip(),
             "user_agent":      request.headers.get("User-Agent", "")[:500],
         }).execute()
     except Exception as e:

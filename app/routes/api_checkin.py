@@ -42,7 +42,7 @@ def checkin():
     ear_samples     = data.get("ear_samples") or []
 
     # M7: whitelist liveness_action — reject arbitrary strings
-    _ALLOWED_LIVENESS_ACTIONS = {"passive", "blink", "nod", "turn_left", "turn_right", "smile", "raise_eyebrows"}
+    _ALLOWED_LIVENESS_ACTIONS = {"passive", "blink", "turn_left"}
     if liveness_action not in _ALLOWED_LIVENESS_ACTIONS:
         return jsonify({"ok": False, "error": "ข้อมูลไม่ถูกต้อง"}), 400
 
@@ -70,16 +70,6 @@ def checkin():
         # Token is valid but belongs to a different user — reject immediately
         return jsonify({"ok": False, "error": "Device token ไม่ตรงกับบัญชีนี้"}), 403
     # device_payload=None + no raw_token = legacy / first check-in — allowed
-
-    # ─── 0b. Zero-trust frame validation (Sprint 2A) ─────────────────────────
-    frame_check = server_validate_frame(face_image)
-    if not frame_check["valid"]:
-        _log.info(f"[FRAME_VALIDATE] fail reason={frame_check['reason']} meta={frame_check['metadata']}")
-        return jsonify({
-            "ok":        False,
-            "error":     "รูปภาพไม่ถูกต้อง — กรุณาถ่ายใหม่อีกครั้ง",
-            "retry_face": True,
-        }), 400
 
     # ─── 1. Verify session is still open ─────────────────────────────────────
     sess_res = (
@@ -110,6 +100,16 @@ def checkin():
             "without course enrollment"
         )
         return jsonify({"ok": False, "error": "คุณไม่ได้ลงทะเบียนในรายวิชานี้"}), 403
+
+    # ─── 1b. Zero-trust frame validation (Sprint 2A) ─────────────────────────
+    frame_check = server_validate_frame(face_image)
+    if not frame_check["valid"]:
+        _log.info(f"[FRAME_VALIDATE] fail reason={frame_check['reason']} meta={frame_check['metadata']}")
+        return jsonify({
+            "ok":        False,
+            "error":     "รูปภาพไม่ถูกต้อง — กรุณาถ่ายใหม่อีกครั้ง",
+            "retry_face": True,
+        }), 400
 
     # ─── Check-in window (checkin_duration minutes from start) ───────────────
     checkin_duration = sess.get("checkin_duration")
@@ -208,39 +208,38 @@ def checkin():
             "error": "ข้อมูลภาพต่อเนื่องไม่ครบ กรุณาลองใหม่",
             "retry_face": True,
         }), 400
-    if isinstance(face_images_list, list) and len(face_images_list) >= 2:
-        try:
-            frames_gray = []
-            for img_b64 in face_images_list[-3:]:
-                try:
-                    frame_bgr = _decode_image(img_b64)
-                    gray = cv2.resize(
-                        cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY),
-                        (64, 64)
-                    )
-                    frames_gray.append(gray.astype(np.float32))
-                except Exception:
-                    continue
-            if len(frames_gray) >= 2:
-                stack = np.stack(frames_gray, axis=0)
-                temporal_var = float(np.mean(np.std(stack, axis=0)))
-                _log.info(f"[TEMPORAL] variance={temporal_var:.3f} frames={len(frames_gray)}")
-                if temporal_var < 4.0:
-                    return jsonify({
-                        "ok": False,
-                        "error": "ตรวจพบภาพนิ่ง — กรุณาใช้ใบหน้าจริงเท่านั้น",
-                        "spoof": True,
-                        "retry_face": True,
-                    }), 400
-            else:
-                raise ValueError("not enough valid temporal frames")
-        except Exception as temp_err:
-            _log.error(f"[TEMPORAL] check error (fail-close): {temp_err}")
-            return jsonify({
-                "ok": False,
-                "error": "ไม่สามารถตรวจสอบภาพต่อเนื่องได้ กรุณาลองใหม่",
-                "retry_face": True,
-            }), 400
+    try:
+        frames_gray = []
+        for img_b64 in face_images_list[-3:]:
+            try:
+                frame_bgr = _decode_image(img_b64)
+                gray = cv2.resize(
+                    cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY),
+                    (64, 64)
+                )
+                frames_gray.append(gray.astype(np.float32))
+            except Exception:
+                continue
+        if len(frames_gray) >= 2:
+            stack = np.stack(frames_gray, axis=0)
+            temporal_var = float(np.mean(np.std(stack, axis=0)))
+            _log.info(f"[TEMPORAL] variance={temporal_var:.3f} frames={len(frames_gray)}")
+            if temporal_var < 4.0:
+                return jsonify({
+                    "ok": False,
+                    "error": "ตรวจพบภาพนิ่ง — กรุณาใช้ใบหน้าจริงเท่านั้น",
+                    "spoof": True,
+                    "retry_face": True,
+                }), 400
+        else:
+            raise ValueError("not enough valid temporal frames")
+    except Exception as temp_err:
+        _log.error(f"[TEMPORAL] check error (fail-close): {temp_err}")
+        return jsonify({
+            "ok": False,
+            "error": "ไม่สามารถตรวจสอบภาพต่อเนื่องได้ กรุณาลองใหม่",
+            "retry_face": True,
+        }), 400
 
     # ─── 4b. Anti-spoofing via MiniFASNet ────────────────────────────────────
     try:

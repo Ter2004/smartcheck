@@ -45,7 +45,7 @@
 | `startCamera`, `calcEAR`, `dist`, `_deviceFingerprint`, `_PROGRESS_MSGS_VERIFY`, `calibEARValues`, `calibrating`, `calibStream`, `verifyStream`, `_log`, `_warn` | enrollment_flow.js | 11 items; รวม 4 functions + 7 variables |
 | `api_self_verify` | student.py:743 | 201 LOC endpoint — ไม่มี fetch() ใน .js ใดเลย; api_enroll:687 ระบุ "self-verify step removed" |
 | `FASNET_REAL_THRESHOLD` | face_service.py:38 | constant 0.50 — ไม่มี caller ใดเลย |
-| `else: raise ValueError` | api_checkin.py:236 | unreachable branch หลัง outer guard ที่ line 210 |
+| ~~`else: raise ValueError`~~ | api_checkin.py:236 | **แก้ไข 2026-08-23:** ไม่ใช่ dead code จริง — ผูกกับ `if len(frames_gray)>=2:` คนละเงื่อนไขกับ wrapper `if` ที่ line 211 จึง reachable จริง เก็บไว้ (ดู F-4); item ที่ลบจริงคือ wrapper `if` ที่ line 211 |
 | whitelist entries `nod`, `turn_right`, `smile`, `raise_eyebrows` | api_checkin.py:45 | 4 ค่า — client ไม่เคยส่ง (grep ยืนยัน) |
 
 **รวม dead code ยืนยันแล้ว: ~17 items** ลบได้ทั้งหมดโดยไม่กระทบ runtime
@@ -94,7 +94,7 @@
 | **Q-4** | `startCaptureWithDetection` 223 LOC, onResults 170+ LOC | enrollment_flow.js:1056 | quality 🟢 | ปานกลาง (SPLIT) | ยังไม่แก้ |
 | **Q-5** | `api_self_verify` 201 LOC — dead endpoint ไม่มี caller | student.py:743 | quality 🟡 | ต่ำ (ยืนยันก่อน delete) | ยังไม่แก้ |
 | **Q-6** | Dead code 11 รายการ ใน enrollment_flow.js | enrollment_flow.js | quality 🟢 | ต่ำ | **แก้แล้ว** (commit 22d07d7) |
-| **Q-7** | Dead code: `FASNET_REAL_THRESHOLD`, `else: raise ValueError`, whitelist 4 ค่า | face_service.py:38, api_checkin.py:45, 236 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
+| **Q-7** | Dead code: `FASNET_REAL_THRESHOLD` (whitelist 4 ค่า → ดู F-2; `else: raise ValueError` ไม่ใช่ dead code → ดู F-4) | face_service.py:38 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
 | **Q-8** | `_cosine_sim` duplicate ใน student.py vs face_service.py | student.py:48 | quality 🟢 | ต่ำ (MERGE) | ยังไม่แก้ |
 | **Q-9** | `check_anti_spoof` + `check_anti_spoof_with_score` near-duplicate | face_service.py:443, 458 | quality 🟢 | ต่ำ (MERGE) | ยังไม่แก้ |
 | **Q-10** | `spoof_check_with_embedding` ทำ DeepFace.represent ซ้ำแทนที่จะ delegate | face_service.py:474 | quality 🟢 | ปานกลาง | ยังไม่แก้ |
@@ -106,7 +106,7 @@
 | **D-2** | PRE-HARDREJECT log ถอดหลัง F-5 สรุปเสร็จ | face_service.py:~298 | cleanup 🟢 | ต่ำมาก | รอ F-5 สรุป |
 | **F-8** | Device token หมดอายุ 120 วัน — ไม่มี revocation กลางสาย | security_service.py:24 | security 🟡 | ปานกลาง | ยังไม่แก้ |
 | **F-2** | Dead whitelist entries (nod/turn_right/smile/raise_eyebrows) | api_checkin.py:45 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
-| **F-4** | `else: raise ValueError` unreachable | api_checkin.py:236 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
+| **F-4** | Redundant wrapper `if` ที่ line 211 (เดิมเข้าใจผิดว่า `else: raise ValueError` ที่ 236 unreachable — ไม่จริง, reachable จริง ห้ามลบ) | api_checkin.py:211 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
 
 ---
 

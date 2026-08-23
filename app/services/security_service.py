@@ -190,6 +190,7 @@ def log_audit_event(
     Uses supabase_admin (service key) so it bypasses RLS.
     """
     try:
+        from app.routes.student import _safe_ip  # deferred import — avoids circular import at module load
         entry = {
             "actor_id":   actor_id,
             "actor_role": actor_role,
@@ -199,7 +200,7 @@ def log_audit_event(
             "old_value":  old_value,
             "new_value":  new_value,
             "metadata":   metadata or {},
-            "ip_address": request.remote_addr,
+            "ip_address": _safe_ip(),
             "user_agent": (request.headers.get("User-Agent", "") or "")[:500],
         }
         supabase_client.table("audit_logs").insert(entry).execute()

@@ -2,6 +2,7 @@ import base64
 import logging
 import os
 import threading
+import time
 import numpy as np
 import cv2
 import json
@@ -241,7 +242,10 @@ def combined_spoof_score(
         active_weights["temporal"] = 0.0
 
     # ── Layer 4: DeepFace Fasnet (primary ML, fail-open) ───────────────────
+    # TEMP PERF: wall-clock this layer for docs/review/06-performance.md — remove after measurement
+    _t0_fasnet = time.perf_counter()
     fasnet_is_real, fasnet_spoof = _run_fasnet_antispoof(img_bgr)
+    _fasnet_ms = round((time.perf_counter() - _t0_fasnet) * 1000, 2)
     if fasnet_spoof is not None:
         layers["fasnet"] = {
             "spoof_score": round(fasnet_spoof, 4),
@@ -252,6 +256,8 @@ def combined_spoof_score(
         active_weights["fasnet"] = 0.0
 
     # ── Layer 5: Old ONNX (audit layer, fail-open) ─────────────────────────
+    # TEMP PERF: wall-clock this layer for docs/review/06-performance.md — remove after measurement
+    _t0_onnx = time.perf_counter()
     try:
         onnx_is_real, onnx_raw = _run_antispoof(img_bgr)
         onnx_spoof = 1.0 - onnx_raw
@@ -264,6 +270,7 @@ def combined_spoof_score(
         _audit.warning(f"[COMBINED_SPOOF] onnx error skip: {e}")
         layers["onnx"] = {"spoof_score": None, "is_real": None, "raw_real_score": None, "error": str(e)[:80]}
         active_weights["onnx"] = 0.0
+    _onnx_ms = round((time.perf_counter() - _t0_onnx) * 1000, 2)
 
     # ── CRITICAL: fail-close if primary ML layer (Fasnet) is dead ──────────
     # Without Fasnet, only FFT layers remain — insufficient for high-DPI screens.
@@ -420,6 +427,8 @@ def combined_spoof_score(
         "layers": layers,
         "weights_used": normalized_weights,
         "disagreements": disagreements,
+        # TEMP PERF: additive-only key for docs/review/06-performance.md — remove after measurement
+        "timings": {"fasnet_ms": _fasnet_ms, "onnx_ms": _onnx_ms},
     }
 
 

@@ -1,4 +1,5 @@
 import logging
+import time
 import cv2
 import numpy as np
 from datetime import datetime, timezone
@@ -29,6 +30,9 @@ api_checkin_bp = Blueprint("api_checkin", __name__)
 @_limiter.limit("5 per minute")
 @csrf_protect
 def checkin():
+    # TEMP PERF: instrumentation for docs/review/06-performance.md — remove after measurement
+    _t0 = time.perf_counter()
+    _perf = {}
     student_id = session["user_id"]
     data = request.get_json()
 
@@ -70,6 +74,7 @@ def checkin():
         # Token is valid but belongs to a different user — reject immediately
         return jsonify({"ok": False, "error": "Device token ไม่ตรงกับบัญชีนี้"}), 403
     # device_payload=None + no raw_token = legacy / first check-in — allowed
+    _perf["validate"] = round((time.perf_counter() - _t0) * 1000, 2); _t1 = time.perf_counter()
 
     # ─── 1. Verify session is still open ─────────────────────────────────────
     sess_res = (
@@ -119,6 +124,7 @@ def checkin():
         deadline = open_at + timedelta(minutes=int(checkin_duration))
         if datetime.now(timezone.utc) > deadline:
             return jsonify({"ok": False, "error": f"หมดเวลาเช็คชื่อแล้ว (รับ {checkin_duration} นาที)"}), 400
+    _perf["session"] = round((time.perf_counter() - _t1) * 1000, 2); _t2 = time.perf_counter()
 
     # ─── 2. BLE RSSI check ───────────────────────────────────────────────────
     if current_app.config.get("BLE_CHECK_ENABLED", False):
@@ -131,6 +137,7 @@ def checkin():
     else:
         _log.debug("[BLE] check skipped (BLE_CHECK_ENABLED=false)")
         ble_pass = True
+    _perf["ble"] = round((time.perf_counter() - _t2) * 1000, 2); _t3 = time.perf_counter()
 
     # ─── 3. Server-side EAR liveness check ──────────────────────────────────
     server_liveness_pass = False
@@ -160,6 +167,7 @@ def checkin():
             "error": "ข้อมูลตรวจสอบความมีชีวิตไม่ถูกต้อง กรุณาลองใหม่",
             "retry_face": True,
         }), 400
+    _perf["ear"] = round((time.perf_counter() - _t3) * 1000, 2); _t4 = time.perf_counter()
 
     # ─── 4a. Moiré / screen-replay detection (FFT — faster than MiniFASNet) ───
     try:
@@ -180,6 +188,7 @@ def checkin():
             "error": "ไม่สามารถตรวจสอบภาพได้ — กรุณาถ่ายใหม่อีกครั้ง",
             "retry_face": True,
         }), 400
+    _perf["moire"] = round((time.perf_counter() - _t4) * 1000, 2); _t5 = time.perf_counter()
 
     # ─── 4a-2. Screen Texture FFT (OLED/LCD spectral peaks) ───────────────
     try:
@@ -199,6 +208,7 @@ def checkin():
             "error": "ไม่สามารถตรวจสอบภาพได้ — กรุณาถ่ายใหม่อีกครั้ง",
             "retry_face": True,
         }), 400
+    _perf["texture"] = round((time.perf_counter() - _t5) * 1000, 2); _t6 = time.perf_counter()
 
     # ─── 4a-3. Temporal Variance (catches printed photos / static images) ─
     face_images_list = data.get("face_images")
@@ -240,11 +250,15 @@ def checkin():
             "error": "ไม่สามารถตรวจสอบภาพต่อเนื่องได้ กรุณาลองใหม่",
             "retry_face": True,
         }), 400
+    _perf["temporal"] = round((time.perf_counter() - _t6) * 1000, 2); _t7 = time.perf_counter()
 
     # ─── 4b. Anti-spoofing via MiniFASNet ────────────────────────────────────
     try:
         spoof_result = combined_spoof_score(raw_frame)
         is_real = spoof_result["is_real"]
+        _spoof_timings = spoof_result.get("timings", {})
+        _perf["fasnet"] = _spoof_timings.get("fasnet_ms", 0.0)
+        _perf["onnx"]   = _spoof_timings.get("onnx_ms", 0.0)
         if not is_real:
             return jsonify({
                 "ok": False,
@@ -260,6 +274,7 @@ def checkin():
             "error": "ไม่สามารถตรวจสอบใบหน้าได้ — กรุณาถ่ายใหม่อีกครั้ง",
             "retry_face": True,
         }), 400
+    _t8 = time.perf_counter()
 
     # ─── 5. Device binding (determines threshold) ─────────────────────────────
     device_id = request.headers.get("X-Device-ID", "")
@@ -328,6 +343,7 @@ def checkin():
         _log.warning(f"[FACE] extract_embedding failed: {e}")
         # L1: don't expose internal error details to client
         return jsonify({"ok": False, "error": "ตรวจใบหน้าไม่สำเร็จ กรุณาถ่ายใหม่อีกครั้ง", "retry_face": True}), 400
+    _perf["embed"] = round((time.perf_counter() - _t8) * 1000, 2); _t9 = time.perf_counter()
 
     verify_result = verify_face_multi(live_embedding, stored_embeddings, face_threshold)
     score = verify_result["best_similarity"]
@@ -340,6 +356,7 @@ def checkin():
             "error": "ใบหน้าไม่ตรง — กรุณาถ่ายรูปใหม่",
             "retry_face": True,
         }), 400
+    _perf["verify"] = round((time.perf_counter() - _t9) * 1000, 2); _t10 = time.perf_counter()
 
     # ─── 7. Duplicate check-in guard ─────────────────────────────────────────
     dup = (
@@ -388,6 +405,13 @@ def checkin():
             return jsonify({"ok": False, "already_checked": True,
                             "error": "เช็คชื่อแล้ว"}), 400
         return jsonify({"ok": False, "error": "บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่"}), 500
+    _perf["db"] = round((time.perf_counter() - _t10) * 1000, 2)
+    _perf["total"] = round((time.perf_counter() - _t0) * 1000, 2)
+    _log.info(
+        "[PERF] total={total}ms validate={validate}ms session={session}ms ble={ble}ms "
+        "ear={ear}ms moire={moire}ms texture={texture}ms temporal={temporal}ms "
+        "fasnet={fasnet}ms onnx={onnx}ms embed={embed}ms verify={verify}ms db={db}ms".format(**_perf)
+    )
 
     status_label = "มาเรียน" if status == "present" else "มาสาย"
     return jsonify({"ok": True, "message": f"เช็คชื่อสำเร็จ — {status_label}"})

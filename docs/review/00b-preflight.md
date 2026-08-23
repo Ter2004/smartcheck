@@ -191,3 +191,5 @@ False (ไม่มีโฟลเดอร์ tests/)
 TODO ก่อน deploy: เพิ่ม onnxruntime ใน requirements.txt
 
 TODO: ถอด PRE-HARDREJECT log ออกหลังสรุป F-5 เสร็จ (face_service.py:~298)
+
+TODO: ถอด `[PERF]` timing instrumentation ออกหลังใช้เก็บข้อมูล docs/review/06-performance.md เสร็จ — จุดที่แตะ: `app/routes/api_checkin.py` (`checkin()`, ทุกจุดที่มี comment `# TEMP PERF`) และ `app/services/face_service.py` (`combined_spoof_score()`, `timings` key + `import time`)

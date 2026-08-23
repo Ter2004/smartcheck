@@ -6,6 +6,7 @@ from flask import (Blueprint, render_template, request, redirect,
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
+from app.utils import friendly_error
 
 teacher_bp = Blueprint("teacher", __name__)
 
@@ -197,7 +198,7 @@ def session_create():
         flash(f"สร้างคาบเรียน '{title}' สำเร็จ", "success")
         return redirect(url_for("teacher.session_view", session_id=new_id))
     except Exception as e:
-        flash(f"สร้างไม่สำเร็จ: {e}", "danger")
+        flash(f"สร้างไม่สำเร็จ: {friendly_error(e)}", "danger")
         return redirect(url_for("teacher.dashboard"))
 
 

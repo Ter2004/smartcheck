@@ -107,6 +107,8 @@
 | **F-8** | Device token หมดอายุ 120 วัน — ไม่มี revocation กลางสาย | security_service.py:24 | security 🟡 | ปานกลาง | ยังไม่แก้ |
 | **F-2** | Dead whitelist entries (nod/turn_right/smile/raise_eyebrows) | api_checkin.py:45 | quality 🟢 | ต่ำมาก | **แก้แล้ว** (commit 8281668) |
 | **F-4** | Redundant wrapper `if` ที่ line 211 (เดิมเข้าใจผิดว่า `else: raise ValueError` ที่ 236 unreachable — ไม่จริง, reachable จริง ห้ามลบ) | api_checkin.py:211 | quality 🟢 | ต่ำมาก | **แก้บางส่วน** (commit 8281668) — ดูหมายเหตุ: ลบเฉพาะ wrapper if ที่ 211, `else: raise ValueError` ที่ 236 เก็บไว้เพราะ reachable จริง |
+| **F-9** | `auto_manage_sessions()` (APScheduler) ไม่มี lock/unique constraint กันการรันซ้อนกันข้าม process — ถ้ามี >1 worker แต่ละ worker รัน scheduler อิสระ, auto-create session ชนกันได้ (race, ไม่มี `UNIQUE` บนตาราง `sessions`); `keep_alive` ก็ซ้ำ N ชุดแต่ไม่มีผลเสีย (แค่ redundant read) | scheduler.py:25-142, `app/__init__.py:172-173` | reliability/scale 🔴 | ปานกลาง (advisory lock) ถึงสูง (single-instance gating ผ่าน infra) | **BLOCKER** — ต้องแก้ก่อนเพิ่ม `--workers` (ดู docs/review/06-performance.md ข้อ 6, 8) ยังไม่แก้ |
+| **F-10** | ตาราง `sessions` ไม่มี `UNIQUE` constraint บน `(course_id, start_time)` เลย — **มีอยู่แล้วแม้ตอนนี้ที่ workers=1** เพราะ `auto_manage_sessions` รันบน APScheduler background thread ของตัวเอง ซึ่งเป็นคนละ thread จาก thread ที่ serve HTTP request เสมอ (ไม่ว่าจะกี่ worker) — ชนกับ `teacher.py:188` (`session_create`, insert ด้วย `start_time` ที่ teacher พิมพ์เอง ความละเอียดระดับนาที ชนกับ auto-create ได้จริงถ้าตรง schedule) ได้โดยตรงแม้ single-worker; `admin.py:282` ใช้ `start_time=now()` ความละเอียด microsecond จึงชนยากกว่ามาก (แทบเป็นไปไม่ได้ในทางปฏิบัติ) — F-9 (multi-worker) เป็นแค่ตัวขยายปัญหาเดิมนี้ให้ชนบ่อยขึ้น ไม่ใช่ต้นเหตุ | `database/schema.sql:181-191`, `app/scheduler.py:81`, `app/routes/teacher.py:188`, `app/routes/admin.py:282` | reliability 🟠 | ต่ำ (migration + code fix ทำแล้ว) | **แก้แล้ว** — migration `database/migrations/20260823_sessions_unique_course_start.sql` + `scheduler.py` catch 23505 skip เงียบ; **ต้อง apply migration เองใน Supabase SQL editor** (agent รันให้ไม่ได้ ไม่มี DB access) หลังเช็ค/ล้าง duplicate ก่อนตามที่ให้ SQL ไว้ในแชท; `teacher.py:188` ยังใช้ raw `except Exception as e: flash(f"...: {e}")` — ถ้า constraint reject จะโชว์ raw Postgres error ให้ teacher เห็น (ยังไม่แก้ตามที่สั่งไม่ให้แตะนอก scope) |
 
 ---
 
@@ -126,6 +128,7 @@
 | 4 | Q-6 | ลบ dead code 11 รายการใน enrollment_flow.js | **30 นาที** | -~50 LOC; ลด confusion trace `_deviceFingerprint` / `calcEAR` | ไม่มี risk, cleaner codebase |
 | 5 | F-1 + CC-1b | Server-side challenge token: server สุ่ม + เก็บใน session ก่อน challenge; ตรวจตอน submit | **2–4 ชั่วโมง** | ปิด liveness bypass ทั้ง F-1 (check-in) และ F-6 (enrollment) พร้อมกัน | design change ใหญ่ รอเวลาที่เหมาะสม |
 | 6 | Q-1, Q-2, Q-3, Q-4 | SPLIT api_enroll / checkin / combined_spoof_score / startCaptureWithDetection | **1–2 วัน** | แต่ละ security layer test ได้อิสระ; onboard ง่าย | refactor ใหญ่ ทำหลัง security fix ทั้งหมด |
+| 0 | **F-9** | **BLOCKER — ต้องแก้ก่อนเพิ่ม `--workers`** (ไม่ใช่ optional): gate scheduler ให้รันแค่ 1 instance หรือใส่ Postgres advisory lock | **30 นาที – 2 ชั่วโมง** (ดูตัวเลือก (a)/(b) ใน docs/review/06-performance.md) | ป้องกัน session ซ้ำเมื่อ scale worker — โดยตรงเปิดทางให้ทำ capacity plan ในข้อ F-9/06-performance.md ได้จริง | ค้นพบระหว่างประเมิน capacity — เพิ่ม `--workers` ตอนนี้ไม่ปลอดภัยจนกว่าจะแก้ข้อนี้ |
 
 ---
 
@@ -193,6 +196,10 @@ enrollment consent flow ออกแบบถูกต้องตาม PDPA �
 | quality 🟢 | 14 | 1 (Q-6) | 10 |
 | legal/PDPA 🟡 | 1 | 1 (L-1) | 1 |
 | deploy ⚠️ | 2 | 1 (D-1) | 2 |
-| **รวม** | **29** | **8** | **19** |
+| reliability/scale 🔴 | 1 | 0 | 0 (F-9 — BLOCKER, ปานกลาง–สูง) |
+| reliability 🟠 | 1 | 1 (F-10 — โค้ด+migration พร้อม รอ apply เอง) | 1 |
+| **รวม** | **31** | **9** | **20** |
+
+**หมายเหตุ:** คอลัมน์ "แก้แล้ว"/"แก้ได้ <1ชม." ของหมวดอื่น (โดยเฉพาะ quality 🟢) ยังไม่ได้ reconcile กับสถานะล่าสุดหลัง commit `8281668` (F-2/F-4/Q-7/Q-8/Q-12/Q-13 แก้แล้ว) — ตัวเลขในตารางนี้จึง**ต่ำกว่าความจริง**ในบางหมวด ยังไม่ได้แก้เพราะไม่ใช่ scope ของ task นี้ (เพิ่ม F-9 อย่างเดียว) ต้อง reconcile ทั้งตารางแยกต่างหากถ้าต้องการตัวเลขที่แม่นยำ 100%
 
 ไฟล์ที่ review ครอบคลุม ~4 036 LOC จากทั้งหมด ~10 741 LOC (~38%) — auth.py และ security_service.py review เสร็จแล้ว

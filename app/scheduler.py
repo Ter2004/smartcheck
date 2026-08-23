@@ -78,15 +78,25 @@ def auto_manage_sessions():
             if not existing and beacon_id_to_use:
                 day_name  = DAY_NAMES[today_dow]
                 title     = f"{course['code']} {day_name} {today_date} ({sch_start}–{sch_end})"
-                sb.table("sessions").insert({
-                    "course_id":  course_id,
-                    "beacon_id":  beacon_id_to_use,
-                    "title":      title,
-                    "start_time": sched_start_dt.isoformat(),
-                    "end_time":   None,
-                    "is_open":    False,
-                }).execute()
-                _log.info(f"[SCHEDULER] Auto-created: {title}")
+                try:
+                    sb.table("sessions").insert({
+                        "course_id":  course_id,
+                        "beacon_id":  beacon_id_to_use,
+                        "title":      title,
+                        "start_time": sched_start_dt.isoformat(),
+                        "end_time":   None,
+                        "is_open":    False,
+                    }).execute()
+                    _log.info(f"[SCHEDULER] Auto-created: {title}")
+                except Exception as insert_err:
+                    err_str = str(insert_err)
+                    if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
+                        # F-10: UNIQUE(course_id, start_time) already rejected this —
+                        # expected/normal when another scheduler instance (or a
+                        # concurrent manual create) won the race this tick, not an error.
+                        _log.info(f"[SCHEDULER] Auto-create skipped (already exists): {title}")
+                    else:
+                        raise
 
             # ─── Auto-close: เลยเวลาจบ ────────────────────────────────
             if now_time >= end_time:

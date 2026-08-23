@@ -5,26 +5,9 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
+from app.utils import friendly_error as _friendly_error
 
 admin_bp = Blueprint("admin", __name__)
-
-
-def _friendly_error(e: Exception) -> str:
-    """แปลง exception จาก Supabase/DB เป็นข้อความภาษาไทยที่อ่านได้"""
-    msg = str(e)
-    if "23505" in msg or "duplicate key" in msg:
-        if "student_id" in msg:
-            return "รหัสนักศึกษานี้มีในระบบแล้ว"
-        if "email" in msg:
-            return "อีเมลนี้มีในระบบแล้ว"
-        return "ข้อมูลซ้ำในระบบ"
-    if "23503" in msg or "foreign key" in msg:
-        return "ข้อมูลอ้างอิงไม่ถูกต้อง"
-    if "already registered" in msg or "User already registered" in msg:
-        return "อีเมลนี้ถูกลงทะเบียนแล้ว"
-    if "invalid" in msg.lower() and "email" in msg.lower():
-        return "รูปแบบอีเมลไม่ถูกต้อง"
-    return "เกิดข้อผิดพลาด กรุณาลองใหม่"
 
 
 # ─── Dashboard ────────────────────────────────────────────────

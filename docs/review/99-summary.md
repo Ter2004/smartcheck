@@ -94,19 +94,19 @@
 | **Q-4** | `startCaptureWithDetection` 223 LOC, onResults 170+ LOC | enrollment_flow.js:1056 | quality 🟢 | ปานกลาง (SPLIT) | ยังไม่แก้ |
 | **Q-5** | `api_self_verify` 201 LOC — dead endpoint ไม่มี caller | student.py:743 | quality 🟡 | ต่ำ (ยืนยันก่อน delete) | ยังไม่แก้ |
 | **Q-6** | Dead code 11 รายการ ใน enrollment_flow.js | enrollment_flow.js | quality 🟢 | ต่ำ | **แก้แล้ว** (commit 22d07d7) |
-| **Q-7** | Dead code: `FASNET_REAL_THRESHOLD` (whitelist 4 ค่า → ดู F-2; `else: raise ValueError` ไม่ใช่ dead code → ดู F-4) | face_service.py:38 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
-| **Q-8** | `_cosine_sim` duplicate ใน student.py vs face_service.py | student.py:48 | quality 🟢 | ต่ำ (MERGE) | ยังไม่แก้ |
+| **Q-7** | Dead code: `FASNET_REAL_THRESHOLD` (whitelist 4 ค่า → ดู F-2; `else: raise ValueError` ไม่ใช่ dead code → ดู F-4) | face_service.py:38 | quality 🟢 | ต่ำมาก | **แก้แล้ว** (commit 8281668) |
+| **Q-8** | `_cosine_sim` duplicate ใน student.py vs face_service.py | student.py:48 | quality 🟢 | ต่ำ (MERGE) | **แก้แล้ว** (commit 8281668) |
 | **Q-9** | `check_anti_spoof` + `check_anti_spoof_with_score` near-duplicate | face_service.py:443, 458 | quality 🟢 | ต่ำ (MERGE) | ยังไม่แก้ |
 | **Q-10** | `spoof_check_with_embedding` ทำ DeepFace.represent ซ้ำแทนที่จะ delegate | face_service.py:474 | quality 🟢 | ปานกลาง | ยังไม่แก้ |
 | **Q-11** | BLE FAIL-OPEN by default (`BLE_CHECK_ENABLED=False`) | api_checkin.py:124 | config 🟡 | ต่ำ (env var) | ยังไม่แก้ |
-| **Q-12** | Frame validation (0b) ก่อน session check (1) — เสีย CPU | api_checkin.py:75, 85 | quality 🟡 | ต่ำ | ยังไม่แก้ |
-| **Q-13** | api_enroll docstring ล้าสมัย (9 steps vs 15 จริง) | student.py:261 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
+| **Q-12** | Frame validation (0b) ก่อน session check (1) — เสีย CPU | api_checkin.py:75, 85 | quality 🟡 | ต่ำ | **แก้แล้ว** (commit 8281668) |
+| **Q-13** | api_enroll docstring ล้าสมัย (9 steps vs 15 จริง) | student.py:261 | quality 🟢 | ต่ำมาก | **แก้แล้ว** (commit 8281668) |
 | **L-1** | `api_withdraw_consent` ไม่มี front-end trigger | student.py:1107 | legal/PDPA 🟡 | ต่ำ (เพิ่ม UI) | **แก้แล้ว** (commit ed342e0) |
 | **D-1** | `onnxruntime` ไม่อยู่ใน requirements.txt | requirements.txt | deploy ⚠️ | ต่ำมาก | **แก้แล้ว** (commit 948885b) |
 | **D-2** | PRE-HARDREJECT log ถอดหลัง F-5 สรุปเสร็จ | face_service.py:~298 | cleanup 🟢 | ต่ำมาก | รอ F-5 สรุป |
 | **F-8** | Device token หมดอายุ 120 วัน — ไม่มี revocation กลางสาย | security_service.py:24 | security 🟡 | ปานกลาง | ยังไม่แก้ |
-| **F-2** | Dead whitelist entries (nod/turn_right/smile/raise_eyebrows) | api_checkin.py:45 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
-| **F-4** | Redundant wrapper `if` ที่ line 211 (เดิมเข้าใจผิดว่า `else: raise ValueError` ที่ 236 unreachable — ไม่จริง, reachable จริง ห้ามลบ) | api_checkin.py:211 | quality 🟢 | ต่ำมาก | ยังไม่แก้ |
+| **F-2** | Dead whitelist entries (nod/turn_right/smile/raise_eyebrows) | api_checkin.py:45 | quality 🟢 | ต่ำมาก | **แก้แล้ว** (commit 8281668) |
+| **F-4** | Redundant wrapper `if` ที่ line 211 (เดิมเข้าใจผิดว่า `else: raise ValueError` ที่ 236 unreachable — ไม่จริง, reachable จริง ห้ามลบ) | api_checkin.py:211 | quality 🟢 | ต่ำมาก | **แก้บางส่วน** (commit 8281668) — ดูหมายเหตุ: ลบเฉพาะ wrapper if ที่ 211, `else: raise ValueError` ที่ 236 เก็บไว้เพราะ reachable จริง |
 
 ---
 
@@ -174,7 +174,7 @@
 | `consent_version` hardcode `"1.0"` — ไม่มีกลไก bump version เมื่อ policy เปลี่ยน | student.py:237, 1123 | 🟡 |
 | ไม่มี data retention policy ใน code — ระบบไม่ auto-delete biometrics ของ user ที่ไม่ active | — | 🟡 (นโยบาย ไม่ใช่ bug) |
 | face-images bucket privacy ไม่ได้ verified จาก code — ต้องตรวจ Supabase Dashboard | student.py:901 | 🟡 (ต้องตรวจ manually) |
-| `ip_address` ใน consent_logs มาจาก `request.headers.get("X-Forwarded-For", request.remote_addr)` โดยตรง ไม่ผ่าน `_safe_ip()` | student.py:1127 | 🟢 minor (log spoofing เท่านั้น) |
+| ~~`ip_address` ใน consent_logs มาจาก `request.headers.get("X-Forwarded-For", request.remote_addr)` โดยตรง ไม่ผ่าน `_safe_ip()`~~ — **แก้แล้ว** commit 8281668 (ทั้ง student.py:1127 และ `log_audit_event` ใน security_service.py เปลี่ยนไปใช้ `_safe_ip()`) | student.py:1127, security_service.py:202 | ✅ |
 
 ### สรุปสถานะ PDPA
 

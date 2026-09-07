@@ -78,6 +78,19 @@ let step4SpoofFailTotal       = 0;  // never resets except fullRestart/restartCa
 const MAX_STEP4_SPOOF_CONSEC  = 3;
 const MAX_STEP4_SPOOF_TOTAL   = 5;
 
+// ─── Step 4 network-error fail cap (F-16 follow-up) ──────────────────────────
+// Separate from the spoof counters above — this tracks whether the anti-spoof
+// service can produce a verdict. A persistent backend failure (e.g. F-16's Fasnet crash)
+// makes every spoof_check call return _networkError, which never touched
+// either spoof counter, so the loop retried silently forever. See
+// docs/review/10-moire-frr-investigation.md §18.
+const MAX_STEP4_NETWORK_ERROR_CONSEC = 6;
+const step4FailureTracker = new Step4FailureTracker(MAX_STEP4_NETWORK_ERROR_CONSEC);
+let step4NetworkErrorConsec = 0;      // compatibility mirror for timeout messaging
+let step4AnyServerResponse  = false;  // per-window flag for the 2-min timeout message
+const STEP4_SYSTEM_UNAVAILABLE_MSG =
+    'ระบบตรวจสอบใบหน้าขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง หรือแจ้งเจ้าหน้าที่หากยังพบปัญหา';
+
 // ─── Step 4 timeout ───────────────────────────────────────────────────────────
 const STEP4_TIMEOUT_MS = 120000;   // 2 minutes
 let step4Timer = null;
@@ -210,6 +223,7 @@ function _captureFrameFromVideo(videoEl) {
 // Fail-close: retry once; if both fail → return blocked result (never silently pass)
 async function _callSpoofCheckSafe(imageB64) {
     const BACKOFF_MS = [2000, 4000, 8000];  // exponential backoff delays
+    let lastHttpStatus;
     for (let attempt = 0; attempt < 2; attempt++) {
         try {
             const res = await fetch(ENROLL_CONFIG.spoofCheckUrl, {
@@ -241,15 +255,21 @@ async function _callSpoofCheckSafe(imageB64) {
                          _networkError: true, _rateLimited: true };
             }
 
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) {
+                const error = new Error(`HTTP ${res.status}`);
+                error.httpStatus = res.status;
+                throw error;
+            }
             return await res.json();
         } catch (e) {
+            lastHttpStatus = e.httpStatus;
             _warn(`spoof_check attempt ${attempt + 1} failed:`, e);
             if (attempt === 0) await new Promise(r => setTimeout(r, 1000));
         }
     }
     return { is_real: false, confidence: 0,
-             message: 'ไม่สามารถตรวจสอบได้ กรุณาลองใหม่อีกครั้ง', _networkError: true };
+             message: 'ไม่สามารถตรวจสอบได้ กรุณาลองใหม่อีกครั้ง', _networkError: true,
+             _httpStatus: lastHttpStatus };
 }
 
 // Stop every active stream + camera; safe to call multiple times
@@ -1012,6 +1032,9 @@ function startCaptureWithDetection() {
     _updateCaptureDots();
     lastCaptureTime = 0;
     capturePaused   = false;
+    step4FailureTracker.resetWindow();
+    step4NetworkErrorConsec = 0;
+    step4AnyServerResponse  = false;
 
     faceMeshCapture = _getSharedFM({ minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
 
@@ -1124,19 +1147,36 @@ function startCaptureWithDetection() {
 
         if (!sc.is_real) {
             if (sc._networkError) {
-                // Network / validation error — skip frame, don't penalise either counter
                 _clearSpoofLabel('spoofLabelCapture');
                 if (sc._rateLimited) {
-                    // 429 rate limit — show friendly wait message, NOT a spoof fail
+                    // 429 is an operational rate-limit response, not evidence that
+                    // anti-spoof inference failed: reset the failure counter.
+                    step4NetworkErrorConsec = step4FailureTracker.observe(sc).consecutive;
+                    step4AnyServerResponse  = true;
                     _warn('spoof_check rate limited — skipping frame');
                     status.textContent = sc.message || 'ระบบกำลังประมวลผล กรุณารอสักครู่';
-                } else {
-                    _warn('spoof_check network/validation error — skipping frame');
+                    capturePaused = false;
+                    return;
+                }
+                // 503 and transport failures both mean no anti-spoof verdict was
+                // produced. 503 must remain a strike even though Flask answered.
+                _warn('spoof_check network/validation error — skipping frame');
+                const failureState = step4FailureTracker.observe(sc);
+                step4NetworkErrorConsec = failureState.consecutive;
+                if (failureState.tripNow) {
+                    // F-16 follow-up: this many unbroken failures (each already
+                    // survived one internal retry, :212-253) means the anti-spoof
+                    // system itself is down, not that the user is spoofing or
+                    // unlucky. Stop — do not re-arm into another identical cycle.
+                    _showResult('error', STEP4_SYSTEM_UNAVAILABLE_MSG);
+                    return;
                 }
                 capturePaused = false;
                 return;
             }
-            // Hard spoof detected by model
+            // Hard spoof detected by the model: reset because inference produced a verdict.
+            step4NetworkErrorConsec = step4FailureTracker.observe(sc).consecutive;
+            step4AnyServerResponse  = true;
             _showSpoofWarn();
             step4SpoofFailConsecutive++;
             step4SpoofFailTotal++;
@@ -1164,6 +1204,8 @@ function startCaptureWithDetection() {
 
         // Face continuity ตรวจที่ server ตอน /api/enroll แล้ว
         step4SpoofFailConsecutive = 0;  // reset consecutive on pass; total stays
+        step4NetworkErrorConsec   = step4FailureTracker.observe(sc).consecutive;
+        step4AnyServerResponse    = true;
         setTimeout(() => _clearSpoofLabel('spoofLabelCapture'), 1500);
         capturePaused = false;
         // ─────────────────────────────────────────────────────────────────
@@ -1213,15 +1255,22 @@ function startCaptureWithDetection() {
         });
         status.textContent = 'มองตรงกล้อง อยู่นิ่ง ๆ — ระบบจะถ่ายอัตโนมัติ';
 
-        // ── 2-minute timeout — restart capture if not done
+        // ── 2-minute timeout — outer backstop if the fast network-error path
+        // above didn't already trip (e.g. too few attempts happened to reach
+        // MAX_STEP4_NETWORK_ERROR_CONSEC, but none of them proved the server
+        // was alive either) — error-aware message, F-16 follow-up.
         if (step4Timer) clearTimeout(step4Timer);
         step4Timer = setTimeout(() => {
             if (capturedImages.length < TOTAL_FRAMES) {
                 capturePaused = true;
                 _stopStepCamera();
                 stopStream(captureStream);
-                status.textContent = 'หมดเวลา — กรุณาลองใหม่';
-                setTimeout(() => restartCapture(), 3000);
+                if (!step4AnyServerResponse && step4NetworkErrorConsec > 0) {
+                    _showResult('error', STEP4_SYSTEM_UNAVAILABLE_MSG);
+                } else {
+                    status.textContent = 'หมดเวลา — กรุณาลองใหม่';
+                    setTimeout(() => restartCapture(), 3000);
+                }
             }
         }, STEP4_TIMEOUT_MS);
     }).catch(e => alert('ไม่สามารถเปิดกล้องได้: ' + e.message));
@@ -1397,6 +1446,9 @@ async function fullRestart() {
     baselineEAR         = 0.25;
     step4SpoofFailConsecutive = 0;
     step4SpoofFailTotal       = 0;
+    step4FailureTracker.resetWindow();
+    step4NetworkErrorConsec   = 0;
+    step4AnyServerResponse    = false;
     _enrollSubmitting        = false;   // B5: release double-submit lock on full restart
     earSamplesDuringCapture  = [];
     _rtResetCounters();
@@ -1440,6 +1492,9 @@ function restartCapture() {
     capturePaused             = false;
     step4SpoofFailConsecutive = 0;
     step4SpoofFailTotal       = 0;
+    step4FailureTracker.resetWindow();
+    step4NetworkErrorConsec   = 0;
+    step4AnyServerResponse    = false;
     _enrollSubmitting        = false;   // B5: release double-submit lock on capture restart
     earSamplesDuringCapture  = [];
     _rtResetCounters();

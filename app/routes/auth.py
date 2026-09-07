@@ -119,9 +119,11 @@ def login():
 @login_required
 @csrf_protect_form
 def change_password():
-    """Force password change — ต้องทำก่อนเข้าระบบครั้งแรกหลัง CSV import"""
+    """เปลี่ยนรหัสผ่าน — ทั้งแบบบังคับ (first login หลัง CSV import) และแบบสมัครใจจาก sidebar"""
     if request.method == "GET":
-        return render_template("auth/change_password.html")
+        user = get_user_by_id(session["user_id"])
+        forced = bool(user and user.get("must_change_password"))
+        return render_template("auth/change_password.html", forced=forced)
 
     current_pw  = request.form.get("current_password", "")
     new_pw      = request.form.get("new_password", "")
@@ -129,11 +131,11 @@ def change_password():
 
     if len(new_pw) < 8:
         flash("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร", "danger")
-        return render_template("auth/change_password.html")
+        return render_template("auth/change_password.html", forced=False)
 
     if new_pw != confirm_pw:
         flash("รหัสผ่านทั้งสองช่องไม่ตรงกัน", "danger")
-        return render_template("auth/change_password.html")
+        return render_template("auth/change_password.html", forced=False)
 
     # Verify current password before allowing change — ป้องกัน CSRF account takeover
     user_id = session["user_id"]
@@ -147,7 +149,7 @@ def change_password():
         })
     except Exception:
         flash("ข้อมูลไม่ถูกต้อง", "danger")
-        return render_template("auth/change_password.html")
+        return render_template("auth/change_password.html", forced=False)
 
     try:
         # Update password via Supabase Auth admin API
@@ -161,7 +163,7 @@ def change_password():
         return redirect(url_for("auth.login"))
     except Exception:
         flash("เปลี่ยนรหัสผ่านไม่สำเร็จ กรุณาลองใหม่", "danger")
-        return render_template("auth/change_password.html")
+        return render_template("auth/change_password.html", forced=False)
 
 
 @auth_bp.route("/register")

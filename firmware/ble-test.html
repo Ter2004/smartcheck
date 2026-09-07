@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SmartCheck BLE room read</title>
+<h1>SmartCheck BLE test</h1>
+<button id="connect">Connect and read room</button>
+<button id="disconnect" disabled>Disconnect</button>
+<pre id="status">Ready. Enable Bluetooth on Windows.</pre>
+<script>
+const SERVICE = '7c6b1000-9f3a-4b27-8d15-6e2a90c4f801';
+const CHARACTERISTIC = '7c6b1001-9f3a-4b27-8d15-6e2a90c4f801';
+let device;
+const connect = document.getElementById('connect');
+const disconnect = document.getElementById('disconnect');
+const status = document.getElementById('status');
+connect.onclick = async () => {
+  connect.disabled = true;
+  try {
+    if (!navigator.bluetooth) throw new Error('Use Chrome/Edge on localhost or HTTPS with Bluetooth enabled.');
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{services: [SERVICE], name: 'SmartCheck-TEST101'}]
+    });
+    device.addEventListener('gattserverdisconnected', () => {
+      status.textContent = 'Disconnected. Board should advertise again.';
+      connect.disabled = false;
+      disconnect.disabled = true;
+    }, {once: true});
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE);
+    const characteristic = await service.getCharacteristic(CHARACTERISTIC);
+    const room = new TextDecoder().decode(await characteristic.readValue());
+    if (room !== 'TEST-101') throw new Error('Unexpected room identifier');
+    status.textContent = `Connected to ${device.name}\nGATT read: ${room}\nConnection held for OLED demonstration. Click Disconnect when finished.\nThis test does not submit attendance.`;
+    disconnect.disabled = false;
+  } catch (error) {
+    if (device?.gatt?.connected) device.gatt.disconnect();
+    status.textContent = `${error.name}: ${error.message}`;
+    connect.disabled = false;
+    disconnect.disabled = true;
+  }
+};
+disconnect.onclick = () => device?.gatt?.disconnect();
+</script>

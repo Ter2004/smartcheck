@@ -1,8 +1,7 @@
 /**
  * checkin_flow.js — SmartCheck Check-in Flow
  *
- * Flow (Final 1): Verify (face detect + capture) → Result
- * Flow (Phase 3+): BLE → Verify (face detect + liveness) → Result
+ * Flow: BLE read / TOTP → server preflight → camera → receipt-backed submit.
  */
 
 class CheckinFlow {
@@ -12,31 +11,32 @@ class CheckinFlow {
         this.rssiThreshold = opts.rssiThreshold;
         this.baselineEAR   = opts.baselineEAR;
         this.apiUrl        = opts.apiUrl || '/api/checkin';
+        this.proximityMethod = opts.proximityMethod || 'totp';
 
         this._bleRSSI    = null;
         this._bleSkip    = false;
         this._camStream  = null;
         this._earSamples = [];
+        this._proximity = null;
     }
 
     start() {
-        // Final 1: ข้าม BLE — เริ่ม verify ใบหน้าทันที
-        // TODO Phase 3: เปลี่ยนกลับเป็น this._goToStep(1) เมื่อมี Beacon จริง
+        // Proximity always gates the camera; legacy RSSI is a separate option.
         this._bleRSSI = null;
         this._bleSkip = true;
-        this._startVerify();
+        this._requestRoomCode();
     }
 
     // ─── Step dots ───────────────────────────────────────
 
     _goToStep(n) {
-        // Final 1: BLE ถูกซ่อน — stepVerify=1, stepDone=2
-        const steps = ['stepVerify', 'stepDone'];
+        // 1=proximity, 2=camera, 3=result.
+        const steps = [this.proximityMethod === 'ble' ? 'stepBleRoom' : 'stepRoomCode', 'stepVerify', 'stepDone'];
         steps.forEach((id, i) => {
             const el = document.getElementById(id);
             if (el) el.style.display = (i + 1 === n) ? 'block' : 'none';
         });
-        for (let i = 1; i <= 2; i++) {
+        for (let i = 1; i <= 3; i++) {
             const dot = document.getElementById('dot' + i);
             if (dot) {
                 dot.classList.toggle('active', i <= n);
@@ -86,8 +86,14 @@ class CheckinFlow {
     // ─── Step 2: Verify (face detect → countdown → liveness) ─
 
     async _startVerify() {
+        if (!this._proximity || performance.now() >= this._proximity.deadline) {
+            this._requestRoomCode();
+            return;
+        }
         this._earSamples = [];
         this._goToStep(2);
+        document.getElementById("stepRoomCode").style.display = "none";
+        this._capturedFrames = [];
 
         const video    = document.getElementById('videoVerify');
         const canvas   = document.getElementById('canvasVerify');
@@ -100,6 +106,11 @@ class CheckinFlow {
             this._camStream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'user', width: 640, height: 480 }
             });
+            if (!this._proximity || performance.now() >= this._proximity.deadline) {
+                this._stopStream(this._camStream);
+                this._expireProximity();
+                return;
+            }
             const vcCheck = await detectVirtualCamera(this._camStream);
             if (vcCheck.blocked) {
                 this._camStream.getTracks().forEach(t => t.stop());
@@ -109,30 +120,42 @@ class CheckinFlow {
             }
             video.srcObject = this._camStream;
         } catch (e) {
+            console.info('step=camera_open result=error details={}');
             status.textContent = 'ไม่สามารถเปิดกล้องได้: ' + e.message;
+            this._goToStep(3);
+            document.getElementById('doneLoadingView').style.display = 'none';
+            document.getElementById('doneResultView').style.display = 'block';
+            this._showDone('error', status.textContent, true);
             return;
         }
 
         status.textContent = 'เตรียมกล้อง — จัดใบหน้าให้อยู่ในกรอบวงรี';
 
         // Timeout: ถ้า 40 วินาทีแล้วยังไม่พบใบหน้า ให้ปิดกล้องและแสดงข้อผิดพลาด
-        const _streamTimeoutId = setTimeout(() => {
+        this._streamTimeoutId = setTimeout(() => {
             if (!verified && !countingDown) {
                 faceMesh.close();
                 this._stopStream(this._camStream);
                 status.textContent = 'หมดเวลา — ไม่พบใบหน้า กรุณาลองใหม่อีกครั้ง';
                 guide.classList.remove('ok');
                 guide.classList.add('fail');
+                console.info('step=capture_timeout result=reject details={}');
+                this._goToStep(3);
+                document.getElementById('doneLoadingView').style.display = 'none';
+                document.getElementById('doneResultView').style.display = 'block';
+                this._showDone('error', 'หมดเวลา — ไม่พบใบหน้า กรุณาลองใหม่อีกครั้ง', true);
             }
         }, 40000);
 
         // รอให้กล้องเริ่มก่อน 1.5 วินาที
         await this._sleep(1500);
+        if (!this._proximity) return;
         status.textContent = 'จัดใบหน้าให้อยู่ในกรอบวงรี';
 
         // FaceMesh ตรวจตำแหน่งหน้า
         const faceMesh = new FaceMesh({ locateFile: f =>
             `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+        this._activeMesh = faceMesh;
         faceMesh.setOptions({
             maxNumFaces: 1, refineLandmarks: false,
             minDetectionConfidence: 0.7, minTrackingConfidence: 0.7,
@@ -145,7 +168,7 @@ class CheckinFlow {
         let passiveSent     = false;
 
         faceMesh.onResults(async results => {
-            if (verified || countingDown) return;
+            if (!this._proximity || verified || countingDown) return;
 
             canvas.width  = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -200,6 +223,9 @@ class CheckinFlow {
             const earR   = this._calcEAR(lm, [362,385,387,263,373,380]);
             const earNow = (earL + earR) / 2;
             this._earSamples.push(earNow);
+            // Preserve a short real camera burst for the existing temporal check.
+            this._capturedFrames.push(await this._captureFrame(video));
+            if (this._capturedFrames.length > 3) this._capturedFrames.shift();
             const earMin = (this.baselineEAR || 0.25) * 0.75;
             const eyesOk = earNow >= earMin;
 
@@ -241,7 +267,7 @@ class CheckinFlow {
 
                 if (faceReadyFrames >= 25) {
                     countingDown = true;
-                    clearTimeout(_streamTimeoutId);
+                    clearTimeout(this._streamTimeoutId);
                     faceMesh.close();
                     // Final 1: ถ่ายรูปทันที ข้าม liveness
                     // TODO Phase 3: เปลี่ยนกลับเป็น _countdownThenLiveness(...)
@@ -252,7 +278,7 @@ class CheckinFlow {
                     snap.getContext('2d').drawImage(video, 0, 0);
                     const capturedFrame = snap.toDataURL('image/jpeg', 0.85);
                     this._stopStream(this._camStream);
-                    await this._submitCheckin(capturedFrame, '');
+                    await this._submitCheckin(capturedFrame, 'passive');
                 }
             } else {
                 guide.classList.remove('ok');
@@ -345,21 +371,164 @@ class CheckinFlow {
 
     // ─── Submit ──────────────────────────────────────────
 
+    _requestRoomCode() {
+        clearInterval(this._receiptTimer);
+        this._stopStream(this._camStream);
+        this._proximity = null;
+        this._goToStep(1);
+        document.getElementById('proximityStatus').textContent = '';
+        document.getElementById('receiptCountdown').textContent = '';
+        document.getElementById('stepVerify').style.display = 'none';
+        document.getElementById('stepDone').style.display = 'none';
+        if (this.proximityMethod === 'ble') {
+            document.getElementById('stepBleRoom').style.display = 'block';
+            document.getElementById('bleRoomStatus').textContent = '';
+            const warn = document.getElementById('bleUnsupportedWarning');
+            const btn  = document.getElementById('bleRoomBtn');
+            if (!navigator.bluetooth) {
+                // Covers any unsupported browser, not just the iOS UA sniff
+                // that may already have shown a warning server-side.
+                warn.textContent = 'เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth — กรุณาใช้ Chrome หรือ Edge บนคอมพิวเตอร์ Windows เพื่อเช็คชื่อ';
+                warn.style.display = 'block';
+                btn.disabled = true;
+                btn.textContent = 'ไม่รองรับ Bluetooth';
+            } else {
+                btn.disabled = false;
+                btn.textContent = 'หาอุปกรณ์ในห้อง';
+            }
+        } else {
+            document.getElementById('stepRoomCode').style.display = 'block';
+            document.getElementById('roomCode').value = '';
+            document.getElementById('roomCode').focus();
+        }
+    }
+
+    async submitRoomCode(event) {
+        event.preventDefault();
+        const input = document.getElementById('roomCode');
+        if (!input.reportValidity() || this._submitting) return;
+        this._submitting = true;
+        try {
+            await this._verifyProximity(input.value);
+        } finally {
+            this._submitting = false;
+        }
+    }
+
+    async startBleRoomScan() {
+        if (this._submitting) return;
+        this._submitting = true;
+        const btn    = document.getElementById('bleRoomBtn');
+        const status = document.getElementById('bleRoomStatus');
+        btn.disabled = true;
+        status.textContent = 'กำลังเปิดตัวเลือกอุปกรณ์ Bluetooth...';
+
+        let result;
+        try {
+            result = await new BLERoomScanner().findRoom();
+        } catch (error) {
+            console.info('step=ble_read result=error details={}');
+            result = {ok: false, error: 'ไม่สามารถเชื่อมต่อหรืออ่านค่าจากอุปกรณ์ได้ — กรุณาลองใหม่อีกครั้ง'};
+        }
+        this._submitting = false;
+
+        if (!result.ok) {
+            console.info('step=ble_read result=reject details=' + JSON.stringify({code: result.code || 'read_error'}));
+            status.textContent = result.error;
+            btn.disabled = false;
+            btn.textContent = 'ลองใหม่';
+            return;
+        }
+
+        status.textContent = 'อ่านค่าห้องแล้ว — กำลังตรวจสอบก่อนเปิดกล้อง...';
+        this._submitting = true;
+        try {
+            await this._verifyProximity(result.room);
+        } finally {
+            this._submitting = false;
+        }
+    }
+
+    async _verifyProximity(room) {
+        const status = document.getElementById('proximityStatus');
+        status.textContent = 'กำลังตรวจสอบตำแหน่งห้องเรียน...';
+        const started = performance.now();
+        try {
+            const response = await fetch('/api/checkin/proximity', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
+                body: JSON.stringify({session_id: this.sessionId, room_code: room}),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) {
+                console.info('step=proximity_preflight result=reject details=' + JSON.stringify({status: response.status}));
+                status.textContent = result.error || 'ตรวจสอบตำแหน่งไม่สำเร็จ กรุณาลองใหม่';
+                return;
+            }
+            this._proximity = {room, receipt: result.proximity_receipt,
+                deadline: started + result.expires_in * 1000, captureStarted: performance.now()};
+            status.textContent = 'ยืนยันตำแหน่งแล้ว — กรุณาถ่ายภาพภายใน 90 วินาที';
+            this._receiptTimer = setInterval(() => {
+                if (!this._proximity) return;
+                const seconds = Math.max(0, Math.ceil((this._proximity.deadline - performance.now()) / 1000));
+                document.getElementById('receiptCountdown').textContent = `เวลายืนยันตำแหน่งคงเหลือ ${seconds} วินาที`;
+                if (!seconds) this._expireProximity();
+            }, 250);
+            await this._startVerify();
+        } catch (error) {
+            console.info('step=proximity_preflight result=error details={}');
+            status.textContent = 'ไม่สามารถเชื่อมต่อระบบตรวจสอบตำแหน่งได้ กรุณาลองใหม่';
+        } finally {
+            if (this.proximityMethod === 'ble' && navigator.bluetooth) {
+                document.getElementById('bleRoomBtn').disabled = false;
+            }
+        }
+    }
+
+    _expireProximity() {
+        console.info('step=proximity_receipt_expired result=reject details={}');
+        this._requestRoomCode();
+        document.getElementById('proximityStatus').textContent = 'ผลยืนยันตำแหน่งห้องเรียนหมดอายุ กรุณายืนยันใหม่ก่อนเช็คชื่อ';
+    }
+
+    retry() {
+        if (this._retryRoomCode || !this._proximity || performance.now() >= this._proximity.deadline) {
+            this._requestRoomCode();
+        } else {
+            this._startVerify();
+        }
+    }
+
     async _submitCheckin(faceImage, livenessAction) {
-        this._goToStep(2);
+        if (!this._proximity || performance.now() >= this._proximity.deadline) {
+            this._expireProximity();
+            return;
+        }
+        clearInterval(this._receiptTimer);
+        console.info('step=capture result=complete details=' + JSON.stringify({elapsed_ms: Math.round(performance.now() - this._proximity.captureStarted)}));
+        document.getElementById("stepRoomCode").style.display = "none";
+        document.getElementById("stepBleRoom").style.display = "none";
+        this._retryRoomCode = false;
+        this._goToStep(3);
         document.getElementById('doneLoadingView').style.display  = 'block';
         document.getElementById('doneResultView').style.display   = 'none';
 
         try {
+            const deviceToken = localStorage.getItem('sc_device_token');
             const res = await fetch(this.apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type':  'application/json',
                     'X-CSRF-Token':  document.querySelector('meta[name="csrf-token"]')?.content || '',
-                    'Authorization': `DeviceToken ${localStorage.getItem('sc_device_token') || ''}`,
+                    ...(deviceToken ? { 'Authorization': `DeviceToken ${deviceToken}` } : {}),
                 },
                 body: JSON.stringify({
                     session_id:      this.sessionId,
+                    room_code:       this._proximity.room,
+                    proximity_receipt: this._proximity.receipt,
                     ble_rssi:        this._bleRSSI,
                     ble_skip:        this._bleSkip || false,
                     liveness_action: livenessAction,
@@ -374,6 +543,7 @@ class CheckinFlow {
             document.getElementById('doneLoadingView').style.display = 'none';
             document.getElementById('doneResultView').style.display  = 'block';
 
+            this._retryRoomCode = json.retry_room_code === true;
             if (json.ok) {
                 this._showDone('success', json.message || 'เช็คชื่อสำเร็จ!', false);
             } else if (json.already_checked) {
@@ -381,7 +551,7 @@ class CheckinFlow {
             } else if (json.spoof) {
                 this._showDone('spoof', json.error, true);
             } else {
-                this._showDone('error', json.error || 'เช็คชื่อไม่สำเร็จ', json.retry_face === true);
+                this._showDone('error', json.error || 'เช็คชื่อไม่สำเร็จ', json.retry_face === true || this._retryRoomCode);
             }
         } catch (e) {
             document.getElementById('doneLoadingView').style.display = 'none';
@@ -440,6 +610,11 @@ class CheckinFlow {
     }
 
     _stopStream(stream) {
+        clearTimeout(this._streamTimeoutId);
+        if (this._activeMesh) {
+            try { this._activeMesh.close(); } catch (_) {}
+            this._activeMesh = null;
+        }
         if (stream) stream.getTracks().forEach(t => t.stop());
         // H3: also stop MediaPipe Camera instance if stored
         if (this._faceMeshCam) {

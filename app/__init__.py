@@ -66,6 +66,11 @@ def _refresh_clients():
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    from app.services.esp32_totp import load_secret
+    app.config["ESP32_TOTP_SECRET"] = load_secret()
+
+    from app.services.proximity_receipt import load_secret as load_receipt_secret
+    app.config["PROXIMITY_RECEIPT_SECRET"] = load_receipt_secret()
 
     # --- Structured logging (B10) ---
     logging.basicConfig(
@@ -73,6 +78,8 @@ def create_app():
         format="%(asctime)s %(levelname)s %(name)s — %(message)s",
         datefmt="%Y-%m-%dT%H:%M:%S",
     )
+    _log.setLevel(logging.INFO)
+    _log.info("[SmartCheck] proximity method: %s", app.config["CHECKIN_PROXIMITY_METHOD"])
     # Suppress noisy third-party loggers
     logging.getLogger("apscheduler").setLevel(logging.WARNING)
     logging.getLogger("deepface").setLevel(logging.WARNING)

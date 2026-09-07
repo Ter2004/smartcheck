@@ -1,0 +1,8 @@
+venv/
+.git/
+__pycache__/
+*.pyc
+docs/
+test_images/
+.env
+*.log

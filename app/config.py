@@ -51,6 +51,17 @@ class Config:
     # BLE proximity check — set BLE_CHECK_ENABLED=true in production when beacons are deployed
     BLE_CHECK_ENABLED = os.getenv("BLE_CHECK_ENABLED", "false").lower() == "true"
 
+    # Check-in proximity method: "totp" (6-digit code from a room screen, default)
+    # or "ble" (Web Bluetooth GATT connect+read against the room's beacon).
+    # Independent of BLE_CHECK_ENABLED above, which is a separate, additive RSSI check.
+    CHECKIN_PROXIMITY_METHOD = os.getenv("CHECKIN_PROXIMITY_METHOD", "totp").lower()
+    if CHECKIN_PROXIMITY_METHOD not in ("totp", "ble"):
+        _log.warning(
+            f"[SmartCheck] CHECKIN_PROXIMITY_METHOD={CHECKIN_PROXIMITY_METHOD!r} is invalid "
+            f"(expected 'totp' or 'ble') — falling back to 'totp'."
+        )
+        CHECKIN_PROXIMITY_METHOD = "totp"
+
     # ── Flask-Session: server-side SQLAlchemy sessions (Railway deployment) ──
     SESSION_TYPE               = "sqlalchemy"
     SESSION_SQLALCHEMY_TABLE   = "flask_sessions"

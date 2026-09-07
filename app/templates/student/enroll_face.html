@@ -449,6 +449,7 @@ const ENROLL_CONFIG = {
     dashboardUrl:     "{{ url_for('student.dashboard') }}",
 };
 </script>
+<script src="{{ url_for('static', filename='js/step4_failure_tracker.js') }}"></script>
 <script src="{{ url_for('static', filename='js/enrollment_flow.js') }}"></script>
 {% if flow_mode == "circular" %}
 <script src="{{ url_for('static', filename='js/enrollment_circular.js') }}"></script>

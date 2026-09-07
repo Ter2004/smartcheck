@@ -54,36 +54,34 @@ def verify_device_token(
     Verify HMAC signature and expiry.
     Returns the payload dict on success, None on any failure.
     """
+    return verify_device_token_details(token, secret_key, max_age_days)[0]
+
+
+def verify_device_token_details(token, secret_key, max_age_days=120):
+    """Return (payload, reason) without logging credential material."""
     if not token:
-        return None
+        return None, "absent"
+    if not isinstance(token, str):
+        return None, "malformed"
     try:
         payload_b64, sig = token.rsplit(".", 1)
+        if not payload_b64 or len(sig) != 64 or any(c not in "0123456789abcdef" for c in sig):
+            return None, "malformed"
     except ValueError:
-        return None
-
-    expected_sig = hmac.new(
-        secret_key.encode(),
-        payload_b64.encode(),
-        hashlib.sha256,
-    ).hexdigest()
-
+        return None, "malformed"
+    expected_sig = hmac.new(secret_key.encode(), payload_b64.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(sig, expected_sig):
-        return None  # tampered
-
-    # Restore stripped base64 padding
-    pad = 4 - len(payload_b64) % 4
-    if pad != 4:
-        payload_b64 += "=" * pad
-
+        return None, "signature_mismatch"
     try:
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-    except Exception:
-        return None
-
-    if time.time() - payload.get("iat", 0) > max_age_days * 86400:
-        return None  # expired
-
-    return payload
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + "=" * (-len(payload_b64) % 4)))
+        if not isinstance(payload, dict):
+            return None, "malformed"
+        age = time.time() - payload.get("iat", 0)
+    except (ValueError, TypeError):
+        return None, "malformed"
+    if age > max_age_days * 86400:
+        return None, "expired"
+    return payload, "pass"
 
 
 # ─── Embedding Integrity Hash ─────────────────────────────────────────────────

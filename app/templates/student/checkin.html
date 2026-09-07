@@ -153,12 +153,17 @@
 
     {% else %}
 
-    <!-- Step indicator (Final 1: 2 ขั้น) -->
+    <!-- Proximity → camera → result -->
     <div id="checkin-camera" class="flex items-center gap-2 mb-6">
         <div class="ci-dot active" id="dot1">1</div>
         <div class="flex-1 h-0.5 bg-slate-200"></div>
         <div class="ci-dot" id="dot2">2</div>
+        <div class="flex-1 h-0.5 bg-slate-200"></div>
+        <div class="ci-dot" id="dot3">3</div>
     </div>
+    <p class="text-xs text-slate-500">1 ยืนยันห้องเรียน → 2 ถ่ายภาพ → 3 ผลเช็คชื่อ</p>
+    <p id="proximityStatus" role="status" class="text-sm text-slate-600"></p>
+    <p id="receiptCountdown" role="timer" class="text-sm text-slate-600"></p>
 
     <p class="text-xs text-slate-500 mb-4">
         วิชา: <strong class="text-slate-700">{{ session_data.courses.code }} — {{ session_data.courses.name }}</strong>
@@ -180,6 +185,32 @@
         <p class="text-sm text-center text-slate-400 min-h-[1.4em]" id="verifyStatus">กำลังเปิดกล้อง...</p>
     </div>
 
+    <form id="stepRoomCode" onsubmit="flow.submitRoomCode(event)" style="display:none"
+          class="bg-white rounded-xl border border-slate-200 p-8">
+        <label for="roomCode" class="block font-semibold mb-2">รหัสห้อง 6 หลัก</label>
+        <p id="roomCodeHelp" class="text-sm text-slate-500 mb-4">ดูรหัสปัจจุบันจากจอในห้องเรียนแล้วกรอกก่อนยืนยันเช็คชื่อ หากจอไม่ทำงาน กรุณาแจ้งอาจารย์เพื่อแสดงรหัสสำรอง</p>
+        <input id="roomCode" name="room_code" type="text" inputmode="numeric"
+               autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required
+               aria-describedby="roomCodeHelp" title="กรุณากรอกรหัสห้องเป็นตัวเลข 6 หลัก"
+               class="w-full border rounded-xl p-3 text-center text-2xl tracking-widest">
+        <button type="submit" class="w-full bg-indigo-600 text-white rounded-xl p-3 mt-4">ตรวจรหัสและเริ่มถ่ายภาพ</button>
+    </form>
+
+    <div id="stepBleRoom" class="bg-white rounded-xl border border-slate-200 p-8 text-center" style="display:none">
+        <label class="block font-semibold mb-2">ยืนยันตำแหน่งห้องเรียนด้วย Bluetooth</label>
+        <div id="bleUnsupportedWarning"
+             class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 text-sm text-amber-800 text-left"
+             style="display:{{ 'block' if ios_warning else 'none' }}">
+            {% if ios_warning %}
+            อุปกรณ์ของคุณดูเหมือนเป็น iPhone/iPad ซึ่ง<strong>ไม่รองรับ Web Bluetooth</strong> — กรุณาใช้คอมพิวเตอร์ที่ติดตั้ง Chrome หรือ Edge เพื่อเช็คชื่อ หรือแจ้งอาจารย์หากไม่มีอุปกรณ์ที่รองรับ
+            {% endif %}
+        </div>
+        <p class="text-sm text-slate-500 mb-4">กดปุ่มด้านล่างแล้วเลือกอุปกรณ์ของห้องเรียนจากรายการที่ปรากฏ</p>
+        <button type="button" id="bleRoomBtn" onclick="flow.startBleRoomScan()"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl p-3">หาอุปกรณ์ในห้อง</button>
+        <p id="bleRoomStatus" class="text-sm text-slate-500 mt-3 min-h-[1.4em]"></p>
+    </div>
+
     <!-- ─── Step 3: Result ─── -->
     <div id="stepDone" class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center" style="display:none">
         <div id="doneLoadingView">
@@ -195,7 +226,7 @@
                 กลับหน้าหลัก
             </a>
             <button id="doneRetry" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors hidden"
-                    onclick="flow._startVerify()">ลองใหม่</button>
+                    onclick="flow.retry()">ลองใหม่</button>
         </div>
     </div>
 
@@ -206,6 +237,7 @@
 {% block scripts %}
 {% if session_data %}
 <script src="{{ url_for('static', filename='js/ble_scanner.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ble_room_scanner.js') }}"></script>
 <script src="{{ url_for('static', filename='js/camera_guard.js') }}"></script>
 <script src="{{ url_for('static', filename='js/rt_analyze.js') }}"></script>
 <script src="{{ url_for('static', filename='js/mediapipe_liveness.js') }}"></script>
@@ -217,6 +249,7 @@
         rssiThreshold: {{ session_data.beacons.rssi_threshold }},
         baselineEAR:   {{ baseline_ear }},
         apiUrl:        "{{ url_for('api_checkin.checkin') }}",
+        proximityMethod: "{{ config.CHECKIN_PROXIMITY_METHOD }}",
     });
     document.addEventListener('DOMContentLoaded', () => flow.start());
 </script>

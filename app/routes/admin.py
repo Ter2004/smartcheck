@@ -157,6 +157,7 @@ def beacon_add():
             "minor": int(request.form["minor"]),
             "room_name": request.form["room_name"].strip(),
             "rssi_threshold": int(request.form.get("rssi_threshold", -75)),
+            "ble_room_code": (request.form.get("ble_room_code") or "").strip() or None,
             "is_active": True,
         }).execute()
         flash("เพิ่ม Beacon สำเร็จ", "success")
@@ -177,6 +178,7 @@ def beacon_edit(beacon_id):
             "minor": int(request.form["minor"]),
             "room_name": request.form["room_name"].strip(),
             "rssi_threshold": int(request.form.get("rssi_threshold", -75)),
+            "ble_room_code": (request.form.get("ble_room_code") or "").strip() or None,
             "is_active": request.form.get("is_active") == "on",
         }).eq("id", beacon_id).execute()
         flash("แก้ไข Beacon สำเร็จ", "success")

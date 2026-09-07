@@ -1,4 +1,5 @@
 import logging
+import json
 import cv2
 import numpy as np
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app
@@ -264,7 +265,7 @@ def api_enroll():
       7.  Screen Texture Detection: detect_screen_texture, all 5 frames (>=2/5)
       8.  Temporal variance: detect_static_image
       9.  EAR std (client-reported, logged only — not blocking)
-      10. MiniFASNet Anti-Spoof: check_anti_spoof x5 (>=4/5 must pass)
+      10. MiniFASNet Anti-Spoof: combined_spoof_score x5 (>=4/5 must pass)
       11. Extract FaceNet512 embeddings (all 5 frames, face detection happens here)
       12. Embedding consistency check (B1: handles multi-outlier)
       13. Face continuity vs session["liveness_embeddings"] (CONTINUITY_THRESHOLD)
@@ -281,7 +282,8 @@ def api_enroll():
     from app.services.face_service import (
         extract_embedding, check_embedding_consistency,
         max_similarity_multi, detect_screen_moire, detect_screen_texture,
-        detect_static_image, check_anti_spoof, _decode_image, server_validate_frame,
+        detect_static_image, combined_spoof_score, is_system_failure,
+        _decode_image, server_validate_frame,
     )
     # M2: DUPLICATE_THRESHOLD and DUPLICATE_GRAY_ZONE defined at module level above — use those
 
@@ -446,78 +448,72 @@ def api_enroll():
     except Exception as e:
         return jsonify({"status": "error", "message": "ไม่สามารถอ่านรูปภาพได้"}), 400
 
-    # ── 4. Moiré FFT (all 5 frames) — fail-close ─────────────────────────────
+    # ── 4. Moiré FFT (all 5 frames) — computed + logged only, does not reject (FRR-1/F-15/Q-15) ──
     moire_checked = False
     try:
         moire = detect_screen_moire(raw_frames)
         moire_checked = True
         _log(user_id, "moire_fft", "screen" if moire["is_screen"] else "pass",
              f"avg_score={moire['avg_score']}")
-        if moire["is_screen"]:
-            return jsonify({
-                "status":  "spoof_detected",
-                "message": "ตรวจพบหน้าจอ — กรุณาใช้ใบหน้าจริงเท่านั้น",
-            }), 400
     except Exception as e:
-        _log(user_id, "moire_fft", "error", str(e)[:80])
-        # Fail-close: moiré check crashed → block enrollment
-        return jsonify({
-            "status":  "error",
-            "message": "ไม่สามารถตรวจสอบภาพได้ กรุณาลองใหม่อีกครั้ง",
-        }), 400
+        _log(user_id, "moire_fft", "error_log_only",
+             f"error={str(e)[:80]} decision=log_only")
 
-    # ── 5. Screen Texture Detection (A3, all 5 frames) — fail-close ──────────
+    # ── 5. Screen Texture Detection (A3, all 5 frames) — computed + logged only, does not reject ──
     try:
         screen_count = sum(1 for f in raw_frames if detect_screen_texture(f, min_peaks=30))
         _log(user_id, "screen_texture", "screen" if screen_count >= 2 else "pass",
              f"screen_frames={screen_count}/5")
-        if screen_count >= 2:
-            return jsonify({
-                "status":  "spoof_detected",
-                "message": "ตรวจพบภาพจากหน้าจอ — กรุณาใช้ใบหน้าจริงต่อหน้ากล้อง",
-            }), 400
     except Exception as e:
-        _log(user_id, "screen_texture", "error", str(e)[:80])
-        # Fail-close: screen texture check crashed → block enrollment
-        return jsonify({
-            "status":  "error",
-            "message": "ไม่สามารถตรวจสอบภาพได้ กรุณาลองใหม่อีกครั้ง",
-        }), 400
+        _log(user_id, "screen_texture", "error_log_only",
+             f"error={str(e)[:80]} decision=log_only")
 
     # ── 5b. Temporal variance — detect static photo / phone screen ───────────
     try:
         temporal = detect_static_image(raw_frames)
-        _log(user_id, "temporal_var", "static" if temporal["is_static"] else "pass",
-             f"variance={temporal['temporal_variance']}")
-        if temporal["is_static"]:
-            return jsonify({
-                "status":  "spoof_detected",
-                "message": "ตรวจพบภาพนิ่ง — กรุณาใช้ใบหน้าจริงต่อหน้ากล้อง",
-            }), 400
+        _log(user_id, "temporal_var",
+             "static_log_only" if temporal["is_static"] else "pass_log_only",
+             f"variance={temporal['temporal_variance']} "
+             "reference_threshold=4.0 decision=log_only")
     except Exception as e:
-        _log(user_id, "temporal_var", "error", str(e)[:80])
-        return jsonify({
-            "status":  "error",
-            "message": "ไม่สามารถตรวจสอบภาพได้ กรุณาลองใหม่อีกครั้ง",
-        }), 400
+        _log(user_id, "temporal_var", "error_log_only",
+             f"error={str(e)[:80]} decision=log_only")
 
     # ── 5c. EAR temporal variance — client-reported (defence-in-depth) ───────
     # Blocking disabled: passive 5-frame (1.25s) capture does not guarantee blink,
     # causing high FRR for real users. EAR is logged only for audit/future tuning.
-    ear_std = float(data.get("ear_std") or 0)
-    _log(user_id, "ear_std", "low_but_pass" if ear_std < 0.003 else "pass",
-         f"ear_std={ear_std:.5f} (blocking disabled for passive capture)")
+    _raw_ear_std = data.get("ear_std")
+    try:
+        ear_std = float(_raw_ear_std) if _raw_ear_std not in (None, "") else None
+        if ear_std is not None and not np.isfinite(ear_std):
+            ear_std = None
+    except (ValueError, TypeError):
+        ear_std = None
+    if ear_std is None:
+        _log(user_id, "ear_std", "absent",
+             "ear_std=absent (blocking disabled for passive capture)")
+    else:
+        _log(user_id, "ear_std", "low_but_pass" if ear_std < 0.003 else "pass",
+             f"ear_std={ear_std:.5f} (blocking disabled for passive capture)")
 
     # ── 6. MiniFASNet Anti-Spoof (A2: all 5 frames) — fail-close ─────────────
     # Require MIN_SPOOF_PASS frames to pass; exception = fail, not skip
+    # Calls combined_spoof_score() directly (not the check_anti_spoof() bool wrapper)
+    # so is_system_failure() can tell "Fasnet crashed" apart from "Fasnet said spoof"
+    # — F-16, docs/review/10-moire-frr-investigation.md §16. raw_frames[idx] is
+    # already-decoded (step 3 above) — no need to re-decode face_images[idx].
     MIN_SPOOF_PASS = 4   # at least 4/5 frames must clear MiniFASNet
     spoof_pass_count = 0
     first_spoof_frame = None
+    any_system_failure = False
     for idx in range(len(raw_frames)):
         try:
-            is_real = check_anti_spoof(face_images[idx])
+            spoof_result = combined_spoof_score(raw_frames[idx])
+            is_real = spoof_result["is_real"]
             _log(user_id, "minifasnet", "pass" if is_real else "spoof", f"frame={idx+1}")
             if not is_real:
+                if is_system_failure(spoof_result):
+                    any_system_failure = True
                 if first_spoof_frame is None:
                     first_spoof_frame = idx + 1
                 # ไม่หยุดทันที — นับต่อเพื่อ fail_close threshold
@@ -525,11 +521,21 @@ def api_enroll():
                 spoof_pass_count += 1
         except Exception as e:
             _log(user_id, "minifasnet", "exception", f"frame={idx+1} {str(e)[:60]}")
+            any_system_failure = True
             # Exception counts as fail — do NOT skip
 
     if spoof_pass_count < MIN_SPOOF_PASS:
         _log(user_id, "minifasnet", "fail_close",
-             f"only {spoof_pass_count}/{len(raw_frames)} passed first_spoof={first_spoof_frame}")
+             f"only {spoof_pass_count}/{len(raw_frames)} passed first_spoof={first_spoof_frame} "
+             f"system_failure={any_system_failure}")
+        if any_system_failure:
+            # F-16: at least one frame failed because the anti-spoof system itself
+            # was unavailable, not because it scored the frame as spoof. Retaking
+            # photos can't fix this, so don't tell the user "spoof detected".
+            return jsonify({
+                "status":  "error",
+                "message": "ระบบตรวจสอบใบหน้าขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง หรือแจ้งเจ้าหน้าที่หากยังพบปัญหา",
+            }), 503
         return jsonify({
             "status":       "spoof_detected",
             "failed_frame": first_spoof_frame,
@@ -539,11 +545,16 @@ def api_enroll():
 
     # ── 7. Extract FaceNet512 embeddings (face detection happens here) ────────
     embeddings     = []
+    detector_crops = []
     failed_indices = []
     for idx, img_b64 in enumerate(face_images):
         try:
-            embeddings.append(extract_embedding(img_b64))
-            _log(user_id, "extract_embedding", "pass", f"frame={idx+1}")
+            embedding, extraction_meta = extract_embedding(img_b64, include_metadata=True)
+            embeddings.append(embedding)
+            detector_crop = extraction_meta.get("detector_crop")
+            detector_crops.append({"frame": idx + 1, "crop": detector_crop})
+            _log(user_id, "extract_embedding", "pass",
+                 f"frame={idx+1} detector_crop={detector_crop}")
         except Exception as e:
             msg = str(e)
             no_face = "could not be detected" in msg or "numpy array" in msg
@@ -587,6 +598,33 @@ def api_enroll():
     _log(user_id, "consistency_threshold", "set",
          f"flow_mode={_flow_mode} threshold={_consistency_threshold}")
     consistency = check_embedding_consistency(embeddings, threshold=_consistency_threshold)
+    averages_by_index = {
+        item["frame"] - 1: item["average"]
+        for item in consistency["average_similarities"]
+    }
+    flagged_frames = [
+        {
+            "frame": idx + 1,
+            "average": averages_by_index.get(idx),
+            "threshold": _consistency_threshold,
+            "reason": "average_below_threshold",
+        }
+        for idx in consistency["outlier_indices"]
+    ]
+    consistency_diagnostics = {
+        "threshold": _consistency_threshold,
+        "pairwise_scores": consistency["pairwise_scores"],
+        "average_similarities": consistency["average_similarities"],
+        "embedding_diagnostics": consistency["embedding_diagnostics"],
+        "detector_crops": detector_crops,
+        "flagged_indices_zero_based": consistency["outlier_indices"],
+        "flagged_frames": flagged_frames,
+        "classifier_reason": "per_frame_average_below_threshold",
+        "multi_outlier": consistency["multi_outlier"],
+    }
+    _log(user_id, "consistency_diagnostics",
+         "pass" if consistency["consistent"] else "fail",
+         json.dumps(consistency_diagnostics, separators=(",", ":"), sort_keys=True))
     if not consistency["consistent"]:
         _log(user_id, "consistency", "fail",
              f"min_score={consistency.get('min_score')} "
@@ -980,7 +1018,12 @@ def api_spoof_check():
     # ── 1. Zero-trust frame validation ───────────────────────────────────────
     v = server_validate_frame(img_b64)
     if not v["valid"]:
-        _log(user_id, "spoof_check", "frame_invalid", v["reason"])
+        metadata = v.get("metadata", {})
+        diagnostic_fields = [f"reason={v['reason']}"]
+        for key in ("size_kb", "dimensions", "laplacian_var", "B_std", "G_std", "R_std"):
+            if key in metadata:
+                diagnostic_fields.append(f"{key}={metadata[key]}")
+        _log(user_id, "spoof_check", "frame_invalid", " ".join(diagnostic_fields))
         return jsonify({"is_real": False, "confidence": 0.0,
                         "message": "รูปภาพไม่ถูกต้อง"}), 400
 
@@ -991,30 +1034,22 @@ def api_spoof_check():
         return jsonify({"is_real": False, "confidence": 0.0,
                         "message": "อ่านรูปภาพไม่ได้"}), 400
 
-    # ── 3. Single-frame Moiré FFT (screen pixel grid) ────────────────────────
+    # ── 3. Single-frame Moiré FFT — audit-only; verdict/error never rejects ──
     try:
         moire = detect_screen_moire([raw], threshold=MOIRE_THRESHOLD_SINGLE)
         _log(user_id, "liveness_moire", "screen" if moire["is_screen"] else "pass",
              f"score={moire['avg_score']} threshold={MOIRE_THRESHOLD_SINGLE}")
-        if moire["is_screen"]:
-            return jsonify({"is_real": False, "confidence": 0.0,
-                            "message": "ตรวจพบหน้าจอ — กรุณาใช้ใบหน้าจริงต่อหน้ากล้องโดยตรง"})
     except Exception as e:
-        _log(user_id, "liveness_moire", "error_fail_closed", str(e)[:80])
-        return jsonify({"is_real": False, "confidence": 0.0,
-                        "message": "ไม่สามารถตรวจสอบได้ กรุณาลองใหม่อีกครั้ง"}), 500
+        _log(user_id, "liveness_moire", "error_log_only",
+             f"error={str(e)[:80]} decision=log_only")
 
-    # ── 4. Single-frame screen texture (spectral peaks) ───────────────────────
+    # ── 4. Single-frame screen texture — audit-only; verdict/error never rejects ──
     try:
         is_screen_tex = detect_screen_texture(raw, min_peaks=30)
         _log(user_id, "liveness_texture", "screen" if is_screen_tex else "pass", "")
-        if is_screen_tex:
-            return jsonify({"is_real": False, "confidence": 0.0,
-                            "message": "ตรวจพบภาพจากหน้าจอ — กรุณาใช้ใบหน้าจริงต่อหน้ากล้องโดยตรง"})
     except Exception as e:
-        _log(user_id, "liveness_texture", "error_fail_closed", str(e)[:80])
-        return jsonify({"is_real": False, "confidence": 0.0,
-                        "message": "ไม่สามารถตรวจสอบได้ กรุณาลองใหม่อีกครั้ง"}), 500
+        _log(user_id, "liveness_texture", "error_log_only",
+             f"error={str(e)[:80]} decision=log_only")
 
     # ── 5. Accumulated temporal variance (สะสม thumbnail ใน session) ─────────
     # เก็บ 64×64 grayscale PNG (~1-2 KB ต่อเฟรม) เพื่อเช็ค inter-frame variance
@@ -1041,12 +1076,10 @@ def api_spoof_check():
             if len(frames_gray) >= 3:
                 stack    = np.stack(frames_gray, axis=0)
                 mean_var = float(np.mean(np.std(stack, axis=0)))
-                _log(user_id, "liveness_temporal", "static" if mean_var < 6.0 else "pass",
-                     f"variance={mean_var:.3f} frames={len(frames_gray)}")
-                if mean_var < 6.0:
-                    session.pop("spoof_check_acc", None)
-                    return jsonify({"is_real": False, "confidence": 0.0,
-                                    "message": "ตรวจพบภาพนิ่ง — กรุณาใช้ใบหน้าจริงต่อหน้ากล้องโดยตรง"})
+                _log(user_id, "liveness_temporal",
+                     "static_log_only" if mean_var < 6.0 else "pass_log_only",
+                     f"variance={mean_var:.3f} frames={len(frames_gray)} "
+                     "reference_threshold=6.0 decision=log_only")
     except Exception as e:
         _log(user_id, "liveness_temporal", "error", str(e)[:80])
 
@@ -1069,6 +1102,19 @@ def api_spoof_check():
         # [-5:] keeps the 5 most-recent embeddings, ensuring continuity is checked
         # against the frames closest to the final enrollment capture.
         session["liveness_embeddings"] = stored[-5:]   # keep 5 most-recent embeddings
+
+    if result.get("system_failure"):
+        # F-16 (docs/review/10-moire-frr-investigation.md §16-17): anti-spoof system
+        # itself failed to run — not a spoof determination. Called up to 8x per
+        # enrollment; without this split a user would see "spoof detected" that
+        # many times for something retrying can't fix. _callSpoofCheckSafe() in
+        # enrollment_flow.js already treats any non-2xx/429 status as a soft
+        # network error (fail-open, no penalty to retry counters) — no frontend
+        # change needed for that part.
+        _log(user_id, "spoof_check", "system_failure",
+             f"confidence={result['confidence']}")
+        return jsonify({"is_real": False, "confidence": 0.0,
+                        "message": "ระบบตรวจสอบใบหน้าขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง หรือแจ้งเจ้าหน้าที่หากยังพบปัญหา"}), 503
 
     _log(user_id, "spoof_check",
          "real" if result["is_real"] else "spoof",

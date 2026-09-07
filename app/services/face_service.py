@@ -17,27 +17,40 @@ CONTINUITY_THRESHOLD     = 0.80   # liveness -> capture identity continuity
 MOIRE_THRESHOLD          = 0.60   # high-freq energy ratio; above = likely screen replay (multi-frame /api/enroll)  # TODO: If False Rejections occur in low light due to camera noise, consider increasing this to 0.65 - 0.70.
 MOIRE_THRESHOLD_SINGLE   = 0.70   # middle ground — real faces 0.40-0.55, phone screens 0.55-0.75.
                                   # With Fasnet as primary detector (35% weight), Moiré only needs to catch obvious cases.
-TEMPORAL_VAR_THRESHOLD   = 4.0   # face-ROI temporal std-dev; below = static photo
-# Applied to face-crop only (not full frame) → real face ~15-25, static photo ~0.5-2.5
-# Lowered from 8.0 → 4.0 to reduce FRR in passive 5-frame (1.25s) capture sessions.
+TEMPORAL_VAR_THRESHOLD   = 4.0   # historical, uncalibrated face-ROI reference
+# No calibrated face-crop separation range is retained. The former claim that
+# cropped real faces score ~15-25 is contradicted by a cooperative real session
+# measured at 3.609. Callers decide whether this reference is audit or enforcement.
 DUPLICATE_GRAY_ZONE      = (0.60, 0.70)  # log matches in this range for future tuning
 MOIRE_LOG_RANGE          = (0.45, 0.75)  # log FFT scores near the threshold
 
 # ─── Weighted spoof detection config ─────────────────────────────────────────
 # Each layer outputs spoof_score in [0.0, 1.0] where 0=real, 1=spoof.
 # Final decision: weighted sum > SPOOF_DECISION_THRESHOLD → reject.
+#
+# moire/texture excluded from the vote (FRR-1/F-15/Q-15 — see
+# docs/review/10-moire-frr-investigation.md §11-13): measured against 16
+# real+spoof samples, neither layer's best achievable threshold beats the
+# trivial "always real" baseline in either polarity. Still computed and
+# logged (layers["moire"]/["texture"] below, and the standalone gates in
+# api_checkin.py/student.py) for future recalibration — a layer that can't
+# separate the two classes on measured data shouldn't get a vote.
 SPOOF_WEIGHTS = {
-    # Rebalanced: Fasnet demoted — fooled by OLED/high-DPI screens in production.
-    # FFT-based layers (Moiré, Temporal) are more reliable for screen replay attacks.
-    "fasnet":   0.15,   # was 0.35 — demoted; DeepFace Fasnet weak on high-DPI
-    "moire":    0.30,   # was 0.20 — best pixel-grid signal
-    "temporal": 0.30,   # was 0.20 — best static-photo signal
-    "texture":  0.15,   # unchanged — complements Moiré
-    "onnx":     0.10,   # unchanged — audit only, usually disabled
+    # 2026-08-26 rebalance (docs/review/10-moire-frr-investigation.md §13).
+    # The prior comment here ("FFT layers more reliable than Fasnet") was
+    # never measured and turned out backwards: Fasnet is the only layer with
+    # confirmed separation (FULL SEPARATION, gap 0.7562, n=16). Temporal is
+    # unmeasured — no burst-capture data exists — so its weight is cut, not
+    # zeroed, pending its own validation round. Onnx is left at its prior
+    # value (gap≈0 measured, but restructuring it was out of scope here).
+    "fasnet":   0.70,
+    "temporal": 0.20,  # TV-01: historical nominal weight; effective weight is ALWAYS zero.
+    "onnx":     0.10,
 }
 SPOOF_DECISION_THRESHOLD = 0.50
 
-_audit = logging.getLogger("smartcheck.enrollment")
+from app.services.request_audit import RequestLogger
+_audit = RequestLogger(logging.getLogger("smartcheck.enrollment"), {})
 
 # ─── Anti-spoof ONNX (Silent-Face MiniFASNetV2) ───────────────────────────────
 _antispoof_session    = None
@@ -159,7 +172,7 @@ def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
         spoof_score = max(0.0, min(1.0, spoof_score))
         return is_real, spoof_score
     except Exception as e:
-        _audit.error(f"[FASNET] inference error: {e}")
+        _audit.error(f"[FASNET] inference error: {type(e).__name__}")
         return None, None
 
 
@@ -168,7 +181,9 @@ def combined_spoof_score(
     frames_for_temporal: list = None,
 ) -> dict:
     """
-    Run all 5 anti-spoof layers and combine into a single weighted score.
+    Run 5 anti-spoof layers; combine 3 of them (fasnet, temporal, onnx) into
+    a weighted score. Moiré and Texture are computed and logged but do NOT
+    vote — see FRR-1/F-15/Q-15 (docs/review/10-moire-frr-investigation.md).
 
     Args:
         img_bgr: single frame (primary input for single-frame checks)
@@ -178,9 +193,10 @@ def combined_spoof_score(
     Returns dict with keys: is_real, combined_score, threshold, layers,
     weights_used, disagreements.
 
-    Fail behavior: Moiré and Texture fail-close (score=1.0 on error).
-    Fasnet, ONNX, Temporal fail-open (None → weight redistributed to 0).
-    If ALL layers fail → fail-close (is_real=False).
+    Fail behavior: Moiré and Texture still fail-close in `layers` (score=1.0
+    on error) for audit consistency, but this has no decision effect since
+    neither votes. Fasnet, ONNX, Temporal fail-open (None → weight
+    redistributed to 0). If ALL voting layers fail → fail-close (is_real=False).
     """
     layers = {}
     active_weights = dict(SPOOF_WEIGHTS)
@@ -202,7 +218,7 @@ def combined_spoof_score(
             "is_screen": moire["is_screen"],
         }
     except Exception as e:
-        _audit.error(f"[COMBINED_SPOOF] moire error fail-close: {e}")
+        _audit.error(f"[COMBINED_SPOOF] moire error fail-close: {type(e).__name__}")
         layers["moire"] = {"spoof_score": 1.0, "avg_score": -1, "is_screen": True, "error": str(e)[:80]}
 
     # ── Layer 2: Screen Texture FFT (fail-close) ───────────────────────────
@@ -213,11 +229,13 @@ def combined_spoof_score(
             "is_screen": is_screen_tex,
         }
     except Exception as e:
-        _audit.error(f"[COMBINED_SPOOF] texture error fail-close: {e}")
+        _audit.error(f"[COMBINED_SPOOF] texture error fail-close: {type(e).__name__}")
         layers["texture"] = {"spoof_score": 1.0, "is_screen": True, "error": str(e)[:80]}
 
     # ── Layer 3: Temporal Variance (fail-open if no frames) ────────────────
-    if frames_for_temporal and len(frames_for_temporal) >= 2:
+    if frames_for_temporal is not None:
+        _audit.warning("[COMBINED_SPOOF] finding=TV-01 step=temporal_supplied result=audit_only decision=log_only effective_weight=0; uncalibrated temporal voting DISABLED")
+    if frames_for_temporal is not None and len(frames_for_temporal) >= 2:
         try:
             temporal = detect_static_image(frames_for_temporal)
             variance = temporal["temporal_variance"]
@@ -234,12 +252,18 @@ def combined_spoof_score(
                 "is_static": temporal["is_static"],
             }
         except Exception as e:
-            _audit.warning(f"[COMBINED_SPOOF] temporal error skip: {e}")
+            _audit.warning(f"[COMBINED_SPOOF] temporal error skip: {type(e).__name__}")
             layers["temporal"] = {"spoof_score": None, "variance": None, "error": str(e)[:80]}
             active_weights["temporal"] = 0.0
     else:
         layers["temporal"] = {"spoof_score": None, "variance": None, "reason": "not_enough_frames"}
         active_weights["temporal"] = 0.0
+
+    # TV-01: retain diagnostic computation, but never vote or hard-reject from it.
+    active_weights["temporal"] = 0.0
+    layers["temporal"]["audit_spoof_score"] = layers["temporal"]["spoof_score"]
+    layers["temporal"]["spoof_score"] = None
+    layers["temporal"]["decision"] = "log_only"
 
     # ── Layer 4: DeepFace Fasnet (primary ML, fail-open) ───────────────────
     # TEMP PERF: wall-clock this layer for docs/review/06-performance.md — remove after measurement
@@ -267,7 +291,7 @@ def combined_spoof_score(
             "raw_real_score": round(onnx_raw, 4),
         }
     except Exception as e:
-        _audit.warning(f"[COMBINED_SPOOF] onnx error skip: {e}")
+        _audit.warning(f"[COMBINED_SPOOF] onnx error skip: {type(e).__name__}")
         layers["onnx"] = {"spoof_score": None, "is_real": None, "raw_real_score": None, "error": str(e)[:80]}
         active_weights["onnx"] = 0.0
     _onnx_ms = round((time.perf_counter() - _t0_onnx) * 1000, 2)
@@ -290,21 +314,25 @@ def combined_spoof_score(
             "disagreements": ["fasnet_unavailable_fail_close"],
         }
 
-    # ── Multi-layer hard-reject rules ──────────────────────────────────────
+    # ── Multi-layer hard-reject rule ────────────────────────────────────────
     # Weighted scoring can be dominated by Fasnet when it's wrong.
-    # If TWO OR MORE independent layers independently flag suspicious,
-    # reject immediately — real faces never trigger 2+ layers at once.
+    # If BOTH remaining voting layers independently flag suspicious, reject
+    # immediately — real faces rarely trigger 2 layers at once.
+    #
+    # moire/texture excluded (FRR-1/F-15/Q-15): neither one's best achievable
+    # threshold beats "always real" on measured data, so they no longer vote
+    # here — still computed/logged above for future recalibration. The old
+    # "moire alone >=0.85" gate is removed for the same reason (it was a
+    # near-duplicate of the raw single-layer check at MOIRE_THRESHOLD_SINGLE).
 
     def _layer_suspicious(layer_data, threshold):
         score = layer_data.get("spoof_score")
         return score is not None and score >= threshold
 
-    moire_suspicious    = _layer_suspicious(layers.get("moire", {}),    0.55)
-    texture_suspicious  = _layer_suspicious(layers.get("texture", {}),  0.50)
     temporal_suspicious = _layer_suspicious(layers.get("temporal", {}), 0.50)
     fasnet_suspicious   = _layer_suspicious(layers.get("fasnet", {}),   0.30)
 
-    suspicious_count = sum([moire_suspicious, texture_suspicious, temporal_suspicious, fasnet_suspicious])
+    suspicious_count = sum([temporal_suspicious, fasnet_suspicious])
 
     if suspicious_count >= 1:
         _tw = sum(active_weights.values())
@@ -314,8 +342,6 @@ def combined_spoof_score(
             if layers.get(k, {}).get("spoof_score") is not None
         ), 4) if _tw > 0 else 1.0
         _pre_susp = (
-            ([f"moire({layers['moire']['spoof_score']:.4f})"]     if moire_suspicious    else []) +
-            ([f"texture({layers['texture']['spoof_score']:.4f})"] if texture_suspicious  else []) +
             ([f"temporal({layers['temporal']['spoof_score']:.4f})"] if temporal_suspicious else []) +
             ([f"fasnet({layers['fasnet']['spoof_score']:.4f})"]   if fasnet_suspicious   else [])
         )
@@ -333,8 +359,6 @@ def combined_spoof_score(
 
     if suspicious_count >= 2:
         suspicious_names = []
-        if moire_suspicious:    suspicious_names.append(f"moire({layers['moire']['spoof_score']:.3f})")
-        if texture_suspicious:  suspicious_names.append(f"texture({layers['texture']['spoof_score']:.3f})")
         if temporal_suspicious: suspicious_names.append(f"temporal({layers['temporal']['spoof_score']:.3f})")
         if fasnet_suspicious:   suspicious_names.append(f"fasnet({layers['fasnet']['spoof_score']:.3f})")
         _audit.warning(
@@ -350,24 +374,6 @@ def combined_spoof_score(
             "disagreements": [f"hard_reject_{suspicious_count}_layers_agree"],
             "hard_reject": True,
             "suspicious_layers": suspicious_names,
-        }
-
-    # Moiré alone above the strong threshold is treated as a screen replay.
-    moire_score = layers.get("moire", {}).get("spoof_score")
-    if moire_score is not None and moire_score >= 0.85:
-        _audit.warning(
-            f"[COMBINED_SPOOF] HARD-REJECT: Moiré alone exceeds strong threshold "
-            f"({moire_score:.3f} >= 0.85)"
-        )
-        return {
-            "is_real": False,
-            "combined_score": 1.0,
-            "threshold": SPOOF_DECISION_THRESHOLD,
-            "layers": layers,
-            "weights_used": active_weights,
-            "disagreements": ["hard_reject_moire_strong"],
-            "hard_reject": True,
-            "suspicious_layers": [f"moire({moire_score:.3f})"],
         }
 
     # ── Normalize active weights so they sum to 1.0 ────────────────────────
@@ -432,6 +438,23 @@ def combined_spoof_score(
     }
 
 
+# F-16 (docs/review/10-moire-frr-investigation.md §16): combined_spoof_score's two
+# early-return fail-close paths (Fasnet unavailable; all voting layers errored) mark
+# themselves with these disagreement strings. Callers use this to tell "the anti-spoof
+# system itself is broken" apart from "it ran and scored the frame as spoof" — the two
+# must not produce the same user-facing message.
+_SYSTEM_FAILURE_MARKERS = {"fasnet_unavailable_fail_close", "all_layers_failed"}
+
+
+def is_system_failure(spoof_result: dict) -> bool:
+    """True if combined_spoof_score's is_real=False came from an infra failure, not
+    a spoof determination. Callers must keep this distinction server-side only
+    (logs) — the user-facing message must not reveal the internal cause."""
+    return not spoof_result["is_real"] and bool(
+        _SYSTEM_FAILURE_MARKERS & set(spoof_result.get("disagreements", []))
+    )
+
+
 def normalize_illumination(img: np.ndarray) -> np.ndarray:
     """Apply CLAHE to L-channel of LAB colorspace to normalize lighting."""
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
@@ -453,7 +476,7 @@ def _decode_image(base64_image: str) -> np.ndarray:
     return img
 
 
-def extract_embedding(base64_image: str) -> list:
+def extract_embedding(base64_image: str, include_metadata: bool = False):
     """
     Decode base64 image → CLAHE normalize → FaceNet512 embedding (512-D list).
     Raises ValueError if face not detected or image unreadable.
@@ -473,7 +496,16 @@ def extract_embedding(base64_image: str) -> list:
     if not result:
         raise ValueError("ตรวจไม่เจอใบหน้าในรูป")
 
-    return result[0]["embedding"]
+    embedding = result[0]["embedding"]
+    if include_metadata:
+        facial_area = result[0].get("facial_area") or {}
+        crop_box = {
+            key: facial_area.get(key)
+            for key in ("x", "y", "w", "h")
+            if facial_area.get(key) is not None
+        }
+        return embedding, {"detector_crop": crop_box or None}
+    return embedding
 
 
 def check_anti_spoof(base64_image: str) -> bool:
@@ -487,7 +519,7 @@ def check_anti_spoof(base64_image: str) -> bool:
         result = combined_spoof_score(img)
         return result["is_real"]
     except Exception as e:
-        _audit.error(f"[ANTISPOOF] check_anti_spoof fail-close: {e}")
+        _audit.error(f"[ANTISPOOF] check_anti_spoof fail-close: {type(e).__name__}")
         return False
 
 
@@ -503,7 +535,7 @@ def check_anti_spoof_with_score(base64_image: str) -> tuple:
         confidence = 1.0 - result["combined_score"]
         return result["is_real"], round(confidence, 4)
     except Exception as e:
-        _audit.error(f"[ANTISPOOF] check_anti_spoof_with_score fail-close: {e}")
+        _audit.error(f"[ANTISPOOF] check_anti_spoof_with_score fail-close: {type(e).__name__}")
         return False, 0.0
 
 
@@ -545,7 +577,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
             error_msg = "ไม่พบใบหน้าในภาพ"
     except Exception as e:
         error_msg = f"face_detection_failed: {str(e)[:60]}"
-        _audit.warning(f"[SPOOF_CHECK_EMBED] embedding extraction failed: {e}")
+        _audit.warning(f"[SPOOF_CHECK_EMBED] embedding extraction failed: {type(e).__name__}")
 
     confidence = 1.0 - spoof_result["combined_score"]
 
@@ -557,6 +589,9 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
             "embedding": None,
             "message": "ตรวจพบการปลอมแปลง",
             "layers": spoof_result["layers"],
+            # F-16 (docs/review/10-moire-frr-investigation.md §16-17): lets callers
+            # tell "anti-spoof system unavailable" apart from "scored as spoof".
+            "system_failure": is_system_failure(spoof_result),
         }
 
     if embedding is None:
@@ -735,7 +770,19 @@ def detect_screen_texture(
         center_x - mask_radius: center_x + mask_radius,
     ] = 0
 
-    threshold = np.mean(high_freq) + peak_threshold_multiplier * np.std(high_freq)
+    # F-15 fix: mean/std for the outlier threshold must come from the
+    # high-frequency ring only. Computing them over the full array (as
+    # before) mixes the masked-out centre — 25% of the array forced to
+    # exactly 0 — into the statistics, which inflates threshold past
+    # anything the ring can reach regardless of input.
+    ring_mask = np.ones_like(high_freq, dtype=bool)
+    ring_mask[
+        center_y - mask_radius: center_y + mask_radius,
+        center_x - mask_radius: center_x + mask_radius,
+    ] = False
+    ring_values = high_freq[ring_mask]
+
+    threshold = np.mean(ring_values) + peak_threshold_multiplier * np.std(ring_values)
     num_peaks = int(np.sum(high_freq > threshold))
     _audit.debug(f"[SCREEN_TEXTURE] num_peaks={num_peaks} threshold_multiplier={peak_threshold_multiplier}")
     return num_peaks > min_peaks
@@ -825,10 +872,12 @@ def server_validate_frame(frame_b64: str) -> dict:
 
 def detect_static_image(frames: list, threshold: float = TEMPORAL_VAR_THRESHOLD) -> dict:
     """
-    Detect static photo/replay by measuring pixel variance across the time axis.
-    Crops face ROI first (Haar cascade) so background doesn't dilute the score.
-    Real faces (face-only): breathing + micro-movements → std-dev ~15–25.
-    Static photo (face-only): only JPEG noise → std-dev ~0.5–2.5.
+    Measure temporal pixel variance, using a face ROI when Haar finds one.
+
+    The threshold is a historical, uncalibrated comparison reference; no
+    retained dataset establishes a separating range for face-cropped real and
+    spoof bursts. This function reports the measurement/comparison only. Each
+    caller is responsible for choosing audit-only or enforcement behavior.
     Falls back to full frame if no face detected.
     Returns { is_static: bool, temporal_variance: float }
     """
@@ -877,8 +926,24 @@ def check_embedding_consistency(embeddings: list, threshold: float = CONSISTENCY
     """
     n = len(embeddings)
     if n < 2:
-        return {"consistent": True, "outlier_indices": [], "pairwise_scores": [], "multi_outlier": False}
+        return {
+            "consistent": True,
+            "outlier_indices": [],
+            "pairwise_scores": [],
+            "average_similarities": [],
+            "embedding_diagnostics": [],
+            "multi_outlier": False,
+        }
 
+    embedding_diagnostics = []
+    for idx, embedding in enumerate(embeddings):
+        vector = np.asarray(embedding)
+        embedding_diagnostics.append({
+            "frame": idx + 1,
+            "shape": list(vector.shape),
+            "dtype": str(vector.dtype),
+            "l2_norm": round(float(np.linalg.norm(vector.astype(np.float32))), 4),
+        })
     sim_matrix = np.zeros((n, n), dtype=np.float32)
     pairwise = []
     for i in range(n):
@@ -888,14 +953,25 @@ def check_embedding_consistency(embeddings: list, threshold: float = CONSISTENCY
             sim_matrix[j][i] = s
             pairwise.append({"i": i, "j": j, "score": round(float(s), 4)})
 
+    avg_sims = [float(np.sum(sim_matrix[i]) / (n - 1)) for i in range(n)]
+    average_similarities = [
+        {"frame": i + 1, "average": round(avg, 4)}
+        for i, avg in enumerate(avg_sims)
+    ]
     failing = [p for p in pairwise if p["score"] < threshold]
     if not failing:
-        return {"consistent": True, "outlier_indices": [], "pairwise_scores": pairwise, "multi_outlier": False}
+        return {
+            "consistent": True,
+            "outlier_indices": [],
+            "pairwise_scores": pairwise,
+            "average_similarities": average_similarities,
+            "embedding_diagnostics": embedding_diagnostics,
+            "multi_outlier": False,
+        }
 
     min_score = round(float(min(p["score"] for p in pairwise)), 4)
 
     # Identify all frames whose average similarity to others is below threshold
-    avg_sims = [float(np.sum(sim_matrix[i]) / (n - 1)) for i in range(n)]
     bad_indices = [i for i, avg in enumerate(avg_sims) if avg < threshold]
 
     if len(bad_indices) > 1:
@@ -904,6 +980,8 @@ def check_embedding_consistency(embeddings: list, threshold: float = CONSISTENCY
             "consistent":      False,
             "outlier_indices": bad_indices,
             "pairwise_scores": pairwise,
+            "average_similarities": average_similarities,
+            "embedding_diagnostics": embedding_diagnostics,
             "multi_outlier":   True,
             "min_score":       min_score,
         }
@@ -914,6 +992,8 @@ def check_embedding_consistency(embeddings: list, threshold: float = CONSISTENCY
         "consistent":      False,
         "outlier_indices": [outlier_idx],
         "pairwise_scores": pairwise,
+        "average_similarities": average_similarities,
+        "embedding_diagnostics": embedding_diagnostics,
         "multi_outlier":   False,
         "min_score":       min_score,
     }

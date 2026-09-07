@@ -7,6 +7,10 @@ venv/
 *.egg-info/
 dist/
 build/
+.build/
+*.log
+cloudflared.exe
 instance/
 flask_session/
 smartcheck_sessions/
+test_images/ 

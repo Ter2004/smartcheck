@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS student_biometrics (
     user_id                  uuid        PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
     face_embeddings          jsonb,                           -- array of FaceNet512 vectors
     baseline_ear             float,                           -- calibrated Eye Aspect Ratio
+    baseline_ear_metric      text,                            -- NULL = legacy / unknown; pixel-v1 = corrected
     face_image_url           text,                            -- storage path in "face-images" bucket
     consent_given            boolean     NOT NULL DEFAULT false,
     consent_at               timestamptz,

@@ -744,6 +744,7 @@ def api_enroll():
         "user_id":         user_id,
         "face_embeddings": embeddings,
         "baseline_ear":    baseline_ear,
+        "baseline_ear_metric": "pixel-v1" if baseline_ear is not None and data.get("baseline_ear_metric") == "pixel-v1" else None,
         "consent_given":   True,
         "consent_at":      session.get("consent_given_at") or now_iso,
         "enrolled_at":     now_iso,
@@ -933,6 +934,7 @@ def api_self_verify():
             "consent_at":      session.get("consent_given_at") or now_iso,
             "enrolled_at":     now_iso,
             "baseline_ear":    baseline_ear,
+            "baseline_ear_metric": None,  # obsolete flow has no metric provenance
             "integrity_hash":  integrity_hash,
             "verify_attempts": 0,   # H2: reset counter on successful enrollment
         }).eq("user_id", user_id).execute()
@@ -1186,6 +1188,7 @@ def api_withdraw_consent():
         supabase_admin.table("student_biometrics").update({
             "face_embeddings":   None,
             "baseline_ear":      None,
+            "baseline_ear_metric": None,
             "face_image_url":    None,
             "integrity_hash":    None,
             "consent_given":     False,

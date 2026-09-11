@@ -240,7 +240,11 @@
 <script src="{{ url_for('static', filename='js/ble_room_scanner.js') }}"></script>
 <script src="{{ url_for('static', filename='js/camera_guard.js') }}"></script>
 <script src="{{ url_for('static', filename='js/rt_analyze.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ear_metric.js') }}"></script>
 <script src="{{ url_for('static', filename='js/mediapipe_liveness.js') }}"></script>
+{% if request.args.get('debug') == '1' %}
+<script src="{{ url_for('static', filename='js/checkin_debug.js') }}"></script>
+{% endif %}
 <script src="{{ url_for('static', filename='js/checkin_flow.js') }}"></script>
 <script>
     const flow = new CheckinFlow({
@@ -248,6 +252,7 @@
         beaconUUID:    "{{ session_data.beacons.uuid }}",
         rssiThreshold: {{ session_data.beacons.rssi_threshold }},
         baselineEAR:   {{ baseline_ear }},
+        debug:         {{ (request.args.get('debug') == '1') | tojson }},
         apiUrl:        "{{ url_for('api_checkin.checkin') }}",
         proximityMethod: "{{ config.CHECKIN_PROXIMITY_METHOD }}",
     });

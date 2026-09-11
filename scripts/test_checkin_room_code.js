@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, '../app/static/js/checkin_flow.js'), 'utf8');
+const source = ['ear_metric.js', 'checkin_flow.js'].map(name => fs.readFileSync(path.join(__dirname, '../app/static/js/', name), 'utf8')).join('\n');
 function harness(method) {
     const elements = new Map();
     let cameraCalls = 0, bleCalls = 0, now = 0;

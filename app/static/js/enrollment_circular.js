@@ -4,7 +4,7 @@
 //
 // Functions reused from enrollment_flow.js (top-level globals):
 //   _getSharedFM(opts)         — shared FaceMesh singleton
-//   _computeEAR(lm)            — Eye Aspect Ratio from 468 landmarks
+//   _computeEAR(lm, video)            — Eye Aspect Ratio from 468 landmarks
 //   _checkBlur(videoEl)        — Laplacian variance (>20 = sharp)
 //   _checkCameraConditions(el) — brightness + backlight check → {ok, reason}
 //   _captureFrameFromVideo(el) — returns base64 JPEG or null
@@ -50,8 +50,7 @@ const CIRC_BLUR_MIN    = 20;
 
 // ─── Blink-challenge constants ────────────────────────────────────────────────
 const BLINK_WINDOW_MS  = 3000;   // detection window
-const BLINK_EAR_CLOSE  = 0.15;   // EAR below this = eyes closing
-const BLINK_EAR_OPEN   = 0.22;   // EAR above this = eyes opened again
+// Use the corrected neutral calibration from the preceding enrollment step.
 const BLINK_REOPEN_MS  = 500;    // max close→open time for a valid blink
 const BLINK_STDDEV_MIN = 0.03;   // EAR std-dev gate (rejects static photo noise)
 
@@ -151,7 +150,7 @@ function _circOnResults(results, video) {
 
     // Blink challenge takes priority — bypass zone detection while active
     if (_circBlinkActive) {
-        _circBlinkCheckFrame(lm);
+        _circBlinkCheckFrame(lm, video);
         return;
     }
 
@@ -172,7 +171,7 @@ function _circOnResults(results, video) {
 
     // Collect EAR while user holds FRONT zone (neutral face) for baseline_ear
     if (zone === 'FRONT' && !_circDone['FRONT']) {
-        _circFrontEarSamples.push(_computeEAR(lm));
+        _circFrontEarSamples.push(_computeEAR(lm, video));
     }
 
     if (zone !== _circHoldZone) {
@@ -243,15 +242,19 @@ function _circStartBlinkChallenge() {
     _blinkTimer = setTimeout(_circBlinkTimeout, BLINK_WINDOW_MS);
 }
 
-function _circBlinkCheckFrame(lm) {
-    const ear = _computeEAR(lm);
+function _circBlinkCheckFrame(lm, video) {
+    const ear = _computeEAR(lm, video);
+    if (!Number.isFinite(ear) || !Number.isFinite(baselineEAR) || baselineEAR <= 0) {
+        _blinkClosed = false;
+        return;
+    }
     _blinkEarBuf.push(ear);
 
     // State machine: OPEN → CLOSING (ear drops) → REOPEN (ear rises) = blink
-    if (!_blinkClosed && ear < BLINK_EAR_CLOSE) {
+    if (!_blinkClosed && ear < baselineEAR * 0.70) {
         _blinkClosed    = true;
         _blinkCloseTime = Date.now();
-    } else if (_blinkClosed && ear > BLINK_EAR_OPEN) {
+    } else if (_blinkClosed && ear >= baselineEAR * 0.70) {
         const reopenMs = Date.now() - _blinkCloseTime;
         if (reopenMs <= BLINK_REOPEN_MS) {
             _circBlinkDetected();
@@ -398,6 +401,7 @@ async function _circHandleAllComplete() {
     if (_circSubmitting) return;
     _circSubmitting = true;
 
+    const frontEarSamples = _circFrontEarSamples.filter(Number.isFinite);
     stopCircularCapture();
 
     document.getElementById('circularInstruction').style.display = 'none';
@@ -431,10 +435,10 @@ async function _circHandleAllComplete() {
     }
 
     // ── 2. Compute baseline_ear from FRONT zone EAR samples ──────────────────
-    const baseline_ear = _circFrontEarSamples.length > 0
-        ? _circFrontEarSamples.reduce((s, v) => s + v, 0) / _circFrontEarSamples.length
-        : 0.25;
-    const ear_std = _stdDev(_circFrontEarSamples);
+    const baseline_ear = frontEarSamples.length > 0
+        ? frontEarSamples.reduce((s, v) => s + v, 0) / frontEarSamples.length
+        : null;
+    const ear_std = _stdDev(frontEarSamples);
 
     // ── 3. POST to /api/enroll ────────────────────────────────────────────────
     _circSetCheckingMsg('กำลังลงทะเบียน...');
@@ -449,6 +453,7 @@ async function _circHandleAllComplete() {
             body: JSON.stringify({
                 face_images:  frames,
                 baseline_ear: baseline_ear,
+                baseline_ear_metric: baseline_ear === null ? null : EARMetric.version,
                 ear_std:      ear_std,
                 flow_mode:    'circular',
             }),

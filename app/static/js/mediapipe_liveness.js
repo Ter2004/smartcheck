@@ -23,10 +23,8 @@ function dist2D(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function calcEARFromLM(lm, indices) {
-    if (!lm || lm.length < 468) return 0.25;   // R4: safe default open-eye EAR
-    const [p1, p2, p3, p4, p5, p6] = indices.map(i => lm[i]);
-    return (dist2D(p2, p6) + dist2D(p3, p5)) / (2.0 * dist2D(p1, p4));
+function calcEARFromLM(lm, indices, video) {
+    return EARMetric.eye(lm, indices, video?.videoWidth, video?.videoHeight);
 }
 
 /** Yaw: nose x position relative to face width (0=hard left, 0.5=centre, 1=hard right) */
@@ -54,14 +52,16 @@ const ACTION_LABELS = {
 };
 
 /** Build a stateful checker for one action. Returns { check(lm) → { done, statusText } } */
-function buildActionChecker(action, baselineEAR) {
-    const EAR_THRESHOLD = (baselineEAR || 0.25) * 0.70;
+function buildActionChecker(action, baselineEAR, video) {
+    const EAR_THRESHOLD = Number.isFinite(baselineEAR) && baselineEAR > 0 ? baselineEAR * 0.70 : NaN;
 
     if (action === 'blink') {
         let blinkDown = false;
         return {
             check(lm) {
-                const ear = (calcEARFromLM(lm, LEFT_EYE_IDX) + calcEARFromLM(lm, RIGHT_EYE_IDX)) / 2;
+                if (!Number.isFinite(EAR_THRESHOLD)) return {done: false, statusText: 'กรุณาวัดค่าดวงตาก่อน'};
+                const ear = (calcEARFromLM(lm, LEFT_EYE_IDX, video) + calcEARFromLM(lm, RIGHT_EYE_IDX, video)) / 2;
+                if (!Number.isFinite(ear)) { blinkDown = false; return {done: false, statusText: 'จัดใบหน้าให้อยู่ในกรอบ'}; }
                 if (!blinkDown && ear < EAR_THRESHOLD) {
                     blinkDown = true;
                     return { done: false, statusText: 'กะพริบตา...' };
@@ -264,7 +264,7 @@ class LivenessDetector {
             });
             this._faceMesh = faceMesh;
 
-            const checker = buildActionChecker(action, this.baselineEAR);
+            const checker = buildActionChecker(action, this.baselineEAR, this.video);
             const guard   = new RigidBodyGuard();
             const ctx     = this.canvas.getContext('2d');
 
@@ -378,7 +378,7 @@ class InteractiveChallengeDetector {
         return new Promise((resolve) => {
             let currentIdx = 0;
             let resolved   = false;
-            let checker    = buildActionChecker(actions[0], this.baselineEAR);
+            let checker    = buildActionChecker(actions[0], this.baselineEAR, this.video);
             const guard    = new RigidBodyGuard();
             let actionTimer = null;
 
@@ -459,7 +459,7 @@ class InteractiveChallengeDetector {
                     resolve({ pass: true, sequence: actions, failedAt: null, error: null });
                 } else {
                     // Start next action
-                    checker = buildActionChecker(actions[currentIdx], this.baselineEAR);
+                    checker = buildActionChecker(actions[currentIdx], this.baselineEAR, this.video);
                     startActionTimer();
                     this.onProgress(currentIdx, actions.length, ACTION_LABELS[actions[currentIdx]] || actions[currentIdx]);
                 }

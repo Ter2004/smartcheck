@@ -4,7 +4,7 @@
 // State
 // ─────────────────────────────────────────────
 let currentStep  = 1;
-let baselineEAR  = 0.25;   // default — EAR calibration step removed
+let baselineEAR  = null;   // Unknown until the explicit eye calibration completes.
 let captureStream = null;
 let faceMeshCapture = null;
 let captureCamera   = null;
@@ -57,13 +57,8 @@ let challengeAttempts = 0;
 // ─── EAR samples collected during Step 4 capture ─────────────────────────────
 let earSamplesDuringCapture = [];
 
-function _computeEAR(lm) {
-    // Right eye landmarks: 33,160,158,133,153,144 — Left eye: 362,385,387,263,373,380
-    const eye = (p1, p2, p3, p4, p5, p6) => {
-        const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y);
-        return (d(p2, p6) + d(p3, p5)) / (2 * d(p1, p4));
-    };
-    return (eye(33, 160, 158, 133, 153, 144) + eye(362, 385, 387, 263, 373, 380)) / 2;
+function _computeEAR(lm, video) {
+    return EARMetric.mean(lm, video);
 }
 
 function _stdDev(arr) {
@@ -338,8 +333,7 @@ function stopStream(stream) {
 }
 
 // ─────────────────────────────────────────────
-// Step 2 (old) — EAR Calibration removed.
-// baselineEAR is now fixed at 0.25 (default).
+// Eye calibration runs after lighting and before the challenge.
 // ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
@@ -569,8 +563,8 @@ async function runEarCheck() {
         if (!results.multiFaceLandmarks?.length) return;
         _dbgLandmarkCount++;
         const lm  = results.multiFaceLandmarks[0];
-        const ear = _computeEAR(lm);
-        // Relaxed range — iOS FaceMesh reports lower EAR (~0.10–0.25) than Android/desktop
+        const ear = _computeEAR(lm, video);
+        // Retain the calibration plausibility range; measurements now use pixels.
         if (ear > 0.10 && ear < 0.45) earSamples.push(ear);
         if (val) val.textContent = ear.toFixed(3);
     });
@@ -1056,7 +1050,7 @@ function startCaptureWithDetection() {
         drawFaceFeatures(ctx2, lm, canvas.width, canvas.height, 'rgba(255,255,255,0.7)');
 
         // Collect EAR sample for temporal anti-spoof check
-        earSamplesDuringCapture.push(_computeEAR(lm));
+        earSamplesDuringCapture.push(_computeEAR(lm, video));
 
         // ── Real-time Moiré + edge analysis ───────────────────────────────
         const rtResult = _rtAnalyzeFrame(video, lm);
@@ -1295,6 +1289,7 @@ async function _sendToEnroll() {
             body: JSON.stringify({
                 face_images:  capturedImages,
                 baseline_ear: baselineEAR,
+                baseline_ear_metric: EARMetric.version,
                 ear_std:      _stdDev(earSamplesDuringCapture),
             }),
         });
@@ -1443,7 +1438,7 @@ async function fullRestart() {
     lastCaptureTime     = 0;
     capturePaused       = false;
     challengeAttempts   = 0;
-    baselineEAR         = 0.25;
+    baselineEAR         = null;
     step4SpoofFailConsecutive = 0;
     step4SpoofFailTotal       = 0;
     step4FailureTracker.resetWindow();

@@ -18,6 +18,7 @@ class CheckinFlow {
         this._camStream  = null;
         this._earSamples = [];
         this._proximity = null;
+        this._debug = opts.debug === true ? new CheckinDebug(this.baselineEAR) : null;
     }
 
     start() {
@@ -30,6 +31,7 @@ class CheckinFlow {
     // ─── Step dots ───────────────────────────────────────
 
     _goToStep(n) {
+        this._debug?.mount(n);
         // 1=proximity, 2=camera, 3=result.
         const steps = [this.proximityMethod === 'ble' ? 'stepBleRoom' : 'stepRoomCode', 'stepVerify', 'stepDone'];
         steps.forEach((id, i) => {
@@ -90,7 +92,14 @@ class CheckinFlow {
             this._requestRoomCode();
             return;
         }
+        this._stopStream(this._camStream);
+        const generation = this._captureGeneration;
+        const active = () => generation === this._captureGeneration && !!this._proximity;
+        const calibration = new EARCalibration();
+        this.baselineEAR = null;
         this._earSamples = [];
+        let faceReadyFrames = 0, countingDown = false, verified = false;
+        this._debug?.begin();
         this._goToStep(2);
         document.getElementById("stepRoomCode").style.display = "none";
         this._capturedFrames = [];
@@ -103,15 +112,20 @@ class CheckinFlow {
 
         // เปิดกล้อง
         try {
-            this._camStream = await navigator.mediaDevices.getUserMedia({
+            if (this._meshCleanup) await this._meshCleanup;
+            if (!active()) return;
+            const acquired = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'user', width: 640, height: 480 }
             });
+            if (!active()) { acquired.getTracks().forEach(t => t.stop()); return; }
+            this._camStream = acquired;
             if (!this._proximity || performance.now() >= this._proximity.deadline) {
                 this._stopStream(this._camStream);
                 this._expireProximity();
                 return;
             }
             const vcCheck = await detectVirtualCamera(this._camStream);
+            if (!active()) return;
             if (vcCheck.blocked) {
                 this._camStream.getTracks().forEach(t => t.stop());
                 status.textContent = 'ตรวจพบกล้องเสมือน — กรุณาใช้กล้องจริงเท่านั้น';
@@ -120,6 +134,8 @@ class CheckinFlow {
             }
             video.srcObject = this._camStream;
         } catch (e) {
+            if (!active()) return;
+            this._stopStream(this._camStream);
             console.info('step=camera_open result=error details={}');
             status.textContent = 'ไม่สามารถเปิดกล้องได้: ' + e.message;
             this._goToStep(3);
@@ -132,24 +148,29 @@ class CheckinFlow {
         status.textContent = 'เตรียมกล้อง — จัดใบหน้าให้อยู่ในกรอบวงรี';
 
         // Timeout: ถ้า 40 วินาทีแล้วยังไม่พบใบหน้า ให้ปิดกล้องและแสดงข้อผิดพลาด
-        this._streamTimeoutId = setTimeout(() => {
+        this._debug?.arm();
+        const captureDeadline = performance.now() + 40000;
+        const expireCapture = () => {
+            if (!active()) return;
+            this._debug?.fired();
             if (!verified && !countingDown) {
-                faceMesh.close();
+                const reason = status.textContent;
                 this._stopStream(this._camStream);
-                status.textContent = 'หมดเวลา — ไม่พบใบหน้า กรุณาลองใหม่อีกครั้ง';
+                status.textContent = 'หมดเวลาถ่ายภาพ — ' + reason;
                 guide.classList.remove('ok');
                 guide.classList.add('fail');
                 console.info('step=capture_timeout result=reject details={}');
                 this._goToStep(3);
                 document.getElementById('doneLoadingView').style.display = 'none';
                 document.getElementById('doneResultView').style.display = 'block';
-                this._showDone('error', 'หมดเวลา — ไม่พบใบหน้า กรุณาลองใหม่อีกครั้ง', true);
+                this._showDone('error', status.textContent, true);
             }
-        }, 40000);
+        };
+        this._streamTimeoutId = setTimeout(expireCapture, 40000);
 
         // รอให้กล้องเริ่มก่อน 1.5 วินาที
         await this._sleep(1500);
-        if (!this._proximity) return;
+        if (!active()) return;
         status.textContent = 'จัดใบหน้าให้อยู่ในกรอบวงรี';
 
         // FaceMesh ตรวจตำแหน่งหน้า
@@ -161,14 +182,10 @@ class CheckinFlow {
             minDetectionConfidence: 0.7, minTrackingConfidence: 0.7,
         });
 
-        let faceReadyFrames = 0;
-        let countingDown    = false;
-        let verified        = false;
-        let passiveResult   = null;
-        let passiveSent     = false;
-
-        faceMesh.onResults(async results => {
-            if (!this._proximity || verified || countingDown) return;
+        const processResults = async results => {
+            if (!active() || verified || countingDown) return;
+            if (performance.now() >= captureDeadline) { expireCapture(); return; }
+            if (!video.videoWidth || !video.videoHeight) return;
 
             canvas.width  = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -184,6 +201,10 @@ class CheckinFlow {
             }
             const avgBrightness = totalBrightness / (pixels.length / 16);
             if (avgBrightness < 60) {
+                calibration.reset();
+                this._debug?.sample({width: video.videoWidth, height: video.videoHeight,
+                    ready: 0, faces: results.multiFaceLandmarks?.length || 0,
+                    failed: ['brightness (other gates not evaluated)']});
                 guide.classList.remove('ok');
                 faceReadyFrames = 0;
                 status.textContent = 'แสงน้อยเกินไป — กรุณาอยู่ในพื้นที่ที่มีแสงสว่างเพียงพอ';
@@ -193,6 +214,9 @@ class CheckinFlow {
 
             const hasFace = results.multiFaceLandmarks?.length > 0;
             if (!hasFace) {
+                calibration.reset();
+                this._debug?.sample({width: video.videoWidth, height: video.videoHeight,
+                    ready: 0, faces: 0, failed: ['hasFace (geometry not evaluated)']});
                 guide.classList.remove('ok', 'fail');
                 faceReadyFrames = 0;
                 status.textContent = 'ไม่พบใบหน้า — จัดหน้าให้อยู่ในกรอบ';
@@ -219,21 +243,34 @@ class CheckinFlow {
             const yawOk       = noseRelX > 0.38 && noseRelX < 0.62;
 
             // ตาต้องเปิดปกติ (EAR ≥ 75% baseline)
-            const earL   = this._calcEAR(lm, [33,160,158,133,153,144]);
-            const earR   = this._calcEAR(lm, [362,385,387,263,373,380]);
+            const earL   = this._calcEAR(lm, [33,160,158,133,153,144], video);
+            const earR   = this._calcEAR(lm, [362,385,387,263,373,380], video);
             const earNow = (earL + earR) / 2;
-            this._earSamples.push(earNow);
+            if (Number.isFinite(earNow)) this._earSamples.push(earNow);
+            this._earSamples = this._earSamples.slice(-120);
             // Preserve a short real camera burst for the existing temporal check.
-            this._capturedFrames.push(await this._captureFrame(video));
+            const frame = await this._captureFrame(video);
+            if (!active()) return;
+            this._capturedFrames.push(frame);
             if (this._capturedFrames.length > 3) this._capturedFrames.shift();
-            const earMin = (this.baselineEAR || 0.25) * 0.75;
-            const eyesOk = earNow >= earMin;
 
             // ปากต้องหุบ
             const mouthOpen = dist2D(lm[13], lm[14]);
             const mouthOk   = faceH > 0 && (mouthOpen / faceH) < 0.10;
 
+            const calibrated = calibration.update(earNow,
+                inCenter && closeEnough && pitchOk && rollOk && yawOk && mouthOk,
+                video.videoWidth, video.videoHeight, performance.now());
+            this.baselineEAR = calibrated ? calibration.baseline : null;
+            const earMin = calibrated ? this.baselineEAR * 0.75 : null;
+            const eyesOk = calibrated && Number.isFinite(earNow) && earNow >= earMin;
             const faceOk = inCenter && closeEnough && pitchOk && rollOk && yawOk && eyesOk && mouthOk;
+            this._debug?.sample({width: video.videoWidth, height: video.videoHeight,
+                faceW, faceH, calibration: calibration.phase, baseline: this.baselineEAR,
+                earL, earR, earNow, earMin, ready: faceOk ? faceReadyFrames + 1 : 0,
+                faces: results.multiFaceLandmarks.length,
+                failed: Object.entries({inCenter, closeEnough, pitchOk, rollOk, yawOk, eyesOk, mouthOk})
+                    .filter(([, passed]) => !passed).map(([name]) => name)});
 
             // วาด overlay ตา+ปาก — สีเขียวถ้าพร้อม, ขาวถ้ายังไม่พร้อม
             this._drawFaceFeatures(ctx, lm, canvas.width, canvas.height,
@@ -246,31 +283,13 @@ class CheckinFlow {
                 faceReadyFrames++;
                 status.textContent = '✓ พบใบหน้า — กรุณานิ่งสักครู่...';
 
-                // ส่ง passive anti-spoof พร้อมกันตั้งแต่เฟรมที่ 5
-                if (faceReadyFrames === 5 && !passiveSent) {
-                    passiveSent = true;
-                    this._captureFrame(video).then(b64 => {
-                        fetch('/api/antispoof-passive', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
-                            },
-                            body: JSON.stringify({ face_image: b64 }),
-                        })
-                        .then(r => r.json())
-                        .then(r => { passiveResult = r; })
-                        // Fail-closed: network error → treat as spoof, not real
-                        .catch(() => { passiveResult = { real: false, score: 0.0, _networkError: true }; });
-                    });
-                }
-
                 if (faceReadyFrames >= 25) {
+                    this._debug?.event('25 ready frames; capture complete');
                     countingDown = true;
                     clearTimeout(this._streamTimeoutId);
-                    faceMesh.close();
-                    // Final 1: ถ่ายรูปทันที ข้าม liveness
-                    // TODO Phase 3: เปลี่ยนกลับเป็น _countdownThenLiveness(...)
+                    verified = true;
+                    // Submit to the existing server face/anti-spoof checks.
+                    // The calibration blink is a local quality check only.
                     status.textContent = '✓ พบใบหน้า — กำลังเช็คชื่อ...';
                     const snap = document.createElement('canvas');
                     snap.width  = video.videoWidth  || 640;
@@ -285,21 +304,53 @@ class CheckinFlow {
                 guide.classList.add('fail');
                 faceReadyFrames = 0;
                 if (!closeEnough)  status.textContent = 'เข้าใกล้กล้องอีกหน่อย';
-                else if (!eyesOk)  status.textContent = 'กรุณาเปิดตาให้ปกติ';
+                else if (!calibrated && inCenter && pitchOk && rollOk && yawOk && mouthOk) status.textContent = calibration.instruction;
+                else if (!eyesOk && calibrated) status.textContent = 'กรุณาเปิดตาให้ปกติ';
                 else if (!mouthOk) status.textContent = 'กรุณาหุบปาก';
                 else if (!pitchOk) status.textContent = 'กรุณาอย่าก้มหรือเงยหน้า';
                 else if (!rollOk)  status.textContent = 'กรุณาอย่าเอียงศีรษะ';
                 else if (!yawOk)   status.textContent = 'กรุณามองตรงเข้ากล้อง';
                 else               status.textContent = 'ขยับหน้าให้อยู่กลางกรอบ';
             }
-        });
+        };
 
-        const cam = new Camera(video, {
-            onFrame: async () => { await faceMesh.send({ image: video }); },
-            width: 640, height: 480,
+        // Reuse the acquired stream; Camera.start() would acquire a second one.
+        // Serialize model sends and async result work, including error handling.
+        let resultsWork = Promise.resolve();
+        faceMesh.onResults(results => {
+            resultsWork = processResults(results);
+            resultsWork.catch(() => {});
+            return resultsWork;
         });
-        this._faceMeshCam = cam;  // H3: store for cleanup on error paths
-        cam.start();
+        const fail = stage => {
+            if (!active()) return;
+            this._debug?.event(`camera failure: ${stage}`);
+            this._stopStream(this._camStream);
+            this._goToStep(3);
+            document.getElementById('doneLoadingView').style.display = 'none';
+            document.getElementById('doneResultView').style.display = 'block';
+            this._showDone('error', 'กล้องประมวลผลไม่สำเร็จ — กรุณาลองถ่ายภาพใหม่', true);
+        };
+        const pump = async () => {
+            if (!active() || verified) return;
+            try {
+                if (performance.now() >= this._proximity.deadline) { this._expireProximity(); return; }
+                if (performance.now() >= captureDeadline) { expireCapture(); return; }
+                if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
+                    this._meshWork = Promise.resolve(faceMesh.send({image: video}));
+                    await this._meshWork;
+                    await resultsWork;
+                }
+            } catch (_) { fail('frame'); return; }
+            if (active() && !verified) this._frameTimer = setTimeout(pump, 66);
+        };
+        try {
+            await video.play();
+            if (!active()) return;
+            this._meshWork = Promise.resolve(faceMesh.initialize());
+            await this._meshWork;
+            if (active()) await pump();
+        } catch (_) { fail('startup'); }
     }
 
     async _countdownThenLiveness(video, canvas, guide, status, countdownEl, passiveResult) {
@@ -393,6 +444,7 @@ class CheckinFlow {
                 btn.disabled = true;
                 btn.textContent = 'ไม่รองรับ Bluetooth';
             } else {
+                warn.style.display = 'none';
                 btn.disabled = false;
                 btn.textContent = 'หาอุปกรณ์ในห้อง';
             }
@@ -470,7 +522,11 @@ class CheckinFlow {
             }
             this._proximity = {room, receipt: result.proximity_receipt,
                 deadline: started + result.expires_in * 1000, captureStarted: performance.now()};
-            status.textContent = 'ยืนยันตำแหน่งแล้ว — กรุณาถ่ายภาพภายใน 90 วินาที';
+            if (this._debug) {
+                this._debug.receiptDue = this._proximity.deadline;
+                this._debug.event('new receipt');
+            }
+            status.textContent = 'ยืนยันห้องแล้ว 90 วินาที — ถ่ายภาพได้รอบละ 40 วินาที';
             this._receiptTimer = setInterval(() => {
                 if (!this._proximity) return;
                 const seconds = Math.max(0, Math.ceil((this._proximity.deadline - performance.now()) / 1000));
@@ -489,12 +545,17 @@ class CheckinFlow {
     }
 
     _expireProximity() {
+        this._debug?.event('receipt expired');
         console.info('step=proximity_receipt_expired result=reject details={}');
         this._requestRoomCode();
         document.getElementById('proximityStatus').textContent = 'ผลยืนยันตำแหน่งห้องเรียนหมดอายุ กรุณายืนยันใหม่ก่อนเช็คชื่อ';
     }
 
     retry() {
+        if (this._debug) {
+            this._debug.retries++;
+            this._debug.event('user pressed Retry');
+        }
         if (this._retryRoomCode || !this._proximity || performance.now() >= this._proximity.deadline) {
             this._requestRoomCode();
         } else {
@@ -509,6 +570,7 @@ class CheckinFlow {
         }
         clearInterval(this._receiptTimer);
         console.info('step=capture result=complete details=' + JSON.stringify({elapsed_ms: Math.round(performance.now() - this._proximity.captureStarted)}));
+        this._debug?.event('submit check-in');
         document.getElementById("stepRoomCode").style.display = "none";
         document.getElementById("stepBleRoom").style.display = "none";
         this._retryRoomCode = false;
@@ -603,23 +665,28 @@ class CheckinFlow {
         ctx.setLineDash([]);
     }
 
-    _calcEAR(lm, idx) {
-        const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-        const [p1,p2,p3,p4,p5,p6] = idx.map(i => lm[i]);
-        return (d(p2,p6) + d(p3,p5)) / (2.0 * d(p1,p4));
+    _calcEAR(lm, idx, video) {
+        return EARMetric.eye(lm, idx, video.videoWidth, video.videoHeight);
     }
 
     _stopStream(stream) {
+        this._captureGeneration = (this._captureGeneration || 0) + 1;
+        this._debug?.stopped();
         clearTimeout(this._streamTimeoutId);
+        clearTimeout(this._frameTimer);
         if (this._activeMesh) {
-            try { this._activeMesh.close(); } catch (_) {}
+            const mesh = this._activeMesh;
             this._activeMesh = null;
+            this._meshCleanup = Promise.resolve(this._meshWork).catch(() => {}).then(() => mesh.close())
+                .catch(() => this._debug?.event('camera cleanup failed'));
         }
         if (stream) stream.getTracks().forEach(t => t.stop());
+        this._camStream = null;
         // H3: also stop MediaPipe Camera instance if stored
         if (this._faceMeshCam) {
-            try { this._faceMeshCam.stop(); } catch (_) {}
+            const cam = this._faceMeshCam;
             this._faceMeshCam = null;
+            Promise.resolve().then(() => cam.stop()).catch(() => this._debug?.event('camera stop failed'));
         }
     }
 

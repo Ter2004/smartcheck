@@ -31,6 +31,9 @@ def _require_env(key: str, fallback: str) -> str:
 
 
 class Config:
+    ENABLE_CHECKIN_DEBUG = not _IS_PRODUCTION and os.getenv("ENABLE_CHECKIN_DEBUG", "false").lower() == "true"
+    ALLOW_TEST_ACCOUNTS = not _IS_PRODUCTION and os.getenv("ALLOW_TEST_ACCOUNTS", "false").lower() == "true"
+
     SECRET_KEY = _require_env("FLASK_SECRET_KEY", "dev-fallback-key-not-for-production")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")

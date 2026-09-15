@@ -23,105 +23,38 @@ def _get_supabase():
 
 
 def auto_manage_sessions():
+    from app.services.session_policy import occurrence, state
+    from app.config import Config
     try:
-        sb        = _get_supabase()
-        now       = datetime.now(timezone.utc)
-        local_now = datetime.now(TZ_THAI)
-        today_dow  = local_now.weekday()
-        today_date = local_now.date().isoformat()
-        now_time   = local_now.time()
-
-        # ─── ดึง schedules ที่ตรงกับวันนี้ ─────────────────────────────
-        schedules = (
-            sb.table("schedules")
-            .select("*, courses(id, code, name, teacher_id, is_active)")
-            .eq("day_of_week", today_dow)
-            .execute()
-            .data or []
-        )
-
-        # ดึง beacon แรกที่ active ไว้เป็น default
-        beacons = sb.table("beacons").select("id").eq("is_active", True).limit(1).execute().data or []
-        default_beacon_id = beacons[0]["id"] if beacons else None
-
+        sb = _get_supabase()
+        now = datetime.now(timezone.utc)
+        today = now.astimezone(TZ_THAI).date()
+        schedules = sb.table("schedules").select("*, courses(id, code, name, is_active, is_test_course)").eq("is_active", True).execute().data or []
         for sch in schedules:
             course = sch.get("courses") or {}
-            if not course.get("is_active"):
+            if not course.get("is_active") or (course.get("is_test_course") and not Config.ALLOW_TEST_ACCOUNTS):
                 continue
-
-            course_id  = course["id"]
-            sch_start  = sch["start_time"][:5]   # "HH:MM"
-            sch_end    = sch["end_time"][:5]
-            start_time = _parse_time(sch_start)
-            end_time   = _parse_time(sch_end)
-
-            # ─── Auto-create: สร้าง session ถ้ายังไม่มีของวันนี้ช่วงนี้ ──
-            # คำนวณช่วงเวลาของ schedule เป็น UTC เพื่อ query
-            sched_start_dt = local_now.replace(
-                hour=start_time.hour, minute=start_time.minute,
-                second=0, microsecond=0,
-            ).astimezone(timezone.utc)
-            sched_end_dt = local_now.replace(
-                hour=end_time.hour, minute=end_time.minute,
-                second=0, microsecond=0,
-            ).astimezone(timezone.utc)
-            existing = (
-                sb.table("sessions")
-                .select("id")
-                .eq("course_id", course_id)
-                .gte("start_time", sched_start_dt.isoformat())
-                .lte("start_time", sched_end_dt.isoformat())
-                .execute()
-                .data or []
-            )
-            beacon_id_to_use = sch.get("beacon_id") or default_beacon_id
-            if not existing and beacon_id_to_use:
-                day_name  = DAY_NAMES[today_dow]
-                title     = f"{course['code']} {day_name} {today_date} ({sch_start}–{sch_end})"
-                try:
-                    sb.table("sessions").insert({
-                        "course_id":  course_id,
-                        "beacon_id":  beacon_id_to_use,
-                        "title":      title,
-                        "start_time": sched_start_dt.isoformat(),
-                        "end_time":   None,
-                        "is_open":    False,
-                    }).execute()
-                    _log.info(f"[SCHEDULER] Auto-created: {title}")
-                except Exception as insert_err:
-                    err_str = str(insert_err)
-                    if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
-                        # F-10: UNIQUE(course_id, start_time) already rejected this —
-                        # expected/normal when another scheduler instance (or a
-                        # concurrent manual create) won the race this tick, not an error.
-                        _log.info(f"[SCHEDULER] Auto-create skipped (already exists): {title}")
-                    else:
-                        raise
-
-            # ─── Auto-close: เลยเวลาจบ ────────────────────────────────
-            if now_time >= end_time:
-                # ใช้ Thai midnight แปลงเป็น UTC เพื่อหา session ที่เริ่มวันนี้
-                # (session ที่เริ่มก่อน 07:00 Thai จะมี start_time UTC เป็นวันก่อนหน้า)
-                thai_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-                thai_midnight_utc = thai_midnight.astimezone(timezone.utc)
-                open_sessions = (
-                    sb.table("sessions")
-                    .select("id, title")
-                    .eq("course_id", course_id)
-                    .eq("is_open", True)
-                    .gte("start_time", thai_midnight_utc.isoformat())
-                    .execute()
-                    .data or []
-                )
-                for sess in open_sessions:
-                    sb.table("sessions").update({
-                        "is_open":  False,
-                        "end_time": now.isoformat(),
-                    }).eq("id", sess["id"]).execute()
-                    _log.info(f"[SCHEDULER] Auto-closed: {sess['title']}")
-
-    except Exception as e:
-        _log.error(f"[SCHEDULER] Error: {e}", exc_info=True)
+            if not sch.get("beacon_id"):
+                _log.warning("Schedule %s has no room; skipped", sch["id"])
+                continue
+            # Yesterday covers overnight classes; next seven days populate the calendar.
+            for offset in range(-1, 8):
+                day = today + timedelta(days=offset)
+                if day.weekday() != sch["day_of_week"]:
+                    continue
+                row = occurrence(sch, day)
+                row["title"] = f"{course['code']} {day.isoformat()} ({sch['start_time'][:5]}-{sch['end_time'][:5]})"
+                row["is_open"] = state(row, now) == "open"
+                # Ignore duplicates; never reopen or overwrite a cancelled occurrence.
+                sb.table("sessions").upsert(row, on_conflict="course_id,start_time", ignore_duplicates=True).execute()
+        # is_open is only a display cache. APIs always evaluate timestamps themselves.
+        rows = sb.table("sessions").select("*").gte("end_time", (now-timedelta(days=1)).isoformat()).execute().data or []
+        for row in rows:
+            desired = state(row, now) == "open"
+            if row.get("is_open") != desired:
+                sb.table("sessions").update({"is_open": desired}).eq("id", row["id"]).execute()
+    except Exception:
+        _log.exception("Session scheduler failed")
 
 
 def _parse_time(time_str: str):

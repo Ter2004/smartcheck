@@ -1,6 +1,6 @@
 import secrets
 from functools import wraps
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app, abort
 from app import supabase, supabase_admin
 from app import limiter as _limiter
 from flask_limiter.util import get_remote_address
@@ -18,9 +18,12 @@ def login_required(f):
     """ต้อง login ก่อนถึงจะเข้าหน้านี้ได้"""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if "user_id" not in session:
+        if "user_id" not in session or session.get('policy_version') != 2:
+            session.clear()
             flash("กรุณาเข้าสู่ระบบก่อน", "warning")
             return redirect(url_for("auth.login"))
+        if session.get('is_test_account') and not current_app.config.get('ALLOW_TEST_ACCOUNTS', False):
+            abort(403)
         return f(*args, **kwargs)
     return decorated
 
@@ -74,6 +77,10 @@ def login():
             flash("บัญชีถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแล", "danger")
             return redirect(url_for("auth.login"))
 
+        if user.get('is_test_account') and not current_app.config.get('ALLOW_TEST_ACCOUNTS', False):
+            flash('บัญชีทดสอบใช้ได้เฉพาะระบบทดสอบ', 'danger')
+            return redirect(url_for('auth.login'))
+
         # 3) Session regeneration — ป้องกัน Session Fixation Attack
         # ต้องทำก่อน set ข้อมูล user ใด ๆ ลง session
         #
@@ -97,6 +104,8 @@ def login():
 
         # 4) เก็บ session ใหม่หลัง regenerate แล้ว
         session["user_id"]      = str(sb_user.id)
+        session['policy_version'] = 2
+        session['is_test_account'] = bool(user.get('is_test_account'))
         session["user_role"]    = user["role"]
         session["user_name"]    = user["full_name"]
         session["access_token"] = res.session.access_token

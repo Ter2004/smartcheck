@@ -1,3 +1,4 @@
+from app.services.session_policy import state as session_state, bounds as session_bounds
 import logging
 import time
 import cv2
@@ -122,9 +123,8 @@ def checkin():
 
     # ─── 2. BLE RSSI check ───────────────────────────────────────────────────
     if current_app.config.get("BLE_CHECK_ENABLED", False):
-        rssi_threshold = -70  # dBm — must be within range
-        ble_skip       = data.get("ble_skip", False)
-        if not ble_skip and (ble_rssi is None or ble_rssi < rssi_threshold):
+        rssi_threshold = (sess.get("beacons") or {}).get("rssi_threshold", -70)
+        if ble_rssi is None or ble_rssi < rssi_threshold:
             _log.warning(f"[BLE] RSSI fail: rssi={ble_rssi} threshold={rssi_threshold}")
             reject("ble_proximity_failed")
             return jsonify({"ok": False, "error": "ไม่พบสัญญาณ Beacon ในห้องเรียน"}), 400
@@ -364,12 +364,11 @@ def checkin():
 
     # ─── 8. Determine attendance status (present / late) ─────────────────────
     now = datetime.now(timezone.utc)
-    start_time_str = sess.get("start_time", "")
-    status = "present"
-    if start_time_str:
-        start_time = dtparser.parse(start_time_str)
-        if now > start_time and (now - start_time).total_seconds() > 900:
-            status = "late"
+    # Recheck after model work; the DB trigger also checks during the insert.
+    fresh = supabase_admin.table("sessions").select("*").eq("id", session_id).maybe_single().execute().data
+    if not fresh or session_state(fresh, now) != "open":
+        return jsonify(ok=False, error="หมดเวลาเช็คชื่อหรือคาบถูกยกเลิกแล้ว"), 400
+    status = "late" if now >= session_bounds(fresh)[1] else "present"
 
     # ─── 9. Insert attendance record ─────────────────────────────────────────
     # ใช้ upsert + on_conflict เพื่อป้องกัน TOCTOU race condition:
@@ -441,7 +440,7 @@ def _eligible(data):
     with stage("session_lookup"):
         sess_res = (
             supabase_admin.table("sessions")
-            .select("id, course_id, is_open, beacon_id, start_time, end_time, checkin_duration, beacons(rssi_threshold, ble_room_code)")
+            .select("*, beacons(rssi_threshold, ble_room_code), courses(is_active, is_test_course), schedules(is_active)")
             .eq("id", session_id)
             .maybe_single()
             .execute()
@@ -450,7 +449,12 @@ def _eligible(data):
         reject("session_missing")
         return None, (jsonify({"ok": False, "error": "ไม่พบ session"}), 404)
     sess = sess_res.data
-    if not sess.get("is_open"):
+    course = sess.get('courses') or {}
+    if not course.get('is_active', True) or (course.get('is_test_course') and not current_app.config.get('ALLOW_TEST_ACCOUNTS', False)):
+        return None, (jsonify(ok=False, error='คาบนี้ไม่เปิดให้ใช้งาน'), 403)
+    if sess.get('schedules') and not sess['schedules'].get('is_active'):
+        return None, (jsonify(ok=False, error='ตารางเรียนถูกยกเลิกแล้ว'), 400)
+    if session_state(sess) != "open":
         reject("session_closed")
         return None, (jsonify({"ok": False, "error": "คาบเรียนนี้ปิดการเช็คชื่อแล้ว"}), 400)
 
@@ -497,15 +501,6 @@ def _eligible(data):
         reject("course_not_enrolled")
         return None, (jsonify({"ok": False, "error": "คุณไม่ได้ลงทะเบียนในรายวิชานี้"}), 403)
 
-    # ─── Check-in window (checkin_duration minutes from start) ───────────────
-    checkin_duration = sess.get("checkin_duration")
-    if checkin_duration and sess.get("start_time"):
-        from datetime import timedelta
-        open_at  = dtparser.parse(sess["start_time"])
-        deadline = open_at + timedelta(minutes=int(checkin_duration))
-        if datetime.now(timezone.utc) > deadline:
-            reject("checkin_deadline_exceeded")
-            return None, (jsonify({"ok": False, "error": f"หมดเวลาเช็คชื่อแล้ว (รับ {checkin_duration} นาที)"}), 400)
     return sess, None
 
 

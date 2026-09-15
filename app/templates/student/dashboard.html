@@ -18,7 +18,7 @@
         <p class="text-sm font-medium text-amber-800">ยังไม่ได้ลงทะเบียนใบหน้า</p>
         <p class="text-xs text-amber-600 mt-0.5">ลงทะเบียนใบหน้าเพื่อเริ่มใช้งานระบบเช็คชื่อ</p>
     </div>
-    <a href="{{ url_for('student.enroll_face') }}"
+    <a href="{{ url_for('student.face_change_request') if enrolled else url_for('student.enroll_face') }}"
        class="flex-shrink-0 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg transition-colors">
         เริ่มลงทะเบียน
     </a>
@@ -73,9 +73,9 @@
         </div>
         <h2 class="text-sm font-semibold text-slate-900 mb-1">ลงทะเบียนใบหน้า</h2>
         <p class="text-xs text-slate-500 mb-4 flex-1">บันทึก Face Embedding สำหรับยืนยันตัวตนเมื่อเช็คชื่อ</p>
-        <a href="{{ url_for('student.enroll_face') }}"
+        <a href="{{ url_for('student.face_change_request') if enrolled else url_for('student.enroll_face') }}"
            class="inline-flex items-center justify-center gap-2 {% if enrolled %}bg-white border border-slate-200 hover:bg-slate-50 text-slate-700{% else %}bg-indigo-600 hover:bg-indigo-700 text-white{% endif %} text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-150 active:scale-95">
-            {% if enrolled %}ลงทะเบียนใหม่{% else %}เริ่มลงทะเบียน{% endif %}
+            {% if enrolled %}ขอเปลี่ยนใบหน้า{% else %}เริ่มลงทะเบียน{% endif %}
         </a>
         {% if enrolled %}
         <button type="button" onclick="openWithdrawModal()"

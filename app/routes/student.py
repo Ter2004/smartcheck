@@ -3,10 +3,12 @@ import json
 import cv2
 import numpy as np
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app
+from app.services.enrollment_policy import authorization as can_enroll
+from app.services.session_policy import state as session_state, decorate as decorate_session
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
 from app.services.security_service import (
-    create_device_token, csrf_protect,
+    create_device_token, csrf_protect, csrf_protect_form,
     compute_embedding_integrity_hash,
 )
 from app.services.face_service import (
@@ -19,6 +21,26 @@ from app.services.face_service import (
 from app import limiter as _limiter
 
 student_bp = Blueprint("student", __name__)
+
+
+@student_bp.route('/face-change', methods=['GET', 'POST'])
+@login_required
+@role_required('student')
+@csrf_protect_form
+def face_change_request():
+    uid = session['user_id']
+    if request.method == 'POST':
+        reason = request.form.get('reason', '').strip()
+        if not 5 <= len(reason) <= 1000:
+            return jsonify(error='กรุณาระบุเหตุผล 5–1000 ตัวอักษร'), 400
+        try:
+            supabase_admin.table('face_change_requests').insert({'user_id': uid, 'reason': reason}).execute()
+            flash('ส่งคำขอแล้ว — ผู้ดูแลต้องตรวจสอบตัวตนก่อนอนุมัติ', 'success')
+        except Exception:
+            flash('ส่งคำขอไม่ได้ หรือมีคำขอที่ยังไม่เสร็จอยู่แล้ว', 'warning')
+        return redirect(url_for('student.face_change_request'))
+    rows = supabase_admin.table('face_change_requests').select('*').eq('user_id', uid).order('created_at', desc=True).limit(20).execute().data or []
+    return render_template('student/face_change.html', requests=rows, can_enroll=can_enroll(supabase_admin, uid))
 
 # ─── Enrollment thresholds ────────────────────────────────────────────────────
 MAX_RETRY             = 3      # max outlier-retry rounds (server-enforced — A4)
@@ -82,6 +104,8 @@ def enroll_face():
     )
     bio = res.data if res else None
     already_enrolled = bool(bio and bio.get("face_embeddings") and bio.get("consent_given"))
+    if not can_enroll(supabase_admin, user_id):
+        return redirect(url_for("student.face_change_request"))
     # Reset server-side retry counters when page is (re)loaded
     session.pop("enroll_retry", None)
     session.pop("consent_given_at", None)
@@ -111,13 +135,16 @@ def checkin():
 
     baseline_ear = bio.get("baseline_ear") or 0.25
 
+    from datetime import datetime, timezone
     open_sessions = (
         supabase_admin.table("sessions")
         .select("*, courses(id, code, name), beacons(uuid, rssi_threshold, room_name)")
-        .eq("is_open", True)
+        .gte("checkin_closes_at", datetime.now(timezone.utc).isoformat())
         .execute()
         .data or []
     )
+    open_sessions = [decorate_session(row) for row in open_sessions if session_state(row) == "open"]
+
 
     enrolled_course_ids = {
         row["course_id"]
@@ -130,23 +157,16 @@ def checkin():
         )
     }
 
-    session_data = next(
-        (s for s in open_sessions if s["course_id"] in enrolled_course_ids),
-        None,
-    )
-
-    already_checked = False
-    if session_data:
-        res = (
-            supabase_admin.table("attendance")
-            .select("id")
-            .eq("session_id", session_data["id"])
-            .eq("student_id", user_id)
-            .limit(1)
-            .execute()
-        )
-        if res and res.data:
-            already_checked = True
+    open_sessions = [row for row in open_sessions if row['course_id'] in enrolled_course_ids]
+    current_attendance = (supabase_admin.table('attendance').select('session_id').eq('student_id', user_id)
+        .in_('session_id', [row['id'] for row in open_sessions]).execute().data or []) if open_sessions else []
+    checked_now = {row['session_id'] for row in current_attendance}
+    requested = request.args.get('session_id')
+    if requested:
+        session_data = next((row for row in open_sessions if row['id'] == requested), None)
+    else:
+        session_data = next((row for row in open_sessions if row['id'] not in checked_now), next(iter(open_sessions), None))
+    already_checked = bool(session_data and session_data['id'] in checked_now)
 
     import datetime as _dt_mod
     _TH_S = _dt_mod.timezone(_dt_mod.timedelta(hours=7))
@@ -165,7 +185,7 @@ def checkin():
 
     week_sessions = (
         supabase_admin.table("sessions")
-        .select("id, course_id, is_open, start_time, end_time")
+        .select("*, courses(code, name, section), beacons(room_name)")
         .in_("course_id", list(enrolled_course_ids))
         .gte("start_time", f"{_week_start}T00:00:00+07:00")
         .lte("start_time", f"{_week_end}T23:59:59+07:00")
@@ -173,7 +193,8 @@ def checkin():
         .data or []
     ) if enrolled_course_ids else []
 
-    week_session_map = {s["course_id"]: s for s in week_sessions}
+    week_sessions = sorted([decorate_session(row) for row in week_sessions], key=lambda row: row['start_time'])
+    week_session_map = {}  # compatibility only; occurrences are rendered individually
 
     checked_session_ids = set()
     if week_sessions:
@@ -199,6 +220,7 @@ def checkin():
         already_checked=already_checked,
         week_schedules=week_schedules,
         week_session_map=week_session_map,
+        week_sessions=week_sessions,
         checked_session_ids=checked_session_ids,
         today_dow=_now_th.weekday(),
     )
@@ -216,6 +238,8 @@ def checkin():
 def record_consent():
     from datetime import datetime, timezone
     user_id = session["user_id"]
+    if not can_enroll(supabase_admin, user_id):
+        return jsonify(status="error", message="กรุณาขออนุมัติเปลี่ยนใบหน้าก่อน"), 403
     now_iso = datetime.now(timezone.utc).isoformat()
     session["consent_given_at"] = now_iso
     session["consent_ip"]       = request.remote_addr
@@ -289,6 +313,8 @@ def api_enroll():
 
     user_id = session["user_id"]
     data    = request.get_json()
+    if not can_enroll(supabase_admin, user_id):
+        return jsonify(status="error", message="ลงทะเบียนแล้ว — ต้องให้ผู้ดูแลอนุมัติการเปลี่ยนใบหน้าก่อน"), 403
 
     # ── 1. Validate ───────────────────────────────────────────────────────────
     # A5: consent must be recorded server-side via /api/consent before enrolling
@@ -740,17 +766,21 @@ def api_enroll():
     except Exception as ih_err:
         _log(user_id, "integrity_hash", "warning", str(ih_err)[:80])
 
-    supabase_admin.table("student_biometrics").upsert({
-        "user_id":         user_id,
-        "face_embeddings": embeddings,
-        "baseline_ear":    baseline_ear,
-        "baseline_ear_metric": "pixel-v1" if baseline_ear is not None and data.get("baseline_ear_metric") == "pixel-v1" else None,
-        "consent_given":   True,
-        "consent_at":      session.get("consent_given_at") or now_iso,
-        "enrolled_at":     now_iso,
-        "integrity_hash":  integrity_hash,
-        "verify_attempts": 0,
-    }, on_conflict="user_id").execute()
+    try:
+        supabase_admin.table("student_biometrics").upsert({
+            "user_id":         user_id,
+            "face_embeddings": embeddings,
+            "baseline_ear":    baseline_ear,
+            "baseline_ear_metric": "pixel-v1" if baseline_ear is not None and data.get("baseline_ear_metric") == "pixel-v1" else None,
+            "consent_given":   True,
+            "consent_at":      session.get("consent_given_at") or now_iso,
+            "enrolled_at":     now_iso,
+            "integrity_hash":  integrity_hash,
+            "verify_attempts": 0,
+        }, on_conflict="user_id").execute()
+    except Exception:
+        return jsonify(status="error", message="สิทธิ์ลงทะเบียนหรือความยินยอมเปลี่ยนแล้ว กรุณาโหลดหน้าใหม่"), 409
+
 
     # Upload first capture frame as profile image (non-fatal)
     try:
@@ -782,212 +812,8 @@ def api_enroll():
 @_limiter.limit("10 per minute")
 @csrf_protect
 def api_self_verify():
-    """
-    Verify one live shot against the 5 pending embeddings stored in DB.
-    B2: user gets up to 2 attempts before pending embeddings are wiped.
-    A7: threshold raised to 0.80 (from 0.75).
-    On success: set consent_given=True and upload profile image.
+    return jsonify(status="error", message="ขั้นตอนยืนยันแบบเก่าปิดใช้งานแล้ว"), 410
 
-    Pipeline: validate_frame → spoof_check → extract_embedding →
-              continuity_check → verify_face_multi → finalize
-    """
-    from app.services.face_service import (
-        extract_embedding, verify_face_multi,
-        server_validate_frame, check_anti_spoof,
-    )
-
-    user_id = session["user_id"]
-
-    data       = request.get_json()
-    verify_img = (data or {}).get("face_image")
-    if not verify_img:
-        return jsonify({"status": "error", "message": "ไม่พบรูปภาพ"}), 400
-
-    # ── Zero-trust frame validation ───────────────────────────────────────────
-    v = server_validate_frame(verify_img)
-    if not v["valid"]:
-        _log(user_id, "self_verify_validate", "fail",
-             f"reason={v['reason']} meta={v['metadata']}")
-        return jsonify({
-            "status":  "error",
-            "reason":  v["reason"],
-            "message": f"รูปภาพไม่ถูกต้อง ({v['reason']}) — กรุณาถ่ายใหม่",
-        }), 400
-
-    # ── Server-side spoof check (MiniFASNet) ──────────────────────────────────
-    try:
-        is_real = check_anti_spoof(verify_img)
-        _log(user_id, "self_verify_spoof", "pass" if is_real else "spoof")
-        if not is_real:
-            return jsonify({
-                "status":  "spoof_detected",
-                "message": "ตรวจพบภาพปลอม — กรุณาใช้ใบหน้าจริงเท่านั้น",
-            }), 400
-    except Exception as e:
-        _log(user_id, "self_verify_spoof", "exception", str(e)[:80])
-        return jsonify({
-            "status":  "error",
-            "message": "ไม่สามารถตรวจสอบใบหน้าได้ — กรุณาลองใหม่",
-        }), 400
-
-    # B2 / H2: track verify attempts in DB (not session) to prevent concurrent-tab bypass
-    MAX_VERIFY_ATTEMPTS = 2
-
-    # ── Load pending embeddings + current attempt count ───────────────────────
-    bio_res = (
-        supabase_admin.table("student_biometrics")
-        .select("face_embeddings, baseline_ear, verify_attempts")
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    if not bio_res or not bio_res.data:
-        return jsonify({"status": "error", "message": "ไม่พบข้อมูล enrollment — กรุณาเริ่มใหม่"}), 400
-
-    try:
-        verify_attempts = int(bio_res.data.get("verify_attempts") or 0)
-    except (ValueError, TypeError):
-        verify_attempts = 0
-
-    # ── Check attempt limit BEFORE expensive DeepFace call ───────────────────
-    if verify_attempts >= MAX_VERIFY_ATTEMPTS:
-        return jsonify({
-            "status":  "error",
-            "message": "ยืนยันตัวตนเกินจำนวนครั้งที่กำหนด — กรุณาเริ่มลงทะเบียนใหม่",
-        }), 400
-    stored_embeddings = bio_res.data.get("face_embeddings") or []
-    if not stored_embeddings:
-        return jsonify({"status": "error", "message": "ไม่พบ embedding — กรุณาเริ่มใหม่"}), 400
-
-    # ── Extract verify shot ───────────────────────────────────────────────────
-    try:
-        live_emb = extract_embedding(verify_img)
-    except Exception:
-        return jsonify({"status": "error", "message": "ตรวจจับใบหน้าไม่สำเร็จ — กรุณาจัดหน้าให้อยู่ในกรอบ"}), 400
-
-    # ── Server-side Face Continuity Check (self-verify) ───────────────────────
-    liveness_embeddings = session.get("liveness_embeddings", [])
-    if not liveness_embeddings:
-        _log(user_id, "self_verify_continuity", "blocked", "no liveness embeddings in session")
-        return jsonify({
-            "status":  "continuity_fail",
-            "message": "กรุณาทำ Liveness Check ก่อน — กรุณาเริ่มใหม่",
-        }), 400
-
-    max_sim = max(cosine_similarity(live_emb, ref) for ref in liveness_embeddings)
-    if max_sim < CONTINUITY_THRESHOLD:
-        _log(user_id, "self_verify_continuity", "fail", f"max_sim={max_sim:.4f} threshold={CONTINUITY_THRESHOLD}")
-        return jsonify({
-            "status":  "continuity_fail",
-            "message": "ตรวจพบใบหน้าไม่ตรงกับ Liveness Check — กรุณาเริ่มใหม่",
-        }), 400
-
-    _log(user_id, "self_verify_continuity", "pass", f"max_sim={max_sim:.4f}")
-
-    # ── Compare against stored embeddings ─────────────────────────────────────
-    verify_result = verify_face_multi(live_emb, stored_embeddings, SELF_VERIFY_THRESHOLD)
-    best_sim = verify_result["best_similarity"]
-    _log(user_id, "self_verify",
-         "pass" if verify_result["verified"] else "fail",
-         f"best_sim={best_sim:.4f} avg={verify_result['avg_similarity']:.4f} "
-         f"threshold={SELF_VERIFY_THRESHOLD} attempt={verify_attempts+1}/{MAX_VERIFY_ATTEMPTS}")
-
-    if not verify_result["verified"]:
-        new_attempts = verify_attempts + 1
-        if new_attempts >= MAX_VERIFY_ATTEMPTS:
-            # Wipe pending embeddings + reset counter — must re-enroll from scratch
-            supabase_admin.table("student_biometrics") \
-                .update({"face_embeddings": None, "verify_attempts": 0}) \
-                .eq("user_id", user_id).execute()
-            session.pop("enroll_baseline_ear", None)
-            _log(user_id, "self_verify", "wiped", "max_attempts_reached")
-            return jsonify({
-                "status":  "failed",
-                "message": "ยืนยันตัวตนไม่สำเร็จ — กรุณาลงทะเบียนใบหน้าใหม่ตั้งแต่ต้น",
-            })
-        # Still have attempts left — increment DB counter then let user retry
-        supabase_admin.table("student_biometrics") \
-            .update({"verify_attempts": new_attempts}) \
-            .eq("user_id", user_id).execute()
-        remaining = MAX_VERIFY_ATTEMPTS - new_attempts
-        return jsonify({
-            "status":             "retry",
-            "message":            f"ยืนยันไม่ผ่าน — กรุณาลองอีกครั้ง (เหลืออีก {remaining} ครั้ง)",
-            "remaining_attempts": remaining,
-        })
-
-    # ── Finalize: set consent_given=True ──────────────────────────────────────
-    from datetime import datetime, timezone
-    baseline_ear = session.get("enroll_baseline_ear") or bio_res.data.get("baseline_ear")
-    now_iso = datetime.now(timezone.utc).isoformat()
-
-    try:
-        # Sprint 2B: compute integrity hash before writing
-        integrity_hash = compute_embedding_integrity_hash(
-            user_id,
-            stored_embeddings,
-            current_app.config["EMBEDDING_INTEGRITY_SALT"],
-        )
-
-        supabase_admin.table("student_biometrics").update({
-            "consent_given":   True,
-            "consent_at":      session.get("consent_given_at") or now_iso,
-            "enrolled_at":     now_iso,
-            "baseline_ear":    baseline_ear,
-            "baseline_ear_metric": None,  # obsolete flow has no metric provenance
-            "integrity_hash":  integrity_hash,
-            "verify_attempts": 0,   # H2: reset counter on successful enrollment
-        }).eq("user_id", user_id).execute()
-
-        # Upload self-verify shot as profile image (non-fatal)
-        # PDPA: bucket must be set to PRIVATE in Supabase Dashboard → Storage → face-images
-        # Access is via signed URL generated at render time (1-hour expiry)
-        try:
-            import base64 as _b64
-            raw = verify_img.split(",")[1] if "," in verify_img else verify_img
-            face_path = f"{user_id}.jpg"
-            supabase_admin.storage.from_("face-images").upload(
-                face_path, _b64.b64decode(raw),
-                file_options={"content-type": "image/jpeg", "upsert": "true"},
-            )
-            # Store path only (not a public URL) — signed URL generated on demand
-            supabase_admin.table("student_biometrics") \
-                .update({"face_image_url": face_path}).eq("user_id", user_id).execute()
-        except Exception as upload_err:
-            _log(user_id, "image_upload", "warning", str(upload_err)[:80])
-
-        # Sprint 1B: generate HMAC device token bound to this device fingerprint
-        device_fingerprint = (data or {}).get("device_fingerprint", "")
-        device_token = None
-        if device_fingerprint:
-            device_token = create_device_token(
-                user_id,
-                device_fingerprint,
-                current_app.config["SECRET_KEY"],
-            )
-
-        # Clean up session (รวม liveness embeddings)
-        session.pop("enroll_baseline_ear", None)
-        session.pop("consent_given_at", None)
-        session.pop("liveness_embeddings", None)
-
-        _log(user_id, "enroll_finalize", "success",
-             f"best_sim={best_sim:.4f} device_bound={bool(device_fingerprint)}")
-        return jsonify({
-            "status":       "success",
-            "similarity":   best_sim,
-            "message":      "ลงทะเบียนใบหน้าสำเร็จ!",
-            "device_token": device_token,   # None if no fingerprint sent
-        })
-
-    except Exception as e:
-        _log(user_id, "enroll_finalize", "error", str(e)[:80])
-        return jsonify({"status": "error", "message": "บันทึกข้อมูลไม่สำเร็จ — กรุณาลองใหม่"}), 500
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Inline Spoof Check API (Step 2, 3, 4 of enrollment)
-# ─────────────────────────────────────────────────────────────────────────────
 
 @student_bp.route("/api/spoof_check", methods=["POST"])
 @login_required

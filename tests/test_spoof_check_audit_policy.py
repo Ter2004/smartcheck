@@ -50,6 +50,8 @@ class _Query:
         return self
 
     def execute(self):
+        if self.table_name == "users":
+            return _Result({"face_enrolled_once": False})
         if self.table_name == "consent_logs":
             return _Result([{"consent_given": True}])
         return _Result([])

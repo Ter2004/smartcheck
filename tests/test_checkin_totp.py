@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import os
 import re
 import subprocess
@@ -29,7 +30,9 @@ class Database:
         for method in ['select', 'eq', 'neq', 'maybe_single']:
             getattr(query, method).return_value = query
         data = {
-            'sessions': {'id': 'session', 'course_id': 'course', 'is_open': True},
+            'sessions': {'id': 'session', 'course_id': 'course', 'is_open': True, 'session_kind': 'makeup',
+                         'start_time': (datetime.now(timezone.utc)-timedelta(minutes=5)).isoformat(),
+                         'end_time': (datetime.now(timezone.utc)+timedelta(hours=1)).isoformat()},
             'course_enrollments': {'id': 'enrollment'},
             'users': {'device_id': ''},
             'student_biometrics': {
@@ -70,7 +73,7 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.web.register_blueprint(route.api_checkin_bp)
         self.client = self.web.test_client()
         with self.client.session_transaction() as session:
-            session.update(user_id='student', user_role='student', csrf_token='csrf')
+            session.update(policy_version=2, user_id='student', user_role='student', csrf_token='csrf')
         self.payload = dict(session_id='session', liveness_action='passive',
                             face_image='20', face_images=['20', '80', '140'],
                             ear_samples=[.25, .26], room_code=totp.generate_code(SECRET, NOW))
@@ -227,7 +230,7 @@ class IntegratedTOTPTests(unittest.TestCase):
         def table(name):
             query = original_table(name)
             if name == 'sessions':
-                query.execute.return_value.data['is_open'] = False
+                query.execute.return_value.data['cancelled_at'] = datetime.now(timezone.utc).isoformat()
             return query
         with patch.object(self.db, 'table', side_effect=table):
             with self.assertLogs('smartcheck', level='INFO') as logs:

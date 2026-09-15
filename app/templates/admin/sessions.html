@@ -4,13 +4,13 @@
 {% block content %}
 <div class="mb-8">
     <h1 class="text-xl font-semibold text-slate-900">คาบเรียน</h1>
-    <p class="text-sm text-slate-500 mt-0.5">สร้างคาบเรียนให้อาจารย์แต่ละวิชา</p>
+    <p class="text-sm text-slate-500 mt-0.5">คาบตามตารางและคาบชดเชย</p>
 </div>
 
 <!-- Create session form -->
 <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
-    <h2 class="text-sm font-semibold text-slate-800 mb-1">สร้างคาบเรียนใหม่</h2>
-    <p class="text-xs text-slate-400 mb-5">สร้างคาบเรียนไว้ล่วงหน้า — อาจารย์จะกดเปิด/ปิดเองได้ตามเวลาจริง</p>
+    <h2 class="text-sm font-semibold text-slate-800 mb-1">กำหนดคาบชดเชย</h2>
+    <p class="text-xs text-slate-400 mb-5">กำหนดวันและเวลาเป็นเวลาไทย ระบบเปิด–ปิดอัตโนมัติ และเก็บเหตุผลไว้ในประวัติ</p>
 
     <script>
     const ALL_COURSES = {{ courses | tojson }};
@@ -29,6 +29,14 @@
     </script>
 
     <form method="POST" action="{{ url_for('admin.session_create') }}">
+        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+        {% for field, label in [('start_time','เริ่มคาบ'),('end_time','จบคาบ'),('checkin_opens_at','เปิดรับเช็คชื่อ'),('late_at','เริ่มนับสาย'),('checkin_closes_at','ปิดรับเช็คชื่อ')] %}
+        <label>{{ label }} (เวลาไทย)<input type="datetime-local" name="{{ field }}" class="border p-2 block w-full" required></label>
+        {% endfor %}
+        <label>เหตุผลคาบชดเชย<textarea name="reason" required minlength="5" maxlength="1000" class="border p-2 block w-full"></textarea></label>
+        </div>
+
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1.5">อาจารย์</label>
@@ -102,20 +110,16 @@
                         <span class="text-xs text-slate-500 font-mono">{{ s.start_time | thai_time('%d/%m/%y') }}</span>
                     </td>
                     <td class="px-4 py-3.5">
-                        {% if s.is_open %}
-                        <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
-                            <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>เปิด
-                        </span>
-                        {% else %}
-                        <span class="text-xs font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">ปิด</span>
-                        {% endif %}
+                        {{ s.state_label }}
                     </td>
                     <td class="px-4 py-3.5">
                         <form method="POST" action="{{ url_for('admin.session_delete', session_id=s.id) }}"
-                              onsubmit="return confirm('ลบคาบนี้?')">
+                              onsubmit="return confirm('ยกเลิกคาบนี้โดยเก็บประวัติเดิม?')">
+                            <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                            <input name="reason" required minlength="5" maxlength="1000" placeholder="เหตุผลยกเลิกคาบ" class="border p-1">
                             <button type="submit"
                                     class="text-xs text-rose-500 hover:text-rose-700 border border-rose-200 hover:border-rose-300 px-2.5 py-1 rounded-lg transition-colors">
-                                ลบ
+                                ยกเลิกคาบ
                             </button>
                         </form>
                     </td>
@@ -129,4 +133,18 @@
         </table>
     </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+const makeupForm = document.querySelector('form[action="{{ url_for("admin.session_create") }}"]');
+if (makeupForm) {
+    const fields = makeupForm.elements;
+    fields.start_time.addEventListener('change', () => {
+        fields.checkin_opens_at.value = fields.start_time.value;
+        const start = new Date(fields.start_time.value + 'Z');
+        if (Number.isFinite(start.getTime())) fields.late_at.value = new Date(start.getTime() + 15 * 60000).toISOString().slice(0, 16);
+    });
+    fields.end_time.addEventListener('change', () => { fields.checkin_closes_at.value = fields.end_time.value; });
+}
+</script>
 {% endblock %}

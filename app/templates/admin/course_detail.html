@@ -56,7 +56,7 @@
                 <td class="px-4 py-3 text-sm text-slate-600">{{ s.beacons.room_name if s.beacons else '—' }}</td>
                 <td class="px-4 py-3 text-right">
                     <form method="POST" action="{{ url_for('admin.schedule_delete', course_id=course.id, schedule_id=s.id) }}"
-                          onsubmit="return confirm('ลบตารางนี้?')">
+                          onsubmit="return confirm('ลบตารางนี้?')"><input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}"><input name="reason" required minlength="5" maxlength="1000" placeholder="เหตุผลยกเลิกตาราง" class="border p-1">
                         <button type="submit"
                                 class="text-xs text-rose-500 hover:text-rose-700 border border-rose-200 hover:border-rose-300 px-2.5 py-1 rounded-lg transition-colors">
                             ลบ
@@ -127,6 +127,11 @@
             <h3 class="text-base font-semibold text-slate-900">เพิ่มตารางเรียน — {{ course.code }}</h3>
         </div>
         <form method="POST" action="{{ url_for('admin.schedule_add', course_id=course.id) }}" class="px-6 py-5 space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+            <label class="block">เปิดก่อนเริ่มคาบ (นาที)<input type="number" name="open_before_minutes" value="0" min="0" max="60" required class="border p-2"></label>
+            <label class="block">เริ่มนับสายหลังเริ่มคาบ (นาที)<input type="number" name="late_after_minutes" value="15" min="0" max="1440" required class="border p-2"></label>
+            <label class="block">ปิดรับหลังเริ่มคาบ (นาที; เว้นว่างเพื่อปิดเมื่อจบคาบ)<input type="number" name="close_after_minutes" min="1" max="1440" class="border p-2"></label>
+
             <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1.5">วัน</label>
                 <select name="day_of_week"
@@ -142,7 +147,7 @@
             </div>
             <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1.5">ห้องเรียน (Beacon)</label>
-                <select name="beacon_id"
+                <select name="beacon_id" required
                         class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     <option value="">— ไม่ระบุ —</option>
                     {% for b in beacons %}

@@ -63,72 +63,17 @@
     </a>
     <h1 class="text-xl font-semibold text-slate-900 mb-6">เช็คชื่อเข้าเรียน</h1>
 
-    <!-- ─── ตารางเรียนสัปดาห์นี้ ─── -->
-    {% set day_names_short = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.'] %}
-    {% if week_schedules %}
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
-        <div class="px-5 py-4 border-b border-slate-100">
-            <h2 class="text-sm font-semibold text-slate-800">ตารางเรียนสัปดาห์นี้</h2>
-        </div>
-        <table class="w-full">
-            <thead>
-                <tr class="bg-slate-50 border-b border-slate-200">
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">วัน</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">วิชา</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5 hidden sm:table-cell">เวลา</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">สถานะ</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">
-            {% for sch in week_schedules %}
-                {% set ws = week_session_map.get(sch.course_id) %}
-                {% set is_today = (sch.day_of_week == today_dow) %}
-                <tr class="{% if is_today %}bg-indigo-50/50 border-l-2 border-l-indigo-400{% endif %} hover:bg-slate-50 transition-colors">
-                    <td class="px-4 py-3 text-xs font-medium {% if is_today %}text-indigo-700{% else %}text-slate-600{% endif %}">
-                        {{ day_names_short[sch.day_of_week] }}
-                    </td>
-                    <td class="px-4 py-3">
-                        <p class="text-sm font-medium text-slate-800">{{ sch.courses.code }}</p>
-                        <p class="text-xs text-slate-400">{{ sch.beacons.room_name if sch.beacons else '—' }}</p>
-                    </td>
-                    <td class="px-4 py-3 hidden sm:table-cell">
-                        <span class="font-mono text-xs text-slate-500">{{ sch.start_time[:5] }}–{{ sch.end_time[:5] }}</span>
-                    </td>
-                    <td class="px-4 py-3">
-                        {% if not ws %}
-                        <span class="inline-flex items-center gap-1 text-xs text-slate-400">
-                            <span class="w-2 h-2 bg-slate-300 rounded-full"></span>ยังไม่เปิด
-                        </span>
-                        {% elif ws.is_open %}
-                        <div class="flex items-center gap-2">
-                            <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-                                <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>เปิดอยู่
-                            </span>
-                            <button onclick="var el=document.getElementById('checkin-camera');if(el)el.scrollIntoView({behavior:'smooth'})"
-                                    class="text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg transition-colors">
-                                เช็คชื่อ
-                            </button>
-                        </div>
-                        {% elif ws.id in checked_session_ids %}
-                        <span class="inline-flex items-center gap-1 text-xs font-medium text-indigo-600">
-                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>เช็คแล้ว
-                        </span>
-                        {% elif ws.end_time %}
-                        <span class="inline-flex items-center gap-1 text-xs text-rose-500">
-                            <span class="w-2 h-2 bg-rose-400 rounded-full"></span>ปิดแล้ว
-                        </span>
-                        {% else %}
-                        <span class="inline-flex items-center gap-1 text-xs text-slate-400">
-                            <span class="w-2 h-2 bg-slate-300 rounded-full"></span>ยังไม่เปิด
-                        </span>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
+    <div class="bg-white rounded-xl border p-4 mb-6">
+    <h2 class="font-semibold mb-3">คาบเรียนสัปดาห์นี้ (เวลาไทย)</h2>
+    {% for row in week_sessions %}
+    <div class="border-t py-3">
+    <p>{{ row.courses.code }}{% if row.courses.section %} กลุ่ม {{ row.courses.section }}{% endif %} — {{ row.start_time | thai_time('%d/%m %H:%M') }}–{{ row.end_time | thai_time('%H:%M') }}</p>
+    <p>{{ row.beacons.room_name if row.beacons else 'ยังไม่ระบุห้อง' }} · {{ row.state_label }}</p>
+    {% if row.id in checked_session_ids %}<span>เช็คชื่อแล้ว</span>
+    {% elif row.is_open %}<a class="text-indigo-600 underline" href="{{ url_for('student.checkin', session_id=row.id) }}">เช็คชื่อคาบนี้</a>{% endif %}
     </div>
-    {% endif %}
+    {% else %}<p>ยังไม่มีคาบในสัปดาห์นี้</p>{% endfor %}
+    </div>
 
     {% if not session_data %}
     <div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3">
@@ -242,7 +187,7 @@
 <script src="{{ url_for('static', filename='js/rt_analyze.js') }}"></script>
 <script src="{{ url_for('static', filename='js/ear_metric.js') }}"></script>
 <script src="{{ url_for('static', filename='js/mediapipe_liveness.js') }}"></script>
-{% if request.args.get('debug') == '1' %}
+{% if config.ENABLE_CHECKIN_DEBUG and request.args.get('debug') == '1' %}
 <script src="{{ url_for('static', filename='js/checkin_debug.js') }}"></script>
 {% endif %}
 <script src="{{ url_for('static', filename='js/checkin_flow.js') }}"></script>
@@ -252,7 +197,7 @@
         beaconUUID:    "{{ session_data.beacons.uuid }}",
         rssiThreshold: {{ session_data.beacons.rssi_threshold }},
         baselineEAR:   {{ baseline_ear }},
-        debug:         {{ (request.args.get('debug') == '1') | tojson }},
+        debug:         {{ (config.ENABLE_CHECKIN_DEBUG and request.args.get('debug') == '1') | tojson }},
         apiUrl:        "{{ url_for('api_checkin.checkin') }}",
         proximityMethod: "{{ config.CHECKIN_PROXIMITY_METHOD }}",
     });

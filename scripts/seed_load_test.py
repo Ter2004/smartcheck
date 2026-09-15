@@ -145,6 +145,7 @@ def _get_or_create_user(sb, email: str, full_name: str, role: str, student_id: s
         "full_name": full_name,
         "role": role,
         "is_active": True,
+        "is_test_account": True,
         "must_change_password": False,   # กัน F-11 flow มาขวาง load test
     }
     if student_id:
@@ -159,6 +160,7 @@ def _get_or_create_course(sb, teacher_id: str) -> str:
         return existing.data[0]["id"]
     res = sb.table("courses").insert({
         "code": COURSE_CODE,
+        "is_test_course": True,
         "name": COURSE_NAME,
         "teacher_id": teacher_id,
         "semester": COURSE_SEMESTER,

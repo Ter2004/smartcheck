@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-xl mx-auto bg-white p-6 rounded-xl space-y-4">
+<h1 class="text-xl font-semibold">ขอเปลี่ยนใบหน้าที่ลงทะเบียน</h1>
+<p>ผู้ดูแลจะตรวจสอบตัวตนก่อนอนุมัติ ใบหน้าเดิมยังใช้เช็คชื่อได้จนกว่าคุณจะลงทะเบียนใหม่สำเร็จ</p>
+{% if can_enroll %}<a class="text-indigo-600 underline" href="{{ url_for('student.enroll_face') }}">เริ่มลงทะเบียนใบหน้า</a>{% endif %}
+<form method="post" class="space-y-3">
+<input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+<label class="block">เหตุผลที่ต้องเปลี่ยนใบหน้า<textarea class="border rounded w-full p-2" name="reason" required minlength="5" maxlength="1000"></textarea></label>
+<button class="bg-indigo-600 text-white px-4 py-2 rounded">ส่งคำขอ</button>
+</form>
+{% for row in requests %}
+<div class="border-t pt-3"><p>{{ row.created_at | thai_time }} — {{ {'pending':'รอผู้ดูแลตรวจสอบ','approved':'อนุมัติแล้ว ใช้ได้หนึ่งครั้ง','rejected':'ไม่อนุมัติ','consumed':'ลงทะเบียนใหม่แล้ว'}[row.status] }}</p><p>{{ row.reason }}</p>{% if row.review_reason %}<p>ผู้ดูแล: {{ row.review_reason }}</p>{% endif %}</div>
+{% endfor %}
+</div>
+{% endblock %}

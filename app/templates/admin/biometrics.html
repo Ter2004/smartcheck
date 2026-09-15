@@ -2,6 +2,7 @@
 {% block title %}Biometrics — SmartCheck{% endblock %}
 
 {% block content %}
+<a class="inline-block mb-4 text-indigo-600 underline" href="{{ url_for('admin.face_change_requests') }}">ตรวจสอบคำขอเปลี่ยนใบหน้า</a>
 {% set enrolled = records | selectattr('face_embeddings') | list | length %}
 
 <div class="flex items-center justify-between mb-8">

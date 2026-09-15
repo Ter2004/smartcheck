@@ -10,6 +10,34 @@ from app.utils import friendly_error as _friendly_error
 admin_bp = Blueprint("admin", __name__)
 
 
+@admin_bp.route('/face-change-requests')
+@login_required
+@role_required('admin')
+def face_change_requests():
+    rows = supabase_admin.table('face_change_requests').select('*, users!face_change_requests_user_id_fkey(full_name, student_id)').order('created_at', desc=True).limit(200).execute().data or []
+    return render_template('admin/face_change_requests.html', requests=rows)
+
+
+@admin_bp.route('/face-change-requests/<request_id>/review', methods=['POST'])
+@login_required
+@role_required('admin')
+@csrf_protect_form
+def review_face_change(request_id):
+    from datetime import datetime, timezone
+    decision = request.form.get('decision')
+    reason = request.form.get('reason', '').strip()
+    if decision not in ('approved', 'rejected') or not 5 <= len(reason) <= 1000:
+        return jsonify(error='กรุณาระบุผลและเหตุผลการตรวจสอบ 5–1000 ตัวอักษร'), 400
+    result = supabase_admin.table('face_change_requests').update({
+        'status': decision, 'reviewed_by': session['user_id'],
+        'review_reason': reason, 'reviewed_at': datetime.now(timezone.utc).isoformat(),
+    }).eq('id', request_id).eq('status', 'pending').execute()
+    if not result.data:
+        return jsonify(error='คำขอถูกดำเนินการไปแล้ว'), 409
+    flash('บันทึกผลการตรวจสอบแล้ว', 'success')
+    return redirect(url_for('admin.face_change_requests'))
+
+
 # ─── Dashboard ────────────────────────────────────────────────
 
 @admin_bp.route("/dashboard")
@@ -238,6 +266,9 @@ def sessions():
         .execute()
         .data or []
     )
+    from app.services.session_policy import decorate
+    for row in sessions_data:
+        decorate(row)
     return render_template("admin/sessions.html",
                            sessions=sessions_data, courses=courses,
                            beacons=beacons, teachers=teachers)
@@ -248,33 +279,31 @@ def sessions():
 @role_required("admin")
 @csrf_protect_form
 def session_create():
-    course_id = request.form.get("course_id")
-    beacon_id = request.form.get("beacon_id")
-
-    if not all([course_id, beacon_id]):
-        flash("กรุณากรอกข้อมูลให้ครบ", "danger")
-        return redirect(url_for("admin.sessions"))
-
-    course = (
-        supabase_admin.table("courses").select("code, name")
-        .eq("id", course_id).maybe_single().execute().data or {}
-    )
-    title = f"{course.get('code', '')} — {course.get('name', '')}"
-
+    from datetime import datetime, timezone
+    from app.services.session_policy import THAI, bounds
     try:
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc).isoformat()
-        supabase_admin.table("sessions").insert({
-            "course_id":  course_id,
-            "beacon_id":  beacon_id,
-            "title":      title,
-            "start_time": now,
-            "is_open":    False,
-        }).execute()
-        flash(f"สร้างคาบเรียน '{title}' สำเร็จ — อาจารย์กดเปิดเองได้เลย", "success")
-    except Exception as e:
-        flash(f"สร้างไม่สำเร็จ: {_friendly_error(e)}", "danger")
-    return redirect(url_for("admin.sessions"))
+        course_id, beacon_id = request.form.get('course_id'), request.form.get('beacon_id')
+        course = supabase_admin.table('courses').select('code, name').eq('id', course_id).eq('is_active', True).maybe_single().execute().data
+        beacon = supabase_admin.table('beacons').select('id').eq('id', beacon_id).eq('is_active', True).maybe_single().execute().data
+        reason = request.form.get('reason', '').strip()
+        if not course or not beacon or not 5 <= len(reason) <= 1000:
+            raise ValueError('Invalid course, room or reason')
+        def local(field):
+            value = datetime.fromisoformat(request.form[field])
+            if value.tzinfo is not None:
+                raise ValueError('Use local Bangkok time')
+            return value.replace(tzinfo=THAI).isoformat()
+        row = {field: local(field) for field in ('start_time','end_time','checkin_opens_at','late_at','checkin_closes_at')}
+        bounds(row)
+        if datetime.fromisoformat(row['start_time']) <= datetime.now(timezone.utc):
+            raise ValueError('Makeup must be scheduled in advance')
+        row.update(course_id=course_id, beacon_id=beacon_id, session_kind='makeup',
+                   title=f"{course['code']} — คาบชดเชย", change_reason=reason, created_by=session['user_id'])
+        supabase_admin.table('sessions').insert(row).execute()
+        flash('สร้างคาบชดเชยแล้ว ระบบจะเปิดตามเวลาที่กำหนด', 'success')
+    except Exception:
+        flash('สร้างคาบไม่ได้ ตรวจสอบช่วงเวลา ห้อง เหตุผล และคาบที่อาจซ้ำกัน', 'danger')
+    return redirect(url_for('admin.sessions'))
 
 
 @admin_bp.route("/sessions/<session_id>/delete", methods=["POST"])
@@ -282,12 +311,14 @@ def session_create():
 @role_required("admin")
 @csrf_protect_form
 def session_delete(session_id):
-    try:
-        supabase_admin.table("sessions").delete().eq("id", session_id).execute()
-        flash("ลบคาบเรียนแล้ว", "success")
-    except Exception as e:
-        flash(f"ลบไม่สำเร็จ: {_friendly_error(e)}", "danger")
-    return redirect(url_for("admin.sessions"))
+    from datetime import datetime, timezone
+    reason = request.form.get('reason', '').strip()
+    if not 5 <= len(reason) <= 1000:
+        return jsonify(error='ต้องระบุเหตุผลยกเลิก 5–1000 ตัวอักษร'), 400
+    supabase_admin.table('sessions').update({'cancelled_at': datetime.now(timezone.utc).isoformat(),
+        'cancelled_by': session['user_id'], 'change_reason': reason, 'is_open': False}).eq('id', session_id).is_('cancelled_at', 'null').execute()
+    flash('ยกเลิกคาบแล้ว เก็บประวัติการเช็คชื่อเดิมไว้', 'success')
+    return redirect(url_for('admin.sessions'))
 
 
 # ─── Biometrics Status ────────────────────────────────────────
@@ -609,28 +640,30 @@ def course_import_csv(course_id):
 @role_required("admin")
 @csrf_protect_form
 def schedule_add(course_id):
-    day_of_week = request.form.get("day_of_week")
-    start_time  = request.form.get("start_time")
-    end_time    = request.form.get("end_time")
-    beacon_id   = request.form.get("beacon_id") or None
-
-    if not all([day_of_week, start_time, end_time]):
-        flash("กรุณากรอกข้อมูลให้ครบ", "danger")
-        return redirect(url_for("admin.course_detail", course_id=course_id))
-
+    from datetime import date
+    from app.services.session_policy import occurrence
     try:
-        supabase_admin.table("schedules").insert({
-            "course_id":   course_id,
-            "day_of_week": int(day_of_week),
-            "start_time":  start_time,
-            "end_time":    end_time,
-            "beacon_id":   beacon_id,
-        }).execute()
-        flash("เพิ่มตารางเรียนสำเร็จ", "success")
-    except Exception as e:
-        flash(f"เพิ่มไม่สำเร็จ: {_friendly_error(e)}", "danger")
-
-    return redirect(url_for("admin.course_detail", course_id=course_id))
+        row = {'id': 'validation', 'course_id': course_id,
+               'day_of_week': int(request.form['day_of_week']),
+               'start_time': request.form['start_time'], 'end_time': request.form['end_time'],
+               'beacon_id': request.form['beacon_id'],
+               'open_before_minutes': int(request.form.get('open_before_minutes', 0)),
+               'late_after_minutes': int(request.form.get('late_after_minutes', 15)),
+               'close_after_minutes': int(request.form['close_after_minutes']) if request.form.get('close_after_minutes') else None}
+        if not 0 <= row['day_of_week'] <= 6 or row['start_time'] == row['end_time']:
+            raise ValueError('Invalid schedule')
+        occurrence(row, date.today())
+        beacon = supabase_admin.table('beacons').select('id').eq('id', row['beacon_id']).eq('is_active', True).maybe_single().execute().data
+        if not beacon:
+            raise ValueError('Room required')
+        row.pop('id')
+        supabase_admin.table('schedules').insert(row).execute()
+        from app.scheduler import auto_manage_sessions
+        auto_manage_sessions()
+        flash('เพิ่มตารางเรียนและสร้างคาบตามวันแล้ว', 'success')
+    except Exception:
+        flash('เพิ่มตารางไม่ได้ ตรวจสอบวัน เวลา ห้อง และช่วงรับเช็คชื่อ', 'danger')
+    return redirect(url_for('admin.course_detail', course_id=course_id))
 
 
 @admin_bp.route("/courses/<course_id>/schedules/<schedule_id>/delete", methods=["POST"])
@@ -638,13 +671,13 @@ def schedule_add(course_id):
 @role_required("admin")
 @csrf_protect_form
 def schedule_delete(course_id, schedule_id):
-    try:
-        supabase_admin.table("schedules").delete().eq("id", schedule_id).execute()
-        flash("ลบตารางเรียนสำเร็จ", "success")
-    except Exception as e:
-        flash(f"ลบไม่สำเร็จ: {_friendly_error(e)}", "danger")
-
-    return redirect(url_for("admin.course_detail", course_id=course_id))
+    reason = request.form.get('reason', '').strip()
+    if not 5 <= len(reason) <= 1000:
+        return jsonify(error='กรุณาระบุเหตุผลยกเลิกตาราง 5–1000 ตัวอักษร'), 400
+    supabase_admin.table('schedules').update({'is_active': False, 'retired_by': session['user_id'],
+        'retire_reason': reason}).eq('id', schedule_id).eq('course_id', course_id).execute()
+    flash('ยกเลิกตารางและคาบในอนาคตแล้ว เก็บประวัติเดิมไว้', 'success')
+    return redirect(url_for('admin.course_detail', course_id=course_id))
 
 
 # ─── Biometrics ───────────────────────────────────────────────

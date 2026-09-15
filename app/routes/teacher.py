@@ -2,7 +2,7 @@ import csv
 import io
 from datetime import datetime, timezone, date, timedelta
 from flask import (Blueprint, render_template, request, redirect,
-                   url_for, flash, session, jsonify, Response)
+                   url_for, flash, session, jsonify, Response, abort)
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
@@ -34,6 +34,9 @@ def history():
     )
 
     course_ids = [c["id"] for c in courses] or ["00000000-0000-0000-0000-000000000000"]
+
+    if course_filter and course_filter not in course_ids:
+        abort(403)
 
     query = (
         supabase_admin.table("sessions")
@@ -143,12 +146,15 @@ def dashboard():
         .data or []
     )
 
+    from app.services.session_policy import decorate
+    for row in today_sessions + recent_sessions:
+        decorate(row)
     return render_template(
         "teacher/dashboard.html",
         courses=courses,
         recent_sessions=recent_sessions,
         beacons=beacons,
-        today_str=date.today().isoformat(),
+        today_str=_today_th.isoformat(),
         today_sessions=today_sessions,
     )
 
@@ -160,46 +166,7 @@ def dashboard():
 @role_required("teacher")
 @csrf_protect_form
 def session_create():
-    teacher_id = session["user_id"]
-    course_id  = request.form.get("course_id")
-    beacon_id  = request.form.get("beacon_id")
-    title      = request.form.get("title", "").strip()
-    start_time = request.form.get("start_time")
-    end_time   = request.form.get("end_time")
-
-    if not all([course_id, beacon_id, title, start_time, end_time]):
-        flash("กรุณากรอกข้อมูลให้ครบ", "danger")
-        return redirect(url_for("teacher.dashboard"))
-
-    # ตรวจสอบว่า course เป็นของ teacher คนนี้
-    course = (
-        supabase_admin.table("courses")
-        .select("id")
-        .eq("id", course_id)
-        .eq("teacher_id", teacher_id)
-        .maybe_single()
-        .execute()
-        .data
-    )
-    if not course:
-        flash("ไม่มีสิทธิ์สร้าง session ให้วิชานี้", "danger")
-        return redirect(url_for("teacher.dashboard"))
-
-    try:
-        res = supabase_admin.table("sessions").insert({
-            "course_id":  course_id,
-            "beacon_id":  beacon_id,
-            "title":      title,
-            "start_time": start_time,
-            "end_time":   end_time,
-            "is_open":    True,
-        }).execute()
-        new_id = res.data[0]["id"]
-        flash(f"สร้างคาบเรียน '{title}' สำเร็จ", "success")
-        return redirect(url_for("teacher.session_view", session_id=new_id))
-    except Exception as e:
-        flash(f"สร้างไม่สำเร็จ: {friendly_error(e)}", "danger")
-        return redirect(url_for("teacher.dashboard"))
+    abort(410)  # Retired: policy uses schedules/admin-reviewed face replacement.
 
 
 # ─── Session View ─────────────────────────────────────────────
@@ -243,6 +210,9 @@ def session_view(session_id):
 
     # att_map: student_id → attendance row (สร้างใน Python เพื่อใช้ใน template)
     att_map = {a["student_id"]: a for a in attendance}
+    override_history = supabase_admin.table('audit_logs').select('*').eq('session_id', session_id).eq('event_type', 'teacher_override').order('created_at', desc=True).limit(200).execute().data or []
+    from app.services.session_policy import decorate
+    decorate(sess)
 
     return render_template(
         "teacher/session_view.html",
@@ -250,6 +220,7 @@ def session_view(session_id):
         attendance=attendance,
         all_students=all_students,
         att_map=att_map,
+        override_history=override_history,
     )
 
 
@@ -260,74 +231,7 @@ def session_view(session_id):
 @role_required("teacher")
 @csrf_protect_form
 def session_toggle(session_id):
-    teacher_id = session["user_id"]
-
-    sess = (
-        supabase_admin.table("sessions")
-        .select("is_open, start_time, course_id, courses(id, teacher_id)")
-        .eq("id", session_id)
-        .maybe_single()
-        .execute()
-        .data
-    )
-    if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
-        flash("ไม่มีสิทธิ์", "danger")
-        return redirect(url_for("teacher.dashboard"))
-
-    new_state = not sess["is_open"]
-    now_dt    = datetime.now(timezone.utc)
-
-    # ─── ถ้าจะเปิด: ตรวจ schedule ว่าอยู่ในช่วงเวลาที่อนุญาตไหม ──────
-    if new_state:
-        from zoneinfo import ZoneInfo
-        from datetime import timedelta
-        local_now  = now_dt.astimezone(ZoneInfo("Asia/Bangkok"))
-        today_dow  = local_now.weekday()
-        now_time   = local_now.time()
-
-        schedules = (
-            supabase_admin.table("schedules")
-            .select("start_time, end_time")
-            .eq("course_id", sess["course_id"])
-            .eq("day_of_week", today_dow)
-            .execute()
-            .data or []
-        )
-
-        if schedules:
-            from datetime import time as dtime
-            in_window = False
-            for sch in schedules:
-                if not sch.get("start_time") or not sch.get("end_time"):
-                    continue
-                parts_s = sch["start_time"].split(":")
-                parts_e = sch["end_time"].split(":")
-                from datetime import datetime as _dt
-                _buffer = timedelta(minutes=30)
-                s_time = (_dt.combine(_dt.today(), dtime(int(parts_s[0]), int(parts_s[1]))) - _buffer).time()
-                e_time = (_dt.combine(_dt.today(), dtime(int(parts_e[0]), int(parts_e[1]))) + _buffer).time()
-                if s_time <= now_time <= e_time:
-                    in_window = True
-                    break
-            if not in_window:
-                flash("ไม่สามารถเปิดคาบได้ — อยู่นอกช่วงเวลาที่กำหนดในตารางเรียน", "danger")
-                return redirect(url_for("teacher.session_view", session_id=session_id))
-
-    update_data = {"is_open": new_state}
-    if new_state:
-        update_data["start_time"] = now_dt.isoformat()
-        update_data["end_time"]   = None
-        duration_str = request.form.get("checkin_duration", "").strip()
-        if duration_str.isdigit() and int(duration_str) > 0:
-            update_data["checkin_duration"] = int(duration_str)
-        else:
-            update_data["checkin_duration"] = None
-    if not new_state:
-        update_data["end_time"] = now_dt.isoformat()
-
-    supabase_admin.table("sessions").update(update_data).eq("id", session_id).execute()
-    flash(f"{'เปิด' if new_state else 'ปิด'}การเช็คชื่อแล้ว", "success")
-    return redirect(url_for("teacher.session_view", session_id=session_id))
+    abort(410)  # Retired: policy uses schedules/admin-reviewed face replacement.
 
 
 # ─── Manual Override ──────────────────────────────────────────
@@ -342,6 +246,8 @@ def override_attendance(session_id):
     new_status   = request.form.get("status")
     reason       = request.form.get("reason", "").strip()
 
+    if not 5 <= len(reason) <= 1000:
+        abort(400, description="A reason of 5-1000 characters is required")
     if new_status not in ("present", "late", "absent", "manual"):
         flash("สถานะไม่ถูกต้อง", "danger")
         return redirect(url_for("teacher.session_view", session_id=session_id))
@@ -349,7 +255,7 @@ def override_attendance(session_id):
     # ตรวจสอบสิทธิ์
     sess = (
         supabase_admin.table("sessions")
-        .select("courses(teacher_id)")
+        .select("course_id, courses(teacher_id)")
         .eq("id", session_id)
         .maybe_single()
         .execute()
@@ -358,6 +264,10 @@ def override_attendance(session_id):
     if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
         flash("ไม่มีสิทธิ์", "danger")
         return redirect(url_for("teacher.dashboard"))
+
+    roster = supabase_admin.table("course_enrollments").select("id, users!course_enrollments_student_id_fkey(role, is_active)").eq("course_id", sess["course_id"]).eq("student_id", student_id).maybe_single().execute().data
+    if not roster or (roster.get("users") or {}).get("role") != "student" or not (roster.get("users") or {}).get("is_active"):
+        abort(403)
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -393,18 +303,7 @@ def override_attendance(session_id):
             "face_pass":       False,
         }).execute()
 
-    # Sprint 3B: audit log — every manual override is recorded permanently
-    log_audit_event(
-        supabase_admin,
-        actor_id   = teacher_id,
-        actor_role = "teacher",
-        event_type = "teacher_override",
-        target_id  = student_id,
-        session_id = session_id,
-        old_value  = existing["status"] if existing and isinstance(existing, dict) else None,
-        new_value  = new_status,
-        metadata   = {"reason": reason or ""},
-    )
+    # Database trigger writes the audit record in the attendance transaction.
 
     flash(f"บันทึกสถานะ '{new_status}' สำเร็จ", "success")
     return redirect(url_for("teacher.session_view", session_id=session_id))
@@ -480,44 +379,6 @@ def export_csv(session_id):
 @role_required("teacher")
 @csrf_protect
 def api_reset_enrollment(student_id):
-    teacher_id = session["user_id"]
+    abort(410)  # Retired: policy uses schedules/admin-reviewed face replacement.
 
-    # Verify the student is enrolled in at least one of this teacher's courses
-    teacher_courses = (
-        supabase_admin.table("courses")
-        .select("id")
-        .eq("teacher_id", teacher_id)
-        .execute()
-    )
-    teacher_course_ids = [c["id"] for c in (teacher_courses.data or [])]
-    if not teacher_course_ids:
-        return jsonify({"status": "error", "message": "ไม่พบนักศึกษาในรายวิชาของคุณ"}), 403
 
-    enroll_res = (
-        supabase_admin.table("course_enrollments")
-        .select("id")
-        .eq("student_id", student_id)
-        .in_("course_id", teacher_course_ids)
-        .limit(1)
-        .execute()
-    )
-    if not (enroll_res and enroll_res.data):
-        return jsonify({"status": "error", "message": "ไม่พบนักศึกษาในรายวิชาของคุณ"}), 403
-
-    try:
-        supabase_admin.table("student_biometrics").update({
-            "enrollment_attempts":     0,
-            "last_enrollment_attempt": None,
-        }).eq("user_id", student_id).execute()
-
-        log_audit_event(
-            supabase_admin,
-            actor_id=teacher_id,
-            actor_role="teacher",
-            event_type="reset_enrollment_attempts",
-            target_id=student_id,
-            new_value="0",
-        )
-        return jsonify({"status": "ok", "message": "รีเซ็ตจำนวนครั้งลงทะเบียนสำเร็จ"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500

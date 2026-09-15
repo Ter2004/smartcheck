@@ -49,42 +49,6 @@ class CheckinFlow {
 
     // ─── Step 1: BLE ─────────────────────────────────────
 
-    skipBLE() {
-        this._bleRSSI = -60;
-        this._bleSkip = true;
-        document.getElementById('bleStatus').textContent = '⚙️ ข้าม BLE (โหมดทดสอบ)';
-        setTimeout(() => this._startVerify(), 400);
-    }
-
-    async startBLEScan() {
-        const btn    = document.getElementById('bleBtn');
-        const status = document.getElementById('bleStatus');
-        btn.disabled = true;
-        status.textContent = 'กำลังสแกน Bluetooth...';
-
-        const scanner = new BLEScanner(this.beaconUUID, this.rssiThreshold);
-        const result  = await scanner.scan();
-
-        if (result.error) {
-            status.textContent = result.error;
-            btn.disabled = false;
-            btn.textContent = 'ลองใหม่';
-            return;
-        }
-
-        this._bleRSSI = result.rssi;
-
-        if (!result.pass) {
-            status.textContent = `อยู่นอกห้องเรียน — RSSI: ${result.rssi} dBm (ต้องการ ≥ ${this.rssiThreshold})`;
-            btn.disabled = false;
-            btn.textContent = 'สแกนใหม่';
-            return;
-        }
-
-        status.textContent = `✓ พบ Beacon — RSSI: ${result.rssi} dBm`;
-        setTimeout(() => this._startVerify(), 600);
-    }
-
     // ─── Step 2: Verify (face detect → countdown → liveness) ─
 
     async _startVerify() {
@@ -592,7 +556,6 @@ class CheckinFlow {
                     room_code:       this._proximity.room,
                     proximity_receipt: this._proximity.receipt,
                     ble_rssi:        this._bleRSSI,
-                    ble_skip:        this._bleSkip || false,
                     liveness_action: livenessAction,
                     liveness_pass:   true,
                     face_image:      faceImage,

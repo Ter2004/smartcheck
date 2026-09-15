@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">คำขอเปลี่ยนใบหน้า</h1>
+<p class="mb-4">ตรวจสอบตัวตนนักศึกษาผ่านช่องทางของสถาบันก่อนอนุมัติ ห้ามอนุมัติเพียงเพราะผู้ขอเข้าสู่ระบบได้</p>
+{% for row in requests %}
+<article class="bg-white border rounded-xl p-5 mb-4 space-y-3">
+<h2>{{ row.users.full_name }} ({{ row.users.student_id or '—' }})</h2>
+<p>{{ row.reason }}</p><p>{{ row.status }} — {{ row.created_at | thai_time }}</p>
+{% if row.status == 'pending' %}
+<form method="post" action="{{ url_for('admin.review_face_change', request_id=row.id) }}" class="space-y-2">
+<input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+<label class="block">ผลการตรวจสอบตัวตน / เหตุผล<textarea name="reason" class="border w-full p-2" required minlength="5" maxlength="1000"></textarea></label>
+<button name="decision" value="approved" class="bg-indigo-600 text-white px-4 py-2 rounded">อนุมัติหนึ่งครั้ง</button>
+<button name="decision" value="rejected" class="border px-4 py-2 rounded">ไม่อนุมัติ</button>
+</form>
+{% else %}<p>{{ row.review_reason or '' }}</p>{% endif %}
+</article>
+{% else %}<p>ไม่มีคำขอ</p>{% endfor %}
+{% endblock %}

@@ -23,20 +23,23 @@ needed. This is a connectable GATT peripheral, not an iBeacon/RSSI broadcaster.
 ## Panel sequence
 
 - Boot: device name and `BLE starting...`.
-- Waiting: `ADV: ON`, `Client: NONE`, `Read: waiting`.
-- Connected: `ADV: OFF (busy)`, `Client: CONNECTED`.
+- Waiting: `ADV: ON`, `Clients: 0/3`, `Read: waiting`.
+- One or two connected: advertising restarts, `Clients: 1/3` or `2/3`.
+- Three connected: `ADV: OFF (full)`, `Clients: 3/3`.
 - Characteristic read: `Read: TEST-101 OK`.
-- Disconnect: advertising restarts; `Client: NONE`. Last-read confirmation stays
+- Disconnect: the count decreases; advertising restarts if it was off. Last-read confirmation stays
   visible until the next connection, so a quick connection is visible on the panel.
 - Advertising failure: `ADV: ERROR`; reset and inspect Serial.
 - OLED absent: Serial reports it; BLE still starts.
 
-The sketch intentionally accepts one client at a time: advertising stops when
-connected and restarts on disconnect. ESP32 can support advertising alongside
-connections with a multi-client configuration; the OLED does not prohibit it.
-OLED rendering runs at 4 Hz in `loop()`, never in BLE callbacks. Keep the browser
-connection open to demonstrate the connected status, then disconnect to let the
-next student use the board.
+The sketch accepts up to three clients concurrently using the existing
+BLE/Bluedroid library. The installed ESP32 core 3.3.11 configures
+`CONFIG_BTDM_CTRL_BLE_MAX_CONN=3`; a compile-time check rejects a sketch limit
+above the core's capacity. Advertising resumes after each connection while
+slots remain. A fourth client must wait for a disconnect; there is no queue.
+Connection IDs are tracked individually, so disconnecting one client does not
+mark the other clients disconnected. OLED rendering runs at 4 Hz in `loop()`,
+never in BLE callbacks. The read indicator is board-wide, not per student.
 
 ## Browser test (no attendance submission)
 
@@ -52,12 +55,30 @@ enabled. Click **Connect and read room**, select **SmartCheck-TEST101**, verify
 requires a secure context (HTTPS or localhost) and a user gesture for device
 selection. No experimental advertisement/RSSI APIs are used.
 
+### Three-device acceptance check
+
+Use three separate Bluetooth-capable devices with the test page on a secure
+origin (localhost on each computer, or HTTPS for phones; a LAN HTTP address is
+not sufficient). The test page deliberately holds each connection open.
+
+1. Connect device A and read `TEST-101`. Keep it connected: expect `Clients: 1/3`
+   and advertising back `ON`.
+2. Connect B while A stays connected, then C while both stay connected. Each
+   must read `TEST-101`; expect `Clients: 3/3`, `ADV: OFF (full)`.
+3. Disconnect B: expect `Clients: 2/3`, `ADV: ON`, with A and C still connected.
+4. Reconnect B and read again; disconnect all three and expect `Clients: 0/3`,
+   `ADV: ON`. Repeat several rounds and check Serial for advertising errors.
+5. Run the real student BLE/face check-in flow on all three devices. The app
+   releases BLE after reading the room, so face processing can overlap.
+
+Compilation does not prove concurrent radio operation. Complete these checks
+on the actual board before using this firmware in the demo.
+
 ## Integration boundary and fallback
 
-The current app scanner still filters `battery_service` and uses an RSSI-oriented
-flow; it is not wired to this new service. This firmware task does not change
-check-in or remove its TOTP requirement. Browser/server BLE integration remains
-separate work. The test page includes the exact requestDevice/connect/read flow.
+The app's `ble_room_scanner.js` reads this room characteristic and disconnects
+after the read. This firmware upgrade preserves that browser contract. The
+standalone test page holds its connection open to exercise concurrent clients.
 
 An honest browser reading GATT demonstrates a radio connection to a peripheral
 offering this service. A fixed name/UUID/room value does NOT authenticate the
@@ -66,7 +87,6 @@ payload. The server can check that the room matches the session, but that alone
 is not cryptographic proximity proof. A device-signed challenge would be needed
 for stronger server verification.
 
-All repository TOTP code remains intact. No original hardware sketch was present
-in this workspace, so save your working TOTP sketch before flashing BLE: flashing
-replaces the firmware on this board. The existing Python TOTP simulator remains
-available for the unchanged check-in flow.
+Save the working single-client sketch before flashing this upgrade: flashing
+replaces the firmware on this board. TOTP code and the application's proximity
+configuration are unaffected by this firmware change.

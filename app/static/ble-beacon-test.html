@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="th">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartCheck — Broadcast test</title>
+<style>
+body{font:16px system-ui;max-width:760px;margin:24px auto;padding:0 16px;background:#f5f7fb;color:#152239}
+button{font:inherit;padding:12px;margin:4px;border:1px solid #aab8cf;border-radius:8px;background:white}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:16px;border-radius:12px}
+</style>
+<h1>ทดสอบรับ Beacon พร้อมกัน</h1>
+<p>ใช้ firmware <b>smartcheck_beacon.ino</b> ชื่อ SC-TEST1 เปิดหน้านี้บน HTTPS ใน laptop, Android และ Bluefy พร้อมกัน หน้านี้ไม่เชื่อมต่อ GATT และไม่บันทึกการเข้าเรียน</p>
+<p>กดสแกน 30 วินาที หรือเลือกอุปกรณ์เพื่อทดสอบ watchAdvertisements หากมี API รองรับ</p>
+<button id="scan">สแกน broadcast</button>
+<button id="watch">เลือก Beacon แล้วรับ broadcast</button>
+<button id="stop" disabled>หยุด</button>
+<button id="copy">คัดลอกผล</button>
+<p>Diagnostic version: beacon-5</p>
+<pre id="capabilities">JavaScript ยังไม่เริ่ม — หากข้อความนี้ค้าง ให้ตรวจว่า Bluefy เปิด JavaScript</pre>
+<pre id="status" role="status">ยังไม่ได้ทดสอบ</pre>
+<pre id="log"></pre>
+<p>ผ่านเมื่อหลายเครื่องได้รับ TEST-101 ต่อเนื่องในช่วงเวลาเดียวกัน แล้วปิดบอร์ดและจำนวนแพ็กเก็ตหยุดเพิ่ม การเห็นชื่ออุปกรณ์หรือมี API อย่างเดียวไม่ถือว่าผ่าน</p>
+<p>Chrome อาจต้องเปิด Experimental Web Platform features ใน chrome://flags แล้วเปิด browser ใหม่ หาก Bluefy แสดงเฉพาะ API เฉพาะของแอป ให้ส่งผลความสามารถพร้อม API Reference ของ Bluefy เพื่อยืนยันวิธีเรียกก่อนใช้</p>
+<script>
+// Keep this bootstrap separate and compatible with older WebKit so even a
+// syntax error in the main script is visible without a developer console.
+window.addEventListener('error', function (event) {
+  document.getElementById('status').textContent = 'JavaScript error: ' + event.message + ' (line ' + event.lineno + ')';
+});
+window.addEventListener('unhandledrejection', function (event) {
+  document.getElementById('status').textContent = 'Promise error: ' + String(event.reason);
+});
+document.getElementById('capabilities').textContent = 'JavaScript bootstrap ทำงานแล้ว — กำลังโหลด scanner';
+</script>
+<script>
+(function () {
+'use strict';
+var startupStage = 'enter scanner';
+try {
+document.getElementById('status').textContent = 'Scanner script เริ่มแล้ว';
+const UUID = '7c6b1000-9f3a-4b27-8d15-6e2a90c4f801';
+startupStage = 'read navigator.bluetooth';
+const bt = navigator.bluetooth;
+const el = id => document.getElementById(id);
+// Some browser bridges expose throwing getters. Probe each capability alone.
+function probe(name, read) {
+  try { return read(); }
+  catch (error) { return name + ': ' + String(error); }
+}
+startupStage = 'probe Bluetooth capabilities';
+const capabilities = {
+  time: new Date().toISOString(), userAgent: navigator.userAgent,
+  secureContext: window.isSecureContext, bluetooth: !!bt,
+  requestLEScan: probe('requestLEScan', () => !!bt && typeof bt.requestLEScan === 'function'),
+  requestDevice: probe('requestDevice', () => !!bt && typeof bt.requestDevice === 'function'),
+  deviceWatchAdvertisements: probe('BluetoothDevice.prototype', () => !!window.BluetoothDevice && !!window.BluetoothDevice.prototype && typeof window.BluetoothDevice.prototype.watchAdvertisements === 'function'),
+  bluefyBluetoothWatchAdvertisements: probe('bluetooth.watchAdvertisements', () => !!bt && typeof bt.watchAdvertisements === 'function')
+};
+el('capabilities').textContent = JSON.stringify(capabilities, null, 2);
+let active = null;
+let lines = [];
+function roomPayload(serviceData, selectedDeviceEvent) {
+  let data;
+  if (serviceData && typeof serviceData.forEach === 'function') {
+    serviceData.forEach((value, key) => {
+      if (String(key).toLowerCase() === UUID) data = value;
+    });
+  } else if (selectedDeviceEvent && Object.prototype.toString.call(serviceData) === '[object DataView]') {
+    // Bluefy 3.9.3 emits a DataView without a UUID-keyed Map. Only accept this
+    // shape on the selected device listener, never from a global scan.
+    data = serviceData;
+  }
+  return data;
+}
+function log(message) {
+  lines.push(new Date().toISOString() + ' ' + message);
+  lines = lines.slice(-60);
+  el('log').textContent = lines.join('\n');
+}
+function stop(reason = 'หยุดแล้ว') {
+  const run = active;
+  if (!run) return;
+  active = null;
+  clearTimeout(run.timer);
+  clearTimeout(run.pendingTimer);
+  try { if (run.target) run.target.removeEventListener('advertisementreceived', run.handler); } catch (error) { log('Listener cleanup: ' + String(error)); }
+  try { run.controller.abort(); } catch (error) { log('Abort: ' + String(error)); }
+  try { if (run.scanner) run.scanner.stop(); } catch (error) { log('Stop: ' + error.message); }
+  el('scan').disabled = el('watch').disabled = false;
+  el('stop').disabled = true;
+  const elapsed = ((Date.now() - (run.listeningAt || run.startedAt)) / 1000).toFixed(1);
+  el('status').textContent = `${reason}: รับรหัสห้องถูกต้อง ${run.matches} แพ็กเก็ต / เห็น Beacon ${run.events} events / raw=${run.rawEvents} / elapsed=${elapsed}s`;
+  log(el('status').textContent);
+}
+async function start(mode) {
+  log('Button pressed: ' + mode);
+  if (active) return;
+  if (!window.isSecureContext || !bt) {
+    el('status').textContent = 'ต้องเปิดบน HTTPS และ browser ต้องรองรับ Bluetooth';
+    return;
+  }
+  const run = {controller: new AbortController(), events: 0, matches: 0, rawEvents: 0, startedAt: Date.now()};
+  active = run;
+  lines = [];
+  el('log').textContent = '';
+  el('scan').disabled = el('watch').disabled = true;
+  el('stop').disabled = false;
+  el('status').textContent = 'กำลังขอสิทธิ์รับ broadcast';
+  run.pendingTimer = setTimeout(() => {
+    if (active === run) {
+      el('status').textContent = 'รอ Bluetooth API เกิน 15 วินาที — ตรวจสิทธิ์ Bluetooth ของ Bluefy แล้วส่ง log ด้านล่าง (กดหยุดเพื่อยกเลิก)';
+      log('Bluetooth API still pending after 15 seconds');
+    }
+  }, 15000);
+  run.handler = event => {
+    if (active !== run) return;
+    run.rawEvents++;
+    try {
+    const serviceKeys = [];
+    if (event.serviceData && typeof event.serviceData.forEach === 'function') {
+      event.serviceData.forEach((value, key) => serviceKeys.push(String(key)));
+    }
+    const directView = Object.prototype.toString.call(event.serviceData) === '[object DataView]' ? event.serviceData : null;
+    const hex = directView ? Array.from(new Uint8Array(directView.buffer, directView.byteOffset, Math.min(directView.byteLength, 64)))
+      .map(value => ('0' + value.toString(16)).slice(-2)).join(' ') : null;
+    log('raw=' + run.rawEvents + ' ' + JSON.stringify({
+      name: event.name || (event.device && event.device.name),
+      uuids: event.uuids, serviceKeys: serviceKeys,
+      serviceDataType: Object.prototype.toString.call(event.serviceData),
+      serviceDataProperties: event.serviceData ? Object.keys(event.serviceData) : [],
+      serviceDataBytes: directView ? directView.byteLength : null, serviceDataHex: hex,
+      eventProperties: Object.keys(event), rssi: event.rssi
+    }));
+    const selectedDeviceEvent = mode === 'watch' && event.device && run.target && event.device.id === run.target.id;
+    const data = roomPayload(event.serviceData, selectedDeviceEvent);
+    const hasUUID = event.uuids && Array.from(event.uuids).some(value => String(value).toLowerCase() === UUID);
+    if (!data && !hasUUID) return;
+    run.events++;
+    const room = data ? new TextDecoder().decode(data) : '';
+    if (room === 'TEST-101') run.matches++;
+    log(`event=${run.events} room=${room || '(ยังไม่มี service data)'} RSSI=${event.rssi == null ? 'unknown' : event.rssi} GATT=${!!(event.device && event.device.gatt && event.device.gatt.connected)}`);
+    el('status').textContent = `รับ TEST-101: ${run.matches} แพ็กเก็ต — ยังต้องเทียบผลพร้อมกับเครื่องอื่น`;
+    } catch (error) {
+      log('Advertisement parse error: ' + String(error));
+    }
+  };
+  try {
+    if (mode === 'scan') {
+      if (typeof bt.requestLEScan !== 'function') throw new Error('ไม่มี requestLEScan; ลองปุ่มเลือก Beacon หรือส่งผล API ด้านบน');
+      run.target = bt;
+      bt.addEventListener('advertisementreceived', run.handler);
+      log('Calling navigator.bluetooth.requestLEScan');
+      run.scanner = await bt.requestLEScan({filters: [{services: [UUID]}], keepRepeatedDevices: true});
+      if (active !== run) { run.scanner.stop(); return; }
+    } else {
+      log('Calling navigator.bluetooth.requestDevice');
+      const device = await bt.requestDevice({filters: [{services: [UUID]}], optionalServices: [UUID]});
+      if (active !== run) return;
+      log('Device watchAdvertisements: ' + typeof device.watchAdvertisements);
+      capabilities.selectedDeviceWatchAdvertisements = typeof device.watchAdvertisements === 'function';
+      el('capabilities').textContent = JSON.stringify(capabilities, null, 2);
+      if (typeof device.watchAdvertisements !== 'function') throw new Error('เครื่องนี้ไม่มี device.watchAdvertisements; การเลือกอุปกรณ์สำเร็จยังไม่ใช่รับ broadcast สำเร็จ');
+      run.target = device;
+      device.addEventListener('advertisementreceived', run.handler);
+      log('Calling device.watchAdvertisements');
+      await device.watchAdvertisements({signal: run.controller.signal});
+      if (active !== run) return;
+    }
+    clearTimeout(run.pendingTimer);
+    run.listeningAt = Date.now();
+    log('visibility=' + document.visibilityState);
+    log('Listening; no GATT connection requested');
+    el('status').textContent = 'กำลังรับ 30 วินาที — รอแพ็กเก็ต TEST-101';
+    run.timer = setTimeout(() => stop('จบ timer ที่ตั้งไว้ 30 วินาที'), 30000);
+  } catch (error) {
+    if (active === run) stop(`${error.name}: ${error.message}`);
+  }
+}
+startupStage = 'attach button handlers';
+function launch(mode) {
+  start(mode).catch(error => {
+    el('status').textContent = 'Start error: ' + String(error);
+    log(el('status').textContent);
+  });
+}
+el('scan').onclick = () => launch('scan');
+el('watch').onclick = () => launch('watch');
+el('stop').onclick = () => stop();
+el('copy').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(el('capabilities').textContent + '\n' + el('status').textContent + '\n' + lines.join('\n'));
+    el('copy').textContent = 'คัดลอกแล้ว';
+  } catch (error) { el('copy').textContent = 'คัดลอกไม่ได้ — เลือกข้อความผลด้านล่าง'; }
+};
+window.addEventListener('pagehide', () => stop());
+document.addEventListener('visibilitychange', () => {
+  if (active) log('visibility=' + document.visibilityState);
+});
+log('Scanner ready: beacon-5');
+el('status').textContent = 'Scanner พร้อมแล้ว — เลือกปุ่มทดสอบ';
+} catch (error) {
+  document.getElementById('status').textContent = 'Startup error at ' + startupStage + ': ' + String(error);
+}
+})();
+</script>
+</html>

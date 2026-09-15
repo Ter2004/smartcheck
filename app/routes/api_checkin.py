@@ -355,12 +355,12 @@ def checkin():
             .select("id, status")
             .eq("session_id", session_id)
             .eq("student_id", student_id)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
     if dup and dup.data:
         reject("already_checked")
-        return jsonify({"ok": False, "already_checked": True, "error": f"เช็คชื่อแล้ว (สถานะ: {dup.data['status']})"}), 400
+        return jsonify({"ok": False, "already_checked": True, "error": f"เช็คชื่อแล้ว (สถานะ: {dup.data[0]['status']})"}), 400
 
     # ─── 8. Determine attendance status (present / late) ─────────────────────
     now = datetime.now(timezone.utc)

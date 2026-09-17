@@ -111,10 +111,18 @@ def checkin():
 
     baseline_ear = bio.get("baseline_ear") or 0.25
 
+    import datetime as _dt_mod
+    _TH_S = _dt_mod.timezone(_dt_mod.timedelta(hours=7))
+    _now_th = _dt_mod.datetime.now(_TH_S)
+    _today_start = _now_th.replace(hour=0, minute=0, second=0, microsecond=0)
+    _tomorrow_start = _today_start + _dt_mod.timedelta(days=1)
+
     open_sessions = (
         supabase_admin.table("sessions")
         .select("*, courses(id, code, name), beacons(uuid, rssi_threshold, room_name)")
         .eq("is_open", True)
+        .gte("start_time", _today_start.isoformat())
+        .lt("start_time", _tomorrow_start.isoformat())
         .execute()
         .data or []
     )
@@ -148,9 +156,6 @@ def checkin():
         if res and res.data:
             already_checked = True
 
-    import datetime as _dt_mod
-    _TH_S = _dt_mod.timezone(_dt_mod.timedelta(hours=7))
-    _now_th = _dt_mod.datetime.now(_TH_S)
     _week_start = (_now_th.date() - _dt_mod.timedelta(days=_now_th.weekday())).isoformat()
     _week_end   = (_now_th.date() + _dt_mod.timedelta(days=6 - _now_th.weekday())).isoformat()
 

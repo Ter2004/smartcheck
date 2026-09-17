@@ -28,7 +28,7 @@ void gapEvent(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
 void drawStatus() {
   const int state = advState.load();
   const char *label = state == 2 ? "ON" : state == 1 ? "STARTING" : state == 3 ? "ERROR" : "OFF";
-  Serial.printf("beacon=SC-TEST1 room=%s advertising=%s mode=non-connectable payload=primary-v2\n", ROOM_ID, label);
+  Serial.printf("beacon=SC-TEST1 room=%s advertising=%s mode=non-connectable payload=manufacturer-B\n", ROOM_ID, label);
   if (!oledReady) return;
   display.clearDisplay();
   display.setCursor(0, 0);
@@ -67,9 +67,9 @@ void setup() {
   advertising->setMaxInterval(240); // 150 ms
   BLEAdvertisementData primary;
   primary.setFlags(0x06); // 3 bytes
-  // Put the room in the primary packet so receiving it does not depend on
-  // the browser exposing service data from the scan response. Total 29 bytes.
-  primary.setServiceData(BLEUUID(SERVICE_UUID), String(ROOM_ID)); // 26 bytes
+  // Hypothesis B: testing identifier 0xFFFF (little endian), then TEST-101.
+  const char manufacturerPayload[] = {char(0xFF), char(0xFF), 'T', 'E', 'S', 'T', '-', '1', '0', '1'};
+  primary.setManufacturerData(String(manufacturerPayload, sizeof(manufacturerPayload)));
   BLEAdvertisementData response;
   response.setCompleteServices(BLEUUID(SERVICE_UUID)); // 18 bytes
   response.setName("SC-TEST1"); // 10 bytes: scan response total = 28

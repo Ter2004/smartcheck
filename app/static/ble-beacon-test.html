@@ -15,7 +15,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:16px;bo
 <button id="watch">เลือก Beacon แล้วรับ broadcast</button>
 <button id="stop" disabled>หยุด</button>
 <button id="copy">คัดลอกผล</button>
-<p>Diagnostic version: beacon-5</p>
+<p>Diagnostic version: manufacturer-B</p>
 <pre id="capabilities">JavaScript ยังไม่เริ่ม — หากข้อความนี้ค้าง ให้ตรวจว่า Bluefy เปิด JavaScript</pre>
 <pre id="status" role="status">ยังไม่ได้ทดสอบ</pre>
 <pre id="log"></pre>
@@ -59,16 +59,19 @@ const capabilities = {
 el('capabilities').textContent = JSON.stringify(capabilities, null, 2);
 let active = null;
 let lines = [];
-function roomPayload(serviceData, selectedDeviceEvent) {
+function roomPayload(manufacturerData, selectedDeviceEvent) {
   let data;
-  if (serviceData && typeof serviceData.forEach === 'function') {
-    serviceData.forEach((value, key) => {
-      if (String(key).toLowerCase() === UUID) data = value;
+  if (manufacturerData && typeof manufacturerData.forEach === 'function') {
+    manufacturerData.forEach((value, key) => {
+      if (key === 0xFFFF) data = value;
     });
-  } else if (selectedDeviceEvent && Object.prototype.toString.call(serviceData) === '[object DataView]') {
-    // Bluefy 3.9.3 emits a DataView without a UUID-keyed Map. Only accept this
-    // shape on the selected device listener, never from a global scan.
-    data = serviceData;
+  } else if (selectedDeviceEvent && Object.prototype.toString.call(manufacturerData) === '[object DataView]') {
+    // A direct view may include the company identifier; raw bytes are logged
+    // before this helper runs. Strip only the exact testing identifier.
+    data = manufacturerData;
+    if (data.byteLength >= 2 && data.getUint8(0) === 0xFF && data.getUint8(1) === 0xFF) {
+      data = new DataView(data.buffer, data.byteOffset + 2, data.byteLength - 2);
+    }
   }
   return data;
 }
@@ -116,29 +119,30 @@ async function start(mode) {
     if (active !== run) return;
     run.rawEvents++;
     try {
-    const serviceKeys = [];
-    if (event.serviceData && typeof event.serviceData.forEach === 'function') {
-      event.serviceData.forEach((value, key) => serviceKeys.push(String(key)));
+    const manufacturerEntries = [];
+    function rawBytes(view) {
+      return {bytes: view.byteLength, hex: Array.from(new Uint8Array(view.buffer, view.byteOffset, view.byteLength))
+        .map(value => ('0' + value.toString(16)).slice(-2)).join(' ')};
     }
-    const directView = Object.prototype.toString.call(event.serviceData) === '[object DataView]' ? event.serviceData : null;
-    const hex = directView ? Array.from(new Uint8Array(directView.buffer, directView.byteOffset, Math.min(directView.byteLength, 64)))
-      .map(value => ('0' + value.toString(16)).slice(-2)).join(' ') : null;
+    if (event.manufacturerData && typeof event.manufacturerData.forEach === 'function') {
+      event.manufacturerData.forEach((value, key) => manufacturerEntries.push({companyId: key, raw: rawBytes(value)}));
+    }
+    const directView = Object.prototype.toString.call(event.manufacturerData) === '[object DataView]' ? event.manufacturerData : null;
     log('raw=' + run.rawEvents + ' ' + JSON.stringify({
       name: event.name || (event.device && event.device.name),
-      uuids: event.uuids, serviceKeys: serviceKeys,
-      serviceDataType: Object.prototype.toString.call(event.serviceData),
-      serviceDataProperties: event.serviceData ? Object.keys(event.serviceData) : [],
-      serviceDataBytes: directView ? directView.byteLength : null, serviceDataHex: hex,
+      uuids: event.uuids, manufacturerEntries: manufacturerEntries,
+      manufacturerDataType: Object.prototype.toString.call(event.manufacturerData),
+      manufacturerDataRaw: directView ? rawBytes(directView) : null,
       eventProperties: Object.keys(event), rssi: event.rssi
     }));
     const selectedDeviceEvent = mode === 'watch' && event.device && run.target && event.device.id === run.target.id;
-    const data = roomPayload(event.serviceData, selectedDeviceEvent);
+    const data = roomPayload(event.manufacturerData, selectedDeviceEvent);
     const hasUUID = event.uuids && Array.from(event.uuids).some(value => String(value).toLowerCase() === UUID);
     if (!data && !hasUUID) return;
     run.events++;
     const room = data ? new TextDecoder().decode(data) : '';
     if (room === 'TEST-101') run.matches++;
-    log(`event=${run.events} room=${room || '(ยังไม่มี service data)'} RSSI=${event.rssi == null ? 'unknown' : event.rssi} GATT=${!!(event.device && event.device.gatt && event.device.gatt.connected)}`);
+    log(`event=${run.events} room=${room || '(ยังไม่มี manufacturer data)'} RSSI=${event.rssi == null ? 'unknown' : event.rssi} GATT=${!!(event.device && event.device.gatt && event.device.gatt.connected)}`);
     el('status').textContent = `รับ TEST-101: ${run.matches} แพ็กเก็ต — ยังต้องเทียบผลพร้อมกับเครื่องอื่น`;
     } catch (error) {
       log('Advertisement parse error: ' + String(error));
@@ -154,7 +158,7 @@ async function start(mode) {
       if (active !== run) { run.scanner.stop(); return; }
     } else {
       log('Calling navigator.bluetooth.requestDevice');
-      const device = await bt.requestDevice({filters: [{services: [UUID]}], optionalServices: [UUID]});
+      const device = await bt.requestDevice({filters: [{services: [UUID]}], optionalServices: [UUID], optionalManufacturerData: [0xFFFF]});
       if (active !== run) return;
       log('Device watchAdvertisements: ' + typeof device.watchAdvertisements);
       capabilities.selectedDeviceWatchAdvertisements = typeof device.watchAdvertisements === 'function';
@@ -196,7 +200,7 @@ window.addEventListener('pagehide', () => stop());
 document.addEventListener('visibilitychange', () => {
   if (active) log('visibility=' + document.visibilityState);
 });
-log('Scanner ready: beacon-5');
+log('Scanner ready: manufacturer-B');
 el('status').textContent = 'Scanner พร้อมแล้ว — เลือกปุ่มทดสอบ';
 } catch (error) {
   document.getElementById('status').textContent = 'Startup error at ' + startupStage + ': ' + String(error);

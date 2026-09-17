@@ -41,15 +41,21 @@
             </button>
             <form method="POST" action="{{ url_for('teacher.session_toggle', session_id=sess.id) }}" class="flex items-center gap-2">
                 {% if sess.is_open %}
-                    {% if sess.checkin_duration %}
-                    <span class="text-xs text-slate-400">รับ {{ sess.checkin_duration }} นาที</span>
+                    {% if checkin_window == 'accepting' %}
+                    <span class="text-xs text-emerald-600">รับเช็คชื่อถึง {{ deadline_local.strftime('%H:%M') if deadline_local else '—' }}</span>
+                    {% elif checkin_window == 'expired' %}
+                    <span class="text-xs text-rose-600">หมดเวลารับเช็คชื่อแล้ว (ปิดรับเมื่อ {{ deadline_local.strftime('%H:%M') if deadline_local else '—' }})</span>
+                    {% elif checkin_window == 'not_started' %}
+                    <span class="text-xs text-amber-600">ยังไม่ถึงเวลาเริ่มรับเช็คชื่อ</span>
+                    {% else %}
+                    <span class="text-xs text-amber-600">ยังไม่เปิดรับเช็คชื่อ</span>
                     {% endif %}
                     <button type="submit" onclick="return confirm('ปิดการเช็คชื่อ?')"
                             class="inline-flex items-center gap-1.5 text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-lg transition-colors">
                         ปิดคาบเรียน
                     </button>
                 {% else %}
-                    <input type="number" name="checkin_duration" min="1" max="120" placeholder="นาที"
+                    <input type="number" name="checkin_duration" min="1" max="120" placeholder="นาที" value="30"
                            class="w-20 text-xs border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center">
                     <button type="submit"
                             class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg transition-colors">
@@ -57,16 +63,47 @@
                     </button>
                 {% endif %}
             </form>
+            {% if sess.is_open %}
+            <form method="POST" action="{{ url_for('teacher.session_set_window', session_id=sess.id) }}" class="flex items-center gap-2">
+                <input type="number" name="checkin_duration" min="1" max="120" placeholder="นาที" value="30"
+                       class="w-20 text-xs border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500 text-center">
+                <button type="submit"
+                        class="inline-flex items-center gap-1.5 text-xs font-medium bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-2 rounded-lg transition-colors">
+                    ตั้งเวลารับเช็คชื่อใหม่
+                </button>
+            </form>
+            {% endif %}
         </div>
     </div>
 </div>
 
-<!-- Status badge -->
-{% if sess.is_open %}
+<!-- Status badge — mirrors the header label (checkin_window), not is_open
+     alone, so the two can't contradict each other. A closed session (not
+     is_open) shows no badge here, consistent with the header showing no
+     status text in that case either — only the "เปิดคาบเรียน" control. -->
+{% if checkin_window == 'accepting' %}
 <div class="flex items-center gap-2 mb-6 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
     <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
     <span class="text-sm font-medium text-emerald-700">คาบเรียนเปิดอยู่ — กำลังรับเช็คชื่อ</span>
     <span class="ml-auto text-xs text-emerald-600">รีเฟรชอัตโนมัติทุก 30 วินาที</span>
+</div>
+{% elif checkin_window == 'expired' %}
+<div class="flex items-center gap-2 mb-6 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+    <span class="w-2 h-2 bg-rose-500 rounded-full"></span>
+    <span class="text-sm font-medium text-rose-700">คาบเรียนเปิดอยู่ — แต่หมดเวลารับเช็คชื่อแล้ว</span>
+    <span class="ml-auto text-xs text-rose-600">รีเฟรชอัตโนมัติทุก 30 วินาที</span>
+</div>
+{% elif checkin_window == 'not_started' %}
+<div class="flex items-center gap-2 mb-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+    <span class="w-2 h-2 bg-amber-500 rounded-full"></span>
+    <span class="text-sm font-medium text-amber-700">คาบเรียนเปิดอยู่ — ยังไม่ถึงเวลาเริ่มรับเช็คชื่อ</span>
+    <span class="ml-auto text-xs text-amber-600">รีเฟรชอัตโนมัติทุก 30 วินาที</span>
+</div>
+{% elif sess.is_open %}
+<div class="flex items-center gap-2 mb-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+    <span class="w-2 h-2 bg-amber-500 rounded-full"></span>
+    <span class="text-sm font-medium text-amber-700">คาบเรียนเปิดอยู่ — ยังไม่เปิดรับเช็คชื่อ</span>
+    <span class="ml-auto text-xs text-amber-600">รีเฟรชอัตโนมัติทุก 30 วินาที</span>
 </div>
 {% endif %}
 

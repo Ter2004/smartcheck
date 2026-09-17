@@ -6,9 +6,45 @@ from flask import (Blueprint, render_template, request, redirect,
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
+from app.services.session_eligibility import (
+    DEFAULT_CHECKIN_DURATION_MINUTES, window_status, parse_start_time, extend_duration_from_now,
+)
 from app.utils import friendly_error
 
 teacher_bp = Blueprint("teacher", __name__)
+
+
+def _parse_requested_minutes(raw):
+    """Parse a teacher-submitted 'checkin_duration' form field into whole
+    minutes for the ACCEPTANCE-WINDOW REQUEST — not the cumulative stored
+    value used by extend_duration_from_now() when reopening/refreshing a
+    stale session, which can legitimately exceed this range.
+
+    Blank/missing -> (DEFAULT_CHECKIN_DURATION_MINUTES, None): the approved
+    default. A non-blank value that isn't a plain positive integer, or is
+    outside the existing UI's 1-120 minute range, is a validation error —
+    it must not be silently coerced to the default, and must not raise.
+
+    Returns (minutes, error_message); error_message is None on success.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return DEFAULT_CHECKIN_DURATION_MINUTES, None
+    if not raw.isdigit():
+        return None, "เวลารับเช็คชื่อไม่ถูกต้อง กรุณากรอกจำนวนนาทีเป็นตัวเลขเต็มบวก 1-120"
+    # str.isdigit() is True for some inputs int() still rejects: non-ASCII
+    # digit characters like U+00B2 ('²') that int() doesn't accept, and (as
+    # of Python 3.11) numeric strings longer than sys.get_int_max_str_digits()
+    # (4300 by default), which raise ValueError rather than converting. Both
+    # are confirmed reproductions, not hypothetical — caught here so they
+    # become the same validation error, not an unhandled 500.
+    try:
+        minutes = int(raw)
+    except ValueError:
+        return None, "เวลารับเช็คชื่อไม่ถูกต้อง กรุณากรอกจำนวนนาทีเป็นตัวเลขเต็มบวก 1-120"
+    if not (1 <= minutes <= 120):
+        return None, "เวลารับเช็คชื่อต้องอยู่ระหว่าง 1-120 นาที"
+    return minutes, None
 
 
 # ─── Session History ──────────────────────────────────────────
@@ -185,6 +221,11 @@ def session_create():
         flash("ไม่มีสิทธิ์สร้าง session ให้วิชานี้", "danger")
         return redirect(url_for("teacher.dashboard"))
 
+    checkin_duration, duration_error = _parse_requested_minutes(request.form.get("checkin_duration"))
+    if duration_error:
+        flash(duration_error, "danger")
+        return redirect(url_for("teacher.dashboard"))
+
     try:
         res = supabase_admin.table("sessions").insert({
             "course_id":  course_id,
@@ -193,6 +234,7 @@ def session_create():
             "start_time": start_time,
             "end_time":   end_time,
             "is_open":    True,
+            "checkin_duration": checkin_duration,
         }).execute()
         new_id = res.data[0]["id"]
         flash(f"สร้างคาบเรียน '{title}' สำเร็จ", "success")
@@ -244,12 +286,26 @@ def session_view(session_id):
     # att_map: student_id → attendance row (สร้างใน Python เพื่อใช้ใน template)
     att_map = {a["student_id"]: a for a in attendance}
 
+    # "Open" and "accepting check-ins" are different things (see
+    # app/services/session_eligibility.py) — the template needs to show
+    # which one applies, not just is_open.
+    checkin_window = window_status(sess)
+    deadline_local = None
+    if checkin_window in ("accepting", "expired"):
+        from app.services.session_eligibility import checkin_deadline
+        from zoneinfo import ZoneInfo
+        deadline = checkin_deadline(sess)
+        if deadline is not None:
+            deadline_local = deadline.astimezone(ZoneInfo("Asia/Bangkok"))
+
     return render_template(
         "teacher/session_view.html",
         sess=sess,
         attendance=attendance,
         all_students=all_students,
         att_map=att_map,
+        checkin_window=checkin_window,
+        deadline_local=deadline_local,
     )
 
 
@@ -264,7 +320,7 @@ def session_toggle(session_id):
 
     sess = (
         supabase_admin.table("sessions")
-        .select("is_open, start_time, course_id, courses(id, teacher_id)")
+        .select("is_open, start_time, end_time, course_id, courses(id, teacher_id)")
         .eq("id", session_id)
         .maybe_single()
         .execute()
@@ -277,56 +333,127 @@ def session_toggle(session_id):
     new_state = not sess["is_open"]
     now_dt    = datetime.now(timezone.utc)
 
-    # ─── ถ้าจะเปิด: ตรวจ schedule ว่าอยู่ในช่วงเวลาที่อนุญาตไหม ──────
-    if new_state:
-        from zoneinfo import ZoneInfo
-        from datetime import timedelta
-        local_now  = now_dt.astimezone(ZoneInfo("Asia/Bangkok"))
-        today_dow  = local_now.weekday()
-        now_time   = local_now.time()
-
-        schedules = (
-            supabase_admin.table("schedules")
-            .select("start_time, end_time")
-            .eq("course_id", sess["course_id"])
-            .eq("day_of_week", today_dow)
-            .execute()
-            .data or []
-        )
-
-        if schedules:
-            from datetime import time as dtime
-            in_window = False
-            for sch in schedules:
-                if not sch.get("start_time") or not sch.get("end_time"):
-                    continue
-                parts_s = sch["start_time"].split(":")
-                parts_e = sch["end_time"].split(":")
-                from datetime import datetime as _dt
-                _buffer = timedelta(minutes=30)
-                s_time = (_dt.combine(_dt.today(), dtime(int(parts_s[0]), int(parts_s[1]))) - _buffer).time()
-                e_time = (_dt.combine(_dt.today(), dtime(int(parts_e[0]), int(parts_e[1]))) + _buffer).time()
-                if s_time <= now_time <= e_time:
-                    in_window = True
-                    break
-            if not in_window:
-                flash("ไม่สามารถเปิดคาบได้ — อยู่นอกช่วงเวลาที่กำหนดในตารางเรียน", "danger")
-                return redirect(url_for("teacher.session_view", session_id=session_id))
-
+    # Teachers may open a session manually regardless of whether a recurring
+    # schedule exists for today, and regardless of whether the current time
+    # falls inside that schedule's window — a same-day makeup/extra session
+    # is a legitimate manual open, not a mistake to block. Ownership (above)
+    # and CSRF (@csrf_protect_form) remain the only gates on this action.
     update_data = {"is_open": new_state}
     if new_state:
-        update_data["start_time"] = now_dt.isoformat()
-        update_data["end_time"]   = None
-        duration_str = request.form.get("checkin_duration", "").strip()
-        if duration_str.isdigit() and int(duration_str) > 0:
-            update_data["checkin_duration"] = int(duration_str)
+        requested_minutes, duration_error = _parse_requested_minutes(request.form.get("checkin_duration"))
+        if duration_error:
+            flash(duration_error, "danger")
+            return redirect(url_for("teacher.session_view", session_id=session_id))
+        update_data["end_time"] = None
+
+        # Every application write path this codebase was inspected for
+        # (scheduler auto-create, admin create, teacher.session_create,
+        # scripts/seed_load_test.py) leaves end_time null at creation and
+        # teacher.session_create never creates is_open=False — so the only
+        # application code path that produces is_open=False with a non-null
+        # end_time is this function's own close branch below. Within that
+        # inspected set, end_time IS NOT NULL is reliable evidence of a
+        # reopen. It is not proof against a row a direct manual DB edit put
+        # into an equivalent state outside the application.
+        is_reopen = sess.get("end_time") is not None
+        if is_reopen:
+            # Reopening must not overwrite the original class start — it
+            # drives late-arrival classification and historical/weekly
+            # grouping elsewhere (see the session-eligibility start_time
+            # trace). Extend checkin_duration instead, the same way
+            # session_set_window does, via the one shared function.
+            original_start = parse_start_time(sess)
+            if original_start is None:
+                flash("ไม่สามารถเปิดคาบซ้ำได้ — ไม่พบเวลาเริ่มคาบเดิมที่ถูกต้อง", "danger")
+                return redirect(url_for("teacher.session_view", session_id=session_id))
+            checkin_duration, starts_in_future = extend_duration_from_now(
+                original_start, requested_minutes, now_dt)
+            update_data["checkin_duration"] = checkin_duration
+            message = (f"เปิดคาบซ้ำแล้ว (จะรับเช็คชื่อ {requested_minutes} นาทีเมื่อถึงเวลาคาบ)"
+                       if starts_in_future else
+                       f"เปิดคาบซ้ำแล้ว (รับ {requested_minutes} นาทีจากนี้)")
         else:
-            update_data["checkin_duration"] = None
-    if not new_state:
+            # First opening of a session that has never been closed before
+            # (auto-created ahead of time, or admin-created with a
+            # placeholder start_time) — now() is genuinely the class's
+            # actual start.
+            update_data["start_time"] = now_dt.isoformat()
+            update_data["checkin_duration"] = requested_minutes
+            message = f"เปิดการเช็คชื่อแล้ว (รับ {requested_minutes} นาที)"
+    else:
         update_data["end_time"] = now_dt.isoformat()
+        message = "ปิดการเช็คชื่อแล้ว"
 
     supabase_admin.table("sessions").update(update_data).eq("id", session_id).execute()
-    flash(f"{'เปิด' if new_state else 'ปิด'}การเช็คชื่อแล้ว", "success")
+    flash(message, "success")
+    return redirect(url_for("teacher.session_view", session_id=session_id))
+
+
+# ─── Set/refresh check-in acceptance window (session stays open) ──
+#
+# Distinct from session_toggle: a session with is_open=true but a null
+# checkin_duration is "open" but not accepting check-ins (see
+# app/services/session_eligibility.py). This lets a teacher establish (or
+# reset) that window without closing the session — closing would stamp
+# end_time and read as "session ended" in history, which is wrong for a
+# still-running class that just needs its window (re)established.
+
+@teacher_bp.route("/session/<session_id>/set-window", methods=["POST"])
+@login_required
+@role_required("teacher")
+@csrf_protect_form
+def session_set_window(session_id):
+    teacher_id = session["user_id"]
+
+    sess = (
+        supabase_admin.table("sessions")
+        .select("is_open, start_time, course_id, courses(id, teacher_id)")
+        .eq("id", session_id)
+        .maybe_single()
+        .execute()
+        .data
+    )
+    if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
+        flash("ไม่มีสิทธิ์", "danger")
+        return redirect(url_for("teacher.dashboard"))
+    if not sess.get("is_open"):
+        flash("คาบนี้ปิดอยู่ — กรุณาเปิดคาบก่อน", "danger")
+        return redirect(url_for("teacher.session_view", session_id=session_id))
+
+    requested_minutes, duration_error = _parse_requested_minutes(request.form.get("checkin_duration"))
+    if duration_error:
+        flash(duration_error, "danger")
+        return redirect(url_for("teacher.session_view", session_id=session_id))
+
+    # start_time is the original class start — it also drives late-arrival
+    # classification (api_checkin.py), calendar-day/week grouping (teacher
+    # dashboard/history, student weekly table), and the scheduler's
+    # auto-close lookup. It must not be reset here (see the trace in the
+    # session-eligibility work). Instead, extend checkin_duration so the
+    # deadline (start_time + checkin_duration, computed in
+    # session_eligibility.checkin_deadline) lands at now + requested_minutes
+    # — or, if the class hasn't started yet, at original_start +
+    # requested_minutes — without touching start_time at all. This means
+    # checkin_duration's raw stored value stops reading as "minutes from
+    # class start" once this has been used on a stale session — the teacher
+    # UI shows the derived accepting/expired status, not this raw number,
+    # specifically because of that.
+    original_start = parse_start_time(sess)
+    if original_start is None:
+        flash("ไม่สามารถตั้งเวลาได้ — ไม่พบเวลาเริ่มคาบเดิมที่ถูกต้อง", "danger")
+        return redirect(url_for("teacher.session_view", session_id=session_id))
+
+    now_dt = datetime.now(timezone.utc)
+    checkin_duration, starts_in_future = extend_duration_from_now(
+        original_start, requested_minutes, now_dt)
+
+    supabase_admin.table("sessions").update({
+        "checkin_duration": checkin_duration,
+    }).eq("id", session_id).execute()
+    message = (f"ตั้งเวลารับเช็คชื่อแล้ว (จะรับเช็คชื่อ {requested_minutes} นาทีเมื่อถึงเวลาคาบ)"
+               if starts_in_future else
+               f"ตั้งเวลารับเช็คชื่อใหม่แล้ว (รับอีก {requested_minutes} นาทีจากนี้)")
+    flash(message, "success")
     return redirect(url_for("teacher.session_view", session_id=session_id))
 
 

@@ -4,6 +4,7 @@ import subprocess
 import sys
 import unittest
 from contextlib import ExitStack
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -23,13 +24,15 @@ NOW = 1788758850
 class Database:
     def __init__(self):
         self.records = []
+        self.start_time = datetime.now(timezone.utc).isoformat()
 
     def table(self, name):
         query = Mock()
-        for method in ['select', 'eq', 'neq', 'maybe_single']:
+        for method in ['select', 'eq', 'neq', 'maybe_single', 'limit']:
             getattr(query, method).return_value = query
         data = {
-            'sessions': {'id': 'session', 'course_id': 'course', 'is_open': True},
+            'sessions': {'id': 'session', 'course_id': 'course', 'is_open': True,
+                         'start_time': self.start_time, 'checkin_duration': 120},
             'course_enrollments': {'id': 'enrollment'},
             'users': {'device_id': ''},
             'student_biometrics': {

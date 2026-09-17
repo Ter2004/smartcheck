@@ -99,7 +99,7 @@
                         <span class="inline-flex items-center gap-1 text-xs text-slate-400">
                             <span class="w-2 h-2 bg-slate-300 rounded-full"></span>ยังไม่เปิด
                         </span>
-                        {% elif ws.is_open %}
+                        {% elif ws.accepting %}
                         <div class="flex items-center gap-2">
                             <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
                                 <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>เปิดอยู่
@@ -109,6 +109,10 @@
                                 เช็คชื่อ
                             </button>
                         </div>
+                        {% elif ws.is_open %}
+                        <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-600">
+                            <span class="w-2 h-2 bg-amber-400 rounded-full"></span>เปิดคาบแล้ว — ยังไม่รับเช็คชื่อ
+                        </span>
                         {% elif ws.id in checked_session_ids %}
                         <span class="inline-flex items-center gap-1 text-xs font-medium text-indigo-600">
                             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>เช็คแล้ว
@@ -133,7 +137,11 @@
     {% if not session_data %}
     <div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3">
         <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        {% if pending_session %}
+        <p class="text-sm text-amber-800">คาบ {{ pending_session.courses.code }} — {{ pending_session.courses.name }} เปิดอยู่ แต่ยังไม่เปิดรับเช็คชื่อในขณะนี้ กรุณาติดต่ออาจารย์</p>
+        {% else %}
         <p class="text-sm text-amber-800">ไม่พบ Session ที่เปิดอยู่ในขณะนี้ กรุณารอให้อาจารย์เปิด Session ก่อน</p>
+        {% endif %}
     </div>
 
     {% elif already_checked %}

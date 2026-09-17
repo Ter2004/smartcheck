@@ -23,6 +23,7 @@ from app.services.security_service import (
 )
 from app.services.esp32_totp import verify_code
 from app.services import proximity_receipt
+from app.services import session_eligibility
 from app import limiter as _limiter
 
 api_checkin_bp = Blueprint("api_checkin", __name__)
@@ -497,15 +498,26 @@ def _eligible(data):
         reject("course_not_enrolled")
         return None, (jsonify({"ok": False, "error": "คุณไม่ได้ลงทะเบียนในรายวิชานี้"}), 403)
 
-    # ─── Check-in window (checkin_duration minutes from start) ───────────────
-    checkin_duration = sess.get("checkin_duration")
-    if checkin_duration and sess.get("start_time"):
-        from datetime import timedelta
-        open_at  = dtparser.parse(sess["start_time"])
-        deadline = open_at + timedelta(minutes=int(checkin_duration))
-        if datetime.now(timezone.utc) > deadline:
-            reject("checkin_deadline_exceeded")
-            return None, (jsonify({"ok": False, "error": f"หมดเวลาเช็คชื่อแล้ว (รับ {checkin_duration} นาที)"}), 400)
+    # ─── Check-in acceptance window ────────────────────────────────────────
+    # is_open (checked above) means the session hasn't been closed; it does
+    # not by itself mean check-ins are being accepted right now. window_status
+    # never raises — a malformed/zero/negative checkin_duration or an
+    # unparseable start_time is treated the same as "not set", not a crash.
+    status = session_eligibility.window_status(sess, datetime.now(timezone.utc))
+    if status == session_eligibility.NOT_SET:
+        reject("checkin_window_not_set")
+        return None, (jsonify({"ok": False, "error_code": "checkin_window_not_set",
+                        "error": "อาจารย์ยังไม่ได้ตั้งเวลารับเช็คชื่อสำหรับคาบนี้ กรุณาแจ้งอาจารย์"}), 400)
+    if status == session_eligibility.NOT_STARTED:
+        reject("checkin_not_started")
+        return None, (jsonify({"ok": False, "error_code": "checkin_not_started",
+                        "error": "ยังไม่ถึงเวลาเริ่มรับเช็คชื่อสำหรับคาบนี้ กรุณารอสักครู่"}), 400)
+    if status == session_eligibility.EXPIRED:
+        from zoneinfo import ZoneInfo
+        deadline_local = session_eligibility.checkin_deadline(sess).astimezone(ZoneInfo("Asia/Bangkok"))
+        reject("checkin_deadline_exceeded")
+        return None, (jsonify({"ok": False, "error_code": "checkin_deadline_exceeded",
+                        "error": f"หมดเวลาเช็คชื่อแล้ว (ปิดรับเมื่อ {deadline_local:%H:%M} น.)"}), 400)
     return sess, None
 
 

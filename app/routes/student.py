@@ -2,6 +2,7 @@ import logging
 import json
 import cv2
 import numpy as np
+from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
@@ -9,6 +10,7 @@ from app.services.security_service import (
     create_device_token, csrf_protect,
     compute_embedding_integrity_hash,
 )
+from app.services.session_eligibility import is_accepting_checkins
 from app.services.face_service import (
     SELF_VERIFY_THRESHOLD,
     DUPLICATE_THRESHOLD,
@@ -130,8 +132,17 @@ def checkin():
         )
     }
 
+    now_utc = datetime.now(timezone.utc)
+    candidate_sessions = [s for s in open_sessions if s["course_id"] in enrolled_course_ids]
     session_data = next(
-        (s for s in open_sessions if s["course_id"] in enrolled_course_ids),
+        (s for s in candidate_sessions if is_accepting_checkins(s, now_utc)),
+        None,
+    )
+    # A session can be is_open=True for an enrolled course yet not accepting
+    # check-ins (no acceptance window established, or it expired). Surfaced
+    # separately so the page can say so instead of "no session at all".
+    pending_session = None if session_data else next(
+        (s for s in candidate_sessions if not is_accepting_checkins(s, now_utc)),
         None,
     )
 
@@ -165,7 +176,7 @@ def checkin():
 
     week_sessions = (
         supabase_admin.table("sessions")
-        .select("id, course_id, is_open, start_time, end_time")
+        .select("id, course_id, is_open, start_time, end_time, checkin_duration")
         .in_("course_id", list(enrolled_course_ids))
         .gte("start_time", f"{_week_start}T00:00:00+07:00")
         .lte("start_time", f"{_week_end}T23:59:59+07:00")
@@ -173,6 +184,8 @@ def checkin():
         .data or []
     ) if enrolled_course_ids else []
 
+    for s in week_sessions:
+        s["accepting"] = is_accepting_checkins(s, now_utc)
     week_session_map = {s["course_id"]: s for s in week_sessions}
 
     checked_session_ids = set()
@@ -194,6 +207,7 @@ def checkin():
     return render_template(
         "student/checkin.html",
         session_data=session_data,
+        pending_session=pending_session,
         baseline_ear=baseline_ear,
         ios_warning=ios_warning,
         already_checked=already_checked,

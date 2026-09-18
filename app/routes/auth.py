@@ -1,3 +1,4 @@
+import re
 import secrets
 from functools import wraps
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
@@ -57,6 +58,9 @@ def login():
         return render_template("auth/login.html")
 
     email = request.form.get("email", "").strip()
+    # Short IDs for the manual test accounts; Supabase still verifies passwords.
+    if re.fullmatch(r"(?:std[1-4]|t[1-5]|admin)", email, flags=re.IGNORECASE):
+        email = f"{email.lower()}@smartcheck.local"
     password = request.form.get("password", "")
 
     try:
@@ -111,7 +115,7 @@ def login():
         return _redirect_by_role(user["role"])
 
     except Exception as e:
-        flash("อีเมลหรือรหัสผ่านไม่ถูกต้อง", "danger")
+        flash("อีเมล / ID หรือรหัสผ่านไม่ถูกต้อง", "danger")
         return redirect(url_for("auth.login"))
 
 

@@ -30,6 +30,9 @@
 }
 
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+/* Minimal control reset: Tailwind preflight is disabled for camera pages. */
+*,*::before,*::after{border-width:0;border-style:solid;border-color:var(--border)}
+button{background:transparent;color:inherit}
 html{scroll-behavior:smooth}
 body{
     font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;

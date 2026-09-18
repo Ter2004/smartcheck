@@ -5,7 +5,7 @@
 <!-- Page header -->
 <div class="mb-8">
     <h1 class="text-xl font-semibold text-slate-900">สวัสดี, {{ session.get('user_name', '').split()[0] }}</h1>
-    <p class="text-sm text-slate-500 mt-0.5">ยินดีต้อนรับกลับสู่ SmartCheck</p>
+    <p class="text-sm text-slate-500 mt-0.5">วันนี้ พร้อมเริ่มเรียนแล้วหรือยัง</p>
 </div>
 
 <!-- Enrollment status banner -->
@@ -44,7 +44,7 @@
             {% endif %}
         </div>
         <h2 class="text-sm font-semibold text-slate-900 mb-1">เช็คชื่อเข้าเรียน</h2>
-        <p class="text-xs text-slate-500 mb-4 flex-1">สแกน Bluetooth ยืนยันตัวตนด้วยใบหน้าและ Liveness Detection</p>
+        <p class="text-xs text-slate-500 mb-4 flex-1">ยืนยันห้องเรียน แล้วสแกนใบหน้า</p>
         {% if enrolled %}
         <a href="{{ url_for('student.checkin') }}"
            class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-150">
@@ -72,11 +72,13 @@
             {% endif %}
         </div>
         <h2 class="text-sm font-semibold text-slate-900 mb-1">ลงทะเบียนใบหน้า</h2>
-        <p class="text-xs text-slate-500 mb-4 flex-1">บันทึก Face Embedding สำหรับยืนยันตัวตนเมื่อเช็คชื่อ</p>
+        <p class="text-xs text-slate-500 mb-4 flex-1">ใช้ใบหน้าของคุณเพื่อเช็คชื่อเข้าเรียน</p>
+        {% if not enrolled %}
         <a href="{{ url_for('student.enroll_face') }}"
-           class="inline-flex items-center justify-center gap-2 {% if enrolled %}bg-white border border-slate-200 hover:bg-slate-50 text-slate-700{% else %}bg-indigo-600 hover:bg-indigo-700 text-white{% endif %} text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-150 active:scale-95">
-            {% if enrolled %}ลงทะเบียนใหม่{% else %}เริ่มลงทะเบียน{% endif %}
+           class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-150 active:scale-95">
+            เริ่มลงทะเบียน
         </a>
+        {% endif %}
         {% if enrolled %}
         <button type="button" onclick="openWithdrawModal()"
                 class="mt-2 w-full text-xs text-rose-500 hover:text-rose-700 hover:underline py-1 transition-colors">
@@ -86,9 +88,9 @@
     </div>
 </div>
 
-<!-- Info section -->
-<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-    <h3 class="text-sm font-semibold text-slate-700 mb-3">วิธีการเช็คชื่อ</h3>
+<!-- Optional guidance -->
+<details class="help-disclosure">
+    <summary>วิธีเช็คชื่อ</summary>
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="flex items-start gap-3">
             <div class="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -96,7 +98,7 @@
             </div>
             <div>
                 <p class="text-xs font-medium text-slate-700">ยืนยันตำแหน่ง</p>
-                <p class="text-xs text-slate-400 mt-0.5">สแกน BLE Beacon ในห้องเรียน</p>
+                <p class="text-xs text-slate-400 mt-0.5">เชื่อมต่ออุปกรณ์ในห้องเรียน</p>
             </div>
         </div>
         <div class="flex items-start gap-3">
@@ -105,7 +107,7 @@
             </div>
             <div>
                 <p class="text-xs font-medium text-slate-700">ยืนยันตัวตน</p>
-                <p class="text-xs text-slate-400 mt-0.5">ตรวจ Liveness + ใบหน้า</p>
+                <p class="text-xs text-slate-400 mt-0.5">มองกล้องและทำตามคำแนะนำ</p>
             </div>
         </div>
         <div class="flex items-start gap-3">
@@ -118,7 +120,7 @@
             </div>
         </div>
     </div>
-</div>
+</details>
 
 {% if enrolled %}
 <!-- ─── Withdraw Consent Modal ──────────────────────────────────────── -->

@@ -11,9 +11,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-    <!-- Tailwind config (must come BEFORE cdn script) -->
+    <!-- Configure the CDN runtime after it has initialized. -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind = { config: {
+        tailwind.config = {
             corePlugins: { preflight: false },
             theme: { extend: {
                 fontFamily: {
@@ -21,12 +22,12 @@
                     mono: ["'JetBrains Mono'", "ui-monospace", "monospace"],
                 },
                 colors: {
+                    indigo: {50:'#eef5ff',100:'#deecff',200:'#bedaff',300:'#91bfff',400:'#5299f0',500:'#187de0',600:'#0071e3',700:'#0062c4',800:'#004f9e',900:'#003c78'},
                     brand: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3' }
                 }
             }}
-        }}
+        };
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Legacy styles (needed by camera pages only) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -58,6 +59,7 @@
     </style>
 
     {% block head %}{% endblock %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/modern.css') }}">
 </head>
 
 <body class="bg-slate-50 text-slate-800 antialiased">
@@ -95,7 +97,7 @@
         <a href="{{ url_for('admin.dashboard') }}"
            class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-150 {% if request.endpoint == 'admin.dashboard' %}nav-active{% endif %}">
             <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            <span>Overview</span>
+            <span>ภาพรวม</span>
         </a>
         <a href="{{ url_for('admin.users') }}"
            class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-150 {% if request.endpoint == 'admin.users' %}nav-active{% endif %}">
@@ -105,7 +107,7 @@
         <a href="{{ url_for('admin.beacons') }}"
            class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-150 {% if request.endpoint and 'beacon' in request.endpoint %}nav-active{% endif %}">
             <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
-            <span>Beacons</span>
+            <span>อุปกรณ์ห้องเรียน</span>
         </a>
         <a href="{{ url_for('admin.courses') }}"
            class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-150 {% if request.endpoint and 'course' in request.endpoint %}nav-active{% endif %}">
@@ -120,7 +122,7 @@
         <a href="{{ url_for('admin.biometrics') }}"
            class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-150 {% if request.endpoint == 'admin.biometrics' %}nav-active{% endif %}">
             <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            <span>Biometrics</span>
+            <span>ข้อมูลใบหน้า</span>
         </a>
         <a href="{{ url_for('admin.import_csv') }}"
            class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-150 {% if request.endpoint == 'admin.import_csv' %}nav-active{% endif %}">
@@ -132,7 +134,7 @@
         <a href="{{ url_for('teacher.dashboard') }}"
            class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-150 {% if request.endpoint == 'teacher.dashboard' %}nav-active{% endif %}">
             <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            <span>Dashboard</span>
+            <span>หน้าหลัก</span>
         </a>
         <a href="{{ url_for('teacher.history') }}"
            class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-150 {% if request.endpoint == 'teacher.history' %}nav-active{% endif %}">
@@ -151,11 +153,13 @@
             <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             <span>เช็คชื่อ</span>
         </a>
+        {% if can_enroll_face | default(false) %}
         <a href="{{ url_for('student.enroll_face') }}"
            class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-150 {% if request.endpoint == 'student.enroll_face' %}nav-active{% endif %}">
             <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
             <span>ลงทะเบียนใบหน้า</span>
         </a>
+        {% endif %}
         {% endif %}
     </nav>
 
@@ -190,7 +194,7 @@
     <!-- Mobile top bar (authenticated only) -->
     {% if session.get('user_id') %}
     <header class="lg:hidden sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
-        <button onclick="toggleSidebar()" class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors">
+        <button id="menu-toggle" aria-label="เปิดเมนู" aria-controls="sidebar" aria-expanded="false" onclick="toggleSidebar()" class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <div class="flex items-center gap-2">
@@ -204,7 +208,7 @@
     {% endif %}
 
     <!-- Page content -->
-    <main class="flex-1 {% if session.get('user_id') %}p-4 lg:p-8 max-w-5xl w-full mx-auto{% endif %}">
+    <main id="main-content" class="app-content flex-1 {% if session.get('user_id') %}p-4 lg:p-8 max-w-5xl w-full mx-auto{% endif %}">
         {% block content %}{% endblock %}
     </main>
 </div>
@@ -231,6 +235,7 @@ function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
     const open = !sidebar.classList.contains('-translate-x-full');
+    document.getElementById('menu-toggle')?.setAttribute('aria-expanded', String(!open));
     if (open) {
         sidebar.classList.add('-translate-x-full');
         overlay.classList.remove('opacity-100','pointer-events-auto');
@@ -241,6 +246,14 @@ function toggleSidebar() {
         overlay.classList.remove('opacity-0','pointer-events-none');
     }
 }
+
+document.addEventListener('keydown', event => {
+    const sidebar = document.getElementById('sidebar');
+    if (event.key === 'Escape' && sidebar && !sidebar.classList.contains('-translate-x-full')) {
+        toggleSidebar();
+        document.getElementById('menu-toggle')?.focus();
+    }
+});
 
 function showToast(message, type) {
     const cfg = {

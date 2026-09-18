@@ -20,6 +20,42 @@ from app import limiter as _limiter
 
 student_bp = Blueprint("student", __name__)
 
+
+@student_bp.before_request
+def prevent_completed_enrollment():
+    """Do not allow completed students to restart or overwrite enrollment."""
+    if request.endpoint not in {
+        "student.enroll_face", "student.record_consent", "student.api_enroll",
+        "student.api_self_verify", "student.api_spoof_check", "student.api_reset_liveness",
+    } or session.get("user_role") != "student" or not session.get("user_id"):
+        return None
+    try:
+        result = (supabase_admin.table("student_biometrics")
+                  .select("face_embeddings, consent_given")
+                  .eq("user_id", session["user_id"]).maybe_single().execute())
+        bio = result.data if result else None
+    except Exception:
+        return jsonify(status="error", message="ตรวจสอบสถานะลงทะเบียนไม่สำเร็จ กรุณาลองใหม่"), 503
+    if bio and bio.get("face_embeddings") and bio.get("consent_given"):
+        if request.endpoint == "student.enroll_face":
+            flash("คุณลงทะเบียนใบหน้าสำเร็จแล้ว", "info")
+            return redirect(url_for("student.dashboard"))
+        return jsonify(status="already_enrolled", message="คุณลงทะเบียนใบหน้าสำเร็จแล้ว ไม่สามารถลงทะเบียนซ้ำได้"), 409
+
+
+@student_bp.context_processor
+def enrollment_navigation():
+    if session.get("user_role") != "student" or not session.get("user_id"):
+        return {}
+    try:
+        result = (supabase_admin.table("student_biometrics")
+                  .select("face_embeddings, consent_given")
+                  .eq("user_id", session["user_id"]).maybe_single().execute())
+        bio = result.data if result else None
+        return {"can_enroll_face": not bool(bio and bio.get("face_embeddings") and bio.get("consent_given"))}
+    except Exception:
+        return {"can_enroll_face": False}
+
 # ─── Enrollment thresholds ────────────────────────────────────────────────────
 MAX_RETRY             = 3      # max outlier-retry rounds (server-enforced — A4)
 
@@ -97,14 +133,14 @@ def checkin():
     import re
     user_id = session["user_id"]
 
-    bio = (
+    res = (
         supabase_admin.table("student_biometrics")
         .select("face_embeddings, baseline_ear, consent_given")
         .eq("user_id", user_id)
         .maybe_single()
         .execute()
-        .data
     )
+    bio = res.data if res is not None else None
     if not bio or not bio.get("face_embeddings") or not bio.get("consent_given"):
         flash("กรุณาลงทะเบียนใบหน้าก่อน", "warning")
         return redirect(url_for("student.enroll_face"))
@@ -745,17 +781,22 @@ def api_enroll():
     except Exception as ih_err:
         _log(user_id, "integrity_hash", "warning", str(ih_err)[:80])
 
-    supabase_admin.table("student_biometrics").upsert({
-        "user_id":         user_id,
-        "face_embeddings": embeddings,
-        "baseline_ear":    baseline_ear,
-        "baseline_ear_metric": "pixel-v1" if baseline_ear is not None and data.get("baseline_ear_metric") == "pixel-v1" else None,
-        "consent_given":   True,
-        "consent_at":      session.get("consent_given_at") or now_iso,
-        "enrolled_at":     now_iso,
-        "integrity_hash":  integrity_hash,
-        "verify_attempts": 0,
-    }, on_conflict="user_id").execute()
+    try:
+        supabase_admin.table("student_biometrics").upsert({
+            "user_id":         user_id,
+            "face_embeddings": embeddings,
+            "baseline_ear":    baseline_ear,
+            "baseline_ear_metric": "pixel-v1" if baseline_ear is not None and data.get("baseline_ear_metric") == "pixel-v1" else None,
+            "consent_given":   True,
+            "consent_at":      session.get("consent_given_at") or now_iso,
+            "enrolled_at":     now_iso,
+            "integrity_hash":  integrity_hash,
+            "verify_attempts": 0,
+        }, on_conflict="user_id").execute()
+    except Exception as error:
+        if "already_enrolled" in str(error):
+            return jsonify(status="already_enrolled", message="Enrollment already completed"), 409
+        raise
 
     # Upload first capture frame as profile image (non-fatal)
     try:

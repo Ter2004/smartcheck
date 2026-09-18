@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Biometrics — SmartCheck{% endblock %}
+{% block title %}ข้อมูลใบหน้า — SmartCheck{% endblock %}
 
 {% block content %}
 {% set enrolled = records | selectattr('face_embeddings') | list | length %}
 
 <div class="flex items-center justify-between mb-8">
     <div>
-        <h1 class="text-xl font-semibold text-slate-900">Biometrics</h1>
+        <h1 class="text-xl font-semibold text-slate-900">ข้อมูลใบหน้า</h1>
         <p class="text-sm text-slate-500 mt-0.5">ลงทะเบียนแล้ว {{ enrolled }} / {{ records|length }} คน</p>
     </div>
     <!-- Progress bar -->

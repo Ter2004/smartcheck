@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — SmartCheck{% endblock %}
+{% block title %}หน้าหลัก — SmartCheck{% endblock %}
 
 {% block content %}
 {% set today = today_str %}
@@ -7,14 +7,9 @@
 <!-- Page header -->
 <div class="flex items-center justify-between mb-8">
     <div>
-        <h1 class="text-xl font-semibold text-slate-900">Dashboard</h1>
+        <h1 class="text-xl font-semibold text-slate-900">หน้าหลัก</h1>
         <p class="text-sm text-slate-500 mt-0.5">อ.{{ session.get('user_name') }}</p>
     </div>
-    <a href="{{ url_for('teacher.session_create') if False else '#' }}"
-       class="hidden sm:inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all duration-150">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        สร้างคาบเรียน
-    </a>
 </div>
 
 <!-- ─── คาบวันนี้ ─────────────────────────────────────────────── -->
@@ -48,20 +43,6 @@
             <div class="flex items-center gap-2 flex-shrink-0">
                 {% if s.end_time and not s.is_open %}
                 <span class="text-xs font-medium bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full">เสร็จแล้ว</span>
-                {% else %}
-                <form method="POST" action="{{ url_for('teacher.session_toggle', session_id=s.id) }}">
-                    {% if s.is_open %}
-                    <button type="submit" onclick="return confirm('ปิดการเช็คชื่อ?')"
-                            class="text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-lg transition-colors">
-                        ปิดคาบ
-                    </button>
-                    {% else %}
-                    <button type="submit"
-                            class="text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition-colors">
-                        เปิดคาบ
-                    </button>
-                    {% endif %}
-                </form>
                 {% endif %}
                 <a href="{{ url_for('teacher.session_view', session_id=s.id) }}"
                    class="text-xs font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors">
@@ -134,13 +115,6 @@
                 </td>
                 <td class="px-4 py-3.5">
                     <div class="flex items-center gap-2 justify-end">
-                        {% if not s.end_time %}
-                        <form method="POST" action="{{ url_for('teacher.session_toggle', session_id=s.id) }}">
-                            <button class="text-xs font-medium {% if s.is_open %}bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200{% else %}bg-indigo-600 hover:bg-indigo-700 text-white{% endif %} px-3 py-1.5 rounded-lg transition-colors">
-                                {% if s.is_open %}ปิดคาบ{% else %}เปิดคาบ{% endif %}
-                            </button>
-                        </form>
-                        {% endif %}
                         <a href="{{ url_for('teacher.session_view', session_id=s.id) }}"
                            class="text-xs font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors">
                             ดูผล

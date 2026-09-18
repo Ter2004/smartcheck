@@ -103,12 +103,6 @@
     </a>
     <h1 class="text-xl font-semibold text-slate-900 mb-4">ลงทะเบียนใบหน้า</h1>
 
-    {% if already_enrolled %}
-    <div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3 mb-4">
-        <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <p class="text-sm text-amber-800">คุณมีข้อมูลใบหน้าอยู่แล้ว — การลงทะเบียนใหม่จะ<strong>แทนที่ข้อมูลเดิม</strong></p>
-    </div>
-    {% endif %}
 
     <!-- Spoof warning toast (shown fixed at top when phone screen detected) -->
     <div id="spoofWarnToast">
@@ -162,7 +156,7 @@
     <!-- ─── Step 2: Lighting Check ─── -->
     <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="stepLightCheck">
         <h3 class="text-sm font-semibold text-slate-800 mb-1">🔆 ตรวจสอบแสง</h3>
-        <p class="text-sm text-slate-500 mb-3">ระบบตรวจสอบว่าแสงเพียงพอ — ยืนอยู่ในที่มีแสงสว่าง ไม่มีแสงจ้าด้านหลัง</p>
+        <p class="text-sm text-slate-500 mb-3">หันหน้าเข้าหาแสง หลีกเลี่ยงแสงจ้าด้านหลัง</p>
         <div class="camera-box">
             <video id="videoLightCheck" autoplay playsinline muted></video>
             <div class="face-guide" id="faceGuideLightCheck"></div>
@@ -186,7 +180,7 @@
     <!-- ─── Step 3: EAR Baseline ─── -->
     <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="stepEarCheck">
         <h3 class="text-sm font-semibold text-slate-800 mb-1">👁 ตรวจ EAR (Eye Aspect Ratio)</h3>
-        <p class="text-sm text-slate-500 mb-3">ระบบจะวัดค่า EAR ของดวงตาคุณ 3 วินาที เพื่อใช้เป็น baseline สำหรับตรวจการกะพริบตาในขั้นตอนถัดไป</p>
+        <p class="text-sm text-slate-500 mb-3">มองกล้องและลืมตาตามปกติ 3 วินาที</p>
         <div class="camera-box">
             <video id="videoEarCheck" autoplay playsinline muted></video>
             <div class="face-guide" id="faceGuideEarCheck"></div>
@@ -211,7 +205,7 @@
     <!-- ─── Step 4: Interactive Challenge ─── -->
     <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="step4">
         <h3 class="text-sm font-semibold text-slate-800 mb-1">ยืนยันตัวตน (Interactive Challenge)</h3>
-        <p class="text-sm text-slate-500 mb-3">ระบบจะสุ่ม 2 ท่า ทำตามลำดับเพื่อยืนยันว่าเป็นคนจริง</p>
+        <p class="text-sm text-slate-500 mb-3">ทำตามคำแนะนำบนหน้าจอ 2 ท่า</p>
         <div id="challengeSteps" class="flex gap-2 justify-center mb-3"></div>
         <div id="challengeInstruction" class="text-center mb-2" style="display:none">
             <div id="challengeActionLabel" class="text-xl font-bold text-indigo-600">—</div>
@@ -269,7 +263,7 @@
                     <svg class="w-8 h-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
                 <h3 class="text-base font-semibold text-slate-800 mb-1">ลงทะเบียนสำเร็จ!</h3>
-                <p class="text-sm text-slate-500 mb-5">บันทึก Face Embedding เรียบร้อยแล้ว</p>
+                <p class="text-sm text-slate-500 mb-5">บันทึกใบหน้าเรียบร้อยแล้ว</p>
                 <a href="{{ url_for('student.dashboard') }}"
                    class="inline-flex items-center justify-center w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
                     กลับหน้าหลัก
@@ -344,7 +338,7 @@
                     <svg class="w-8 h-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
                 <h3 class="text-base font-semibold text-slate-800 mb-1">ลงทะเบียนสำเร็จ!</h3>
-                <p id="circSuccessMsg" class="text-sm text-slate-500 mb-5">บันทึก Face Embedding เรียบร้อยแล้ว</p>
+                <p id="circSuccessMsg" class="text-sm text-slate-500 mb-5">บันทึกใบหน้าเรียบร้อยแล้ว</p>
                 <a href="{{ url_for('student.dashboard') }}"
                    class="inline-flex items-center justify-center w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
                     กลับหน้าหลัก

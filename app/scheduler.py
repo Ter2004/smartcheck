@@ -26,7 +26,7 @@ def auto_manage_sessions():
     try:
         sb        = _get_supabase()
         now       = datetime.now(timezone.utc)
-        local_now = datetime.now(TZ_THAI)
+        local_now = now.astimezone(TZ_THAI)
         today_dow  = local_now.weekday()
         today_date = local_now.date().isoformat()
         now_time   = local_now.time()
@@ -67,10 +67,9 @@ def auto_manage_sessions():
             ).astimezone(timezone.utc)
             existing = (
                 sb.table("sessions")
-                .select("id")
+                .select("id, is_open, end_time")
                 .eq("course_id", course_id)
-                .gte("start_time", sched_start_dt.isoformat())
-                .lte("start_time", sched_end_dt.isoformat())
+                .eq("start_time", sched_start_dt.isoformat())
                 .execute()
                 .data or []
             )
@@ -84,8 +83,8 @@ def auto_manage_sessions():
                         "beacon_id":  beacon_id_to_use,
                         "title":      title,
                         "start_time": sched_start_dt.isoformat(),
-                        "end_time":   None,
-                        "is_open":    False,
+                        "end_time":   sched_end_dt.isoformat() if now_time >= end_time else None,
+                        "is_open":    start_time <= now_time < end_time,
                     }).execute()
                     _log.info(f"[SCHEDULER] Auto-created: {title}")
                 except Exception as insert_err:
@@ -98,27 +97,15 @@ def auto_manage_sessions():
                     else:
                         raise
 
-            # ─── Auto-close: เลยเวลาจบ ────────────────────────────────
-            if now_time >= end_time:
-                # ใช้ Thai midnight แปลงเป็น UTC เพื่อหา session ที่เริ่มวันนี้
-                # (session ที่เริ่มก่อน 07:00 Thai จะมี start_time UTC เป็นวันก่อนหน้า)
-                thai_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-                thai_midnight_utc = thai_midnight.astimezone(timezone.utc)
-                open_sessions = (
-                    sb.table("sessions")
-                    .select("id, title")
-                    .eq("course_id", course_id)
-                    .eq("is_open", True)
-                    .gte("start_time", thai_midnight_utc.isoformat())
-                    .execute()
-                    .data or []
-                )
-                for sess in open_sessions:
+            # Each occurrence follows its own schedule, including adjacent classes.
+            desired_open = start_time <= now_time < end_time
+            desired_end = sched_end_dt.isoformat() if now_time >= end_time else None
+            for sess in existing:
+                if sess["is_open"] != desired_open or sess.get("end_time") != desired_end:
                     sb.table("sessions").update({
-                        "is_open":  False,
-                        "end_time": now.isoformat(),
+                        "is_open": desired_open,
+                        "end_time": desired_end,
                     }).eq("id", sess["id"]).execute()
-                    _log.info(f"[SCHEDULER] Auto-closed: {sess['title']}")
 
     except Exception as e:
         _log.error(f"[SCHEDULER] Error: {e}", exc_info=True)

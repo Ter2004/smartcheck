@@ -133,7 +133,7 @@
     {% if not session_data %}
     <div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3">
         <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <p class="text-sm text-amber-800">ไม่พบ Session ที่เปิดอยู่ในขณะนี้ กรุณารอให้อาจารย์เปิด Session ก่อน</p>
+        <p class="text-sm text-amber-800">ยังไม่มีคาบที่เปิดเช็คชื่อ</p>
     </div>
 
     {% elif already_checked %}
@@ -175,7 +175,7 @@
 
     <!-- ─── Step 1: Verify ─── -->
     <div id="stepVerify" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5" style="display:none">
-        <h3 class="text-sm font-semibold text-slate-800 mb-3">🧬 ขั้นที่ 2 — ยืนยันตัวตน</h3>
+        <h3 class="text-sm font-semibold text-slate-800 mb-3">ยืนยันใบหน้า</h3>
         <div class="camera-box">
             <video id="videoVerify" autoplay playsinline muted></video>
             <canvas id="canvasVerify"></canvas>
@@ -188,7 +188,7 @@
     <form id="stepRoomCode" onsubmit="flow.submitRoomCode(event)" style="display:none"
           class="bg-white rounded-xl border border-slate-200 p-8">
         <label for="roomCode" class="block font-semibold mb-2">รหัสห้อง 6 หลัก</label>
-        <p id="roomCodeHelp" class="text-sm text-slate-500 mb-4">ดูรหัสปัจจุบันจากจอในห้องเรียนแล้วกรอกก่อนยืนยันเช็คชื่อ หากจอไม่ทำงาน กรุณาแจ้งอาจารย์เพื่อแสดงรหัสสำรอง</p>
+        <p id="roomCodeHelp" class="text-sm text-slate-500 mb-4">กรอกรหัสจากจอในห้องเรียน หากจอไม่ทำงานให้ติดต่ออาจารย์</p>
         <input id="roomCode" name="room_code" type="text" inputmode="numeric"
                autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required
                aria-describedby="roomCodeHelp" title="กรุณากรอกรหัสห้องเป็นตัวเลข 6 หลัก"
@@ -205,7 +205,7 @@
             อุปกรณ์ของคุณดูเหมือนเป็น iPhone/iPad ซึ่ง<strong>ไม่รองรับ Web Bluetooth</strong> — กรุณาใช้คอมพิวเตอร์ที่ติดตั้ง Chrome หรือ Edge เพื่อเช็คชื่อ หรือแจ้งอาจารย์หากไม่มีอุปกรณ์ที่รองรับ
             {% endif %}
         </div>
-        <p class="text-sm text-slate-500 mb-4">กดปุ่มด้านล่างแล้วเลือกอุปกรณ์ของห้องเรียนจากรายการที่ปรากฏ</p>
+        <p class="text-sm text-slate-500 mb-4">เลือกอุปกรณ์ของห้องเรียนเพื่อยืนยันตำแหน่ง</p>
         <button type="button" id="bleRoomBtn" onclick="flow.startBleRoomScan()"
                 class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl p-3">หาอุปกรณ์ในห้อง</button>
         <p id="bleRoomStatus" class="text-sm text-slate-500 mt-3 min-h-[1.4em]"></p>

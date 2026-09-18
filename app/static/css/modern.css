@@ -1,0 +1,87 @@
+/* Shared presentation layer for every SmartCheck page. */
+:root {
+    --primary: #0071e3;
+    --primary-h: #0062c4;
+    --primary-lt: #eaf3ff;
+    --bg: #f5f5f7;
+    --text: #1d1d1f;
+    --text-2: #424245;
+    --text-muted: #6e6e73;
+    --border: #e5e5ea;
+    --radius: 12px;
+    --radius-lg: 22px;
+    --shadow: 0 4px 24px rgb(0 0 0 / 3%);
+}
+body.bg-slate-50 { background: var(--bg); color: var(--text); }
+body, input, select, textarea, button {
+    font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans Thai', Tahoma, 'Segoe UI', sans-serif;
+}
+a { text-decoration: none; }
+button, input, select, textarea { font: inherit; }
+button, summary { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+:is(a, button, input, select, textarea, summary):focus-visible {
+    outline: 3px solid #0071e3;
+    outline-offset: 3px;
+}
+#sidebar {
+    background: rgb(250 250 252 / 94%);
+    border-color: var(--border);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+}
+#sidebar > div:first-child { padding: 28px 24px; border-bottom: 0; }
+#sidebar nav { padding: 12px; }
+#sidebar .nav-link { min-height: 44px; padding: 11px 14px; border-radius: 12px; margin-bottom: 4px; }
+#sidebar .nav-active { background: #e6edf7; color: #0062c4 !important; font-weight: 600; }
+#sidebar .nav-active svg { stroke: currentColor; }
+.app-content.max-w-5xl { padding-top: 48px; padding-bottom: 56px; }
+main h1 { font-size: clamp(1.65rem, 3vw, 2.2rem) !important; letter-spacing: -.035em; line-height: 1.45; font-weight: 600; }
+main h2, main h3 { letter-spacing: -.015em; }
+main :is(div, section, details, a).bg-white.border.rounded-xl,
+main :is(div, section).bg-white.border.rounded-2xl {
+    border-color: var(--border); border-radius: 22px;
+    box-shadow: var(--shadow);
+}
+main .bg-white.border.p-5 { padding: 26px; }
+main :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), select, textarea) {
+    min-height: 44px; border-radius: 12px; border-color: #d2d2d7;
+}
+main :is(button, a).bg-indigo-600 { min-height: 44px; border-radius: 12px; }
+main .text-slate-400 { color: #76767c; }
+main .text-slate-900, main .text-slate-800 { color: var(--text); }
+main th { background: #fafafa; text-transform: none; letter-spacing: 0; }
+main td { border-color: #eeeef0; }
+main .overflow-hidden:has(> table) { overflow-x: auto; }
+.help-disclosure { margin-top: 24px; padding: 20px 24px; background: #fff; border: 1px solid var(--border); border-radius: 20px; }
+.help-disclosure summary { color: var(--text-2); font-size: 14px; font-weight: 500; }
+.help-disclosure[open] summary { margin-bottom: 24px; }
+.camera-box { border-radius: 20px; }
+.ci-dot.active, .step-dot.active, .progress-bar-fill { background: var(--primary); }
+.spinner { border-top-color: var(--primary); }
+#toast-container { max-width: calc(100vw - 32px); }
+.toast-item { border-radius: 16px; }
+.login-layout { min-height: 100svh; display: grid; grid-template-columns: 1fr 1fr; }
+.login-intro { padding: clamp(40px, 7vw, 100px); display: flex; flex-direction: column; justify-content: space-between; background: #eceef2; }
+.login-wordmark { font-size: 20px; font-weight: 600; letter-spacing: -.04em; }
+.login-intro h2 { font-size: clamp(40px, 5vw, 72px); font-weight: 600; line-height: 1.25; letter-spacing: -.05em; margin: 32px 0 20px; }
+.login-intro p { color: var(--text-muted); font-size: 16px; }
+.login-symbol { width: 88px; height: 88px; display: grid; place-items: center; background: #fff; border-radius: 26px; color: var(--primary); box-shadow: 0 12px 40px rgb(0 0 0 / 5%); }
+.login-symbol svg { width: 40px; height: 40px; }
+.login-form-panel { display: flex; align-items: center; justify-content: center; padding: 48px 32px; background: #fff; }
+@media (max-width: 1023px) {
+    .app-content.max-w-5xl { padding-top: 28px; }
+    .login-layout { grid-template-columns: 1fr; }
+    .login-intro { display: none; }
+}
+@media (max-width: 640px) {
+    main .bg-white.border.p-5 { padding: 20px; }
+    main .flex.items-center.justify-between.mb-8 { flex-wrap: wrap; gap: 16px; }
+    main .bg-amber-50.flex { flex-wrap: wrap; }
+    main th, main td { padding-left: 12px; padding-right: 12px; }
+    main input, main select, main textarea { font-size: 16px !important; }
+    .login-form-panel { padding: 36px 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

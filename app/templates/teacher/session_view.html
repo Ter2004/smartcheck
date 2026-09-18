@@ -39,24 +39,6 @@
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                 รีเฟรช
             </button>
-            <form method="POST" action="{{ url_for('teacher.session_toggle', session_id=sess.id) }}" class="flex items-center gap-2">
-                {% if sess.is_open %}
-                    {% if sess.checkin_duration %}
-                    <span class="text-xs text-slate-400">รับ {{ sess.checkin_duration }} นาที</span>
-                    {% endif %}
-                    <button type="submit" onclick="return confirm('ปิดการเช็คชื่อ?')"
-                            class="inline-flex items-center gap-1.5 text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-2 rounded-lg transition-colors">
-                        ปิดคาบเรียน
-                    </button>
-                {% else %}
-                    <input type="number" name="checkin_duration" min="1" max="120" placeholder="นาที"
-                           class="w-20 text-xs border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center">
-                    <button type="submit"
-                            class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg transition-colors">
-                        เปิดคาบเรียน
-                    </button>
-                {% endif %}
-            </form>
         </div>
     </div>
 </div>

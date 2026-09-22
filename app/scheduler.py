@@ -5,7 +5,7 @@ scheduler.py — Auto create/close sessions ตาม schedules table
   - ปิด session ถ้าเลยเวลาจบแล้ว
 """
 import logging
-import os
+from threading import Lock
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -132,8 +132,19 @@ def start_scheduler(app):
     scheduler = BackgroundScheduler(timezone="Asia/Bangkok")
     scheduler.add_job(auto_manage_sessions, "interval", minutes=1, id="session_manager")
     scheduler.add_job(keep_alive, "interval", minutes=3, id="keep_alive")
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
-        if not scheduler.running:
-            scheduler.start()
-            _log.info("[SCHEDULER] Started — checking every minute")
+    start_lock = Lock()
+
+    @app.before_request
+    def ensure_scheduler_started():
+        # Only the serving process receives requests. Debug mode alone cannot
+        # tell whether a reloader is enabled (e.g. flask run --no-reload).
+        # Defer startup so the reloader supervisor never starts a second job.
+        with start_lock:
+            if not scheduler.running:
+                # The first request may arrive long after app creation. Set the
+                # initial run here so APScheduler does not discard it as late.
+                scheduler.get_job("session_manager").modify(next_run_time=datetime.now(timezone.utc))
+                scheduler.start()
+                _log.info("[SCHEDULER] Started — checking every minute")
+
     return scheduler

@@ -56,12 +56,13 @@
 {% block content %}
 <div class="max-w-lg mx-auto">
 
-    <a href="{{ url_for('student.dashboard') }}"
+    <a href="{{ url_for('student.checkin') }}"
        class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 mb-4 transition-colors">
         <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
-        กลับหน้าหลัก
+        กลับไปเลือกคาบ
     </a>
-    <h1 class="text-xl font-semibold text-slate-900 mb-6">เช็คชื่อเข้าเรียน</h1>
+    <h1 id="checkinStageTitle" class="text-xl font-semibold text-slate-900 mb-2">หาสัญญาณห้องเรียน</h1>
+    <p id="checkinStageHelp" class="text-sm text-slate-500 mb-6">ยืนยันห้องเรียนของคาบที่เลือกก่อนเปิดกล้อง</p>
 
     <!-- ─── ตารางเรียนสัปดาห์นี้ ─── -->
     {% set day_names_short = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.'] %}
@@ -161,7 +162,7 @@
         <div class="flex-1 h-0.5 bg-slate-200"></div>
         <div class="ci-dot" id="dot3">3</div>
     </div>
-    <p class="text-xs text-slate-500">1 ยืนยันห้องเรียน → 2 ถ่ายภาพ → 3 ผลเช็คชื่อ</p>
+    <p class="text-xs text-slate-500">1 หาสัญญาณ → 2 ยืนยันใบหน้า → 3 ผลเช็คชื่อ</p>
     <p id="proximityStatus" role="status" class="text-sm text-slate-600"></p>
     <p id="receiptCountdown" role="timer" class="text-sm text-slate-600"></p>
 
@@ -175,14 +176,15 @@
 
     <!-- ─── Step 1: Verify ─── -->
     <div id="stepVerify" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5" style="display:none">
-        <h3 class="text-sm font-semibold text-slate-800 mb-3">ยืนยันใบหน้า</h3>
+        <h3 class="text-sm font-semibold text-slate-800 mb-3">ยืนยันว่าเป็นบุคคลจริงและตรวจใบหน้า</h3>
+        <p class="text-sm text-slate-600 mb-3">① จัดใบหน้าให้อยู่กลางกรอบ → ② อยู่นิ่งเพื่อถ่ายภาพอัตโนมัติ</p>
         <div class="camera-box">
             <video id="videoVerify" autoplay playsinline muted></video>
             <canvas id="canvasVerify"></canvas>
             <div class="face-guide" id="faceGuideVerify"></div>
             <div class="countdown-badge" id="countdownBadge"></div>
         </div>
-        <p class="text-sm text-center text-slate-400 min-h-[1.4em]" id="verifyStatus">กำลังเปิดกล้อง...</p>
+        <p class="text-base font-semibold text-center text-indigo-700 bg-indigo-50 rounded-xl p-4 min-h-[1.4em]" id="verifyStatus" role="status" aria-live="polite" aria-atomic="true">กำลังเปิดกล้อง...</p>
     </div>
 
     <form id="stepRoomCode" onsubmit="flow.submitRoomCode(event)" style="display:none"
@@ -197,7 +199,7 @@
     </form>
 
     <div id="stepBleRoom" class="bg-white rounded-xl border border-slate-200 p-8 text-center" style="display:none">
-        <label class="block font-semibold mb-2">ยืนยันตำแหน่งห้องเรียนด้วย Bluetooth</label>
+        <label class="block font-semibold mb-2">ค้นหาสัญญาณห้องเรียนด้วย Bluetooth</label>
         <div id="bleUnsupportedWarning"
              class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 text-sm text-amber-800 text-left"
              style="display:{{ 'block' if ios_warning else 'none' }}">
@@ -205,7 +207,7 @@
             อุปกรณ์ของคุณดูเหมือนเป็น iPhone/iPad ซึ่ง<strong>ไม่รองรับ Web Bluetooth</strong> — กรุณาใช้คอมพิวเตอร์ที่ติดตั้ง Chrome หรือ Edge เพื่อเช็คชื่อ หรือแจ้งอาจารย์หากไม่มีอุปกรณ์ที่รองรับ
             {% endif %}
         </div>
-        <p class="text-sm text-slate-500 mb-4">เลือกอุปกรณ์ของห้องเรียนเพื่อยืนยันตำแหน่ง</p>
+        <p class="text-sm text-slate-500 mb-4">เปิด Bluetooth และอยู่ในห้องเรียน กดปุ่มด้านล่าง แล้วเลือกอุปกรณ์ของห้องนี้ในหน้าต่างที่เบราว์เซอร์เปิดขึ้น</p>
         <button type="button" id="bleRoomBtn" onclick="flow.startBleRoomScan()"
                 class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl p-3">หาอุปกรณ์ในห้อง</button>
         <p id="bleRoomStatus" class="text-sm text-slate-500 mt-3 min-h-[1.4em]"></p>
@@ -235,13 +237,12 @@
 {% endblock %}
 
 {% block scripts %}
-{% if session_data %}
+<script src="{{ url_for('static', filename='js/step_guide.js') }}"></script>
+{% if session_data and not already_checked %}
 <script src="{{ url_for('static', filename='js/ble_scanner.js') }}"></script>
 <script src="{{ url_for('static', filename='js/ble_room_scanner.js') }}"></script>
 <script src="{{ url_for('static', filename='js/camera_guard.js') }}"></script>
 <script src="{{ url_for('static', filename='js/rt_analyze.js') }}"></script>
-<script src="{{ url_for('static', filename='js/ear_metric.js') }}"></script>
-<script src="{{ url_for('static', filename='js/mediapipe_liveness.js') }}"></script>
 {% if request.args.get('debug') == '1' %}
 <script src="{{ url_for('static', filename='js/checkin_debug.js') }}"></script>
 {% endif %}

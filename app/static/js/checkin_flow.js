@@ -21,10 +21,15 @@ class CheckinFlow {
         this._debug = opts.debug === true ? new CheckinDebug(this.baselineEAR) : null;
     }
 
-    start() {
+    async start() {
+        if (!document.getElementById('stepRoomCode')) return;
         // Proximity always gates the camera; legacy RSSI is a separate option.
         this._bleRSSI = null;
         this._bleSkip = true;
+        await StepGuide.show('📍', 'ยืนยันห้องเรียนก่อนเช็คชื่อ',
+            this.proximityMethod === 'ble'
+                ? 'เปิด Bluetooth แล้วกดหาอุปกรณ์ในห้อง เลือกอุปกรณ์ของห้องเรียน เมื่อยืนยันสำเร็จระบบจะเปิดกล้อง'
+                : 'ดูรหัส 6 หลักจากจอในห้องเรียน กรอกรหัสแล้วกดตรวจรหัสและเริ่มถ่ายภาพ');
         this._requestRoomCode();
     }
 
@@ -32,6 +37,10 @@ class CheckinFlow {
 
     _goToStep(n) {
         this._debug?.mount(n);
+        const title = document.getElementById('checkinStageTitle');
+        const help = document.getElementById('checkinStageHelp');
+        if (title) title.textContent = ['', this.proximityMethod === 'ble' ? 'หาสัญญาณห้องเรียน' : 'ยืนยันรหัสห้องเรียน', 'ยืนยันตัวตนด้วยใบหน้า', 'ผลการเช็คชื่อ'][n];
+        if (help) help.textContent = ['', 'ตรวจสอบว่าคุณอยู่ในห้องเรียนของคาบที่เลือก', 'จัดใบหน้าในกรอบ ระบบจะถ่ายภาพและเช็คชื่อให้อัตโนมัติ', 'ระบบตรวจสอบใบหน้าและบันทึกการเข้าเรียน'][n];
         // 1=proximity, 2=camera, 3=result.
         const steps = [this.proximityMethod === 'ble' ? 'stepBleRoom' : 'stepRoomCode', 'stepVerify', 'stepDone'];
         steps.forEach((id, i) => {
@@ -85,7 +94,7 @@ class CheckinFlow {
         setTimeout(() => this._startVerify(), 600);
     }
 
-    // ─── Step 2: Verify (face detect → countdown → liveness) ─
+    // Step 2: Detect face and submit automatically; no interactive challenge.
 
     async _startVerify() {
         if (!this._proximity || performance.now() >= this._proximity.deadline) {
@@ -95,7 +104,6 @@ class CheckinFlow {
         this._stopStream(this._camStream);
         const generation = this._captureGeneration;
         const active = () => generation === this._captureGeneration && !!this._proximity;
-        const calibration = new EARCalibration();
         this.baselineEAR = null;
         this._earSamples = [];
         let faceReadyFrames = 0, countingDown = false, verified = false;
@@ -109,6 +117,15 @@ class CheckinFlow {
         const guide    = document.getElementById('faceGuideVerify');
         const status   = document.getElementById('verifyStatus');
         const countdown = document.getElementById('countdownBadge');
+
+        await StepGuide.show('📷', 'เตรียมยืนยันใบหน้า',
+            'จัดหน้าในกรอบแล้วอยู่นิ่ง ระบบจะถ่ายและเช็คชื่อให้อัตโนมัติ เวลายืนยันห้องยังคงนับถอยหลัง');
+        if (!active()) return;
+        if (performance.now() >= this._proximity.deadline) {
+            this._expireProximity();
+            return;
+        }
+        this._proximity.captureStarted = performance.now();
 
         // เปิดกล้อง
         try {
@@ -201,7 +218,6 @@ class CheckinFlow {
             }
             const avgBrightness = totalBrightness / (pixels.length / 16);
             if (avgBrightness < 60) {
-                calibration.reset();
                 this._debug?.sample({width: video.videoWidth, height: video.videoHeight,
                     ready: 0, faces: results.multiFaceLandmarks?.length || 0,
                     failed: ['brightness (other gates not evaluated)']});
@@ -214,7 +230,6 @@ class CheckinFlow {
 
             const hasFace = results.multiFaceLandmarks?.length > 0;
             if (!hasFace) {
-                calibration.reset();
                 this._debug?.sample({width: video.videoWidth, height: video.videoHeight,
                     ready: 0, faces: 0, failed: ['hasFace (geometry not evaluated)']});
                 guide.classList.remove('ok', 'fail');
@@ -242,12 +257,6 @@ class CheckinFlow {
             const noseRelX    = faceSpanX > 0 ? (nose.x - lm[234].x) / faceSpanX : 0.5;
             const yawOk       = noseRelX > 0.38 && noseRelX < 0.62;
 
-            // ตาต้องเปิดปกติ (EAR ≥ 75% baseline)
-            const earL   = this._calcEAR(lm, [33,160,158,133,153,144], video);
-            const earR   = this._calcEAR(lm, [362,385,387,263,373,380], video);
-            const earNow = (earL + earR) / 2;
-            if (Number.isFinite(earNow)) this._earSamples.push(earNow);
-            this._earSamples = this._earSamples.slice(-120);
             // Preserve a short real camera burst for the existing temporal check.
             const frame = await this._captureFrame(video);
             if (!active()) return;
@@ -255,21 +264,15 @@ class CheckinFlow {
             if (this._capturedFrames.length > 3) this._capturedFrames.shift();
 
             // ปากต้องหุบ
-            const mouthOpen = dist2D(lm[13], lm[14]);
+            const mouthOpen = Math.hypot(lm[13].x - lm[14].x, lm[13].y - lm[14].y);
             const mouthOk   = faceH > 0 && (mouthOpen / faceH) < 0.10;
 
-            const calibrated = calibration.update(earNow,
-                inCenter && closeEnough && pitchOk && rollOk && yawOk && mouthOk,
-                video.videoWidth, video.videoHeight, performance.now());
-            this.baselineEAR = calibrated ? calibration.baseline : null;
-            const earMin = calibrated ? this.baselineEAR * 0.75 : null;
-            const eyesOk = calibrated && Number.isFinite(earNow) && earNow >= earMin;
-            const faceOk = inCenter && closeEnough && pitchOk && rollOk && yawOk && eyesOk && mouthOk;
+            const faceOk = inCenter && closeEnough && pitchOk && rollOk && yawOk;
             this._debug?.sample({width: video.videoWidth, height: video.videoHeight,
-                faceW, faceH, calibration: calibration.phase, baseline: this.baselineEAR,
-                earL, earR, earNow, earMin, ready: faceOk ? faceReadyFrames + 1 : 0,
+                faceW, faceH,
+                ready: faceOk ? faceReadyFrames + 1 : 0,
                 faces: results.multiFaceLandmarks.length,
-                failed: Object.entries({inCenter, closeEnough, pitchOk, rollOk, yawOk, eyesOk, mouthOk})
+                failed: Object.entries({inCenter, closeEnough, pitchOk, rollOk, yawOk, mouthOk})
                     .filter(([, passed]) => !passed).map(([name]) => name)});
 
             // วาด overlay ตา+ปาก — สีเขียวถ้าพร้อม, ขาวถ้ายังไม่พร้อม
@@ -289,7 +292,6 @@ class CheckinFlow {
                     clearTimeout(this._streamTimeoutId);
                     verified = true;
                     // Submit to the existing server face/anti-spoof checks.
-                    // The calibration blink is a local quality check only.
                     status.textContent = '✓ พบใบหน้า — กำลังเช็คชื่อ...';
                     const snap = document.createElement('canvas');
                     snap.width  = video.videoWidth  || 640;
@@ -304,8 +306,6 @@ class CheckinFlow {
                 guide.classList.add('fail');
                 faceReadyFrames = 0;
                 if (!closeEnough)  status.textContent = 'เข้าใกล้กล้องอีกหน่อย';
-                else if (!calibrated && inCenter && pitchOk && rollOk && yawOk && mouthOk) status.textContent = calibration.instruction;
-                else if (!eyesOk && calibrated) status.textContent = 'กรุณาเปิดตาให้ปกติ';
                 else if (!mouthOk) status.textContent = 'กรุณาหุบปาก';
                 else if (!pitchOk) status.textContent = 'กรุณาอย่าก้มหรือเงยหน้า';
                 else if (!rollOk)  status.textContent = 'กรุณาอย่าเอียงศีรษะ';
@@ -353,65 +353,6 @@ class CheckinFlow {
         } catch (_) { fail('startup'); }
     }
 
-    async _countdownThenLiveness(video, canvas, guide, status, countdownEl, passiveResult) {
-        // Countdown 3→2→1
-        for (let i = 3; i >= 1; i--) {
-            countdownEl.textContent = i;
-            countdownEl.style.display = 'block';
-            status.textContent = 'เตรียมพร้อม...';
-            await this._sleep(700);
-        }
-        countdownEl.style.display = 'none';
-
-        // รอ passive result ถ้ายังไม่กลับมา (max 1.5s)
-        if (!passiveResult) {
-            status.textContent = 'กำลังตรวจสอบ...';
-            for (let i = 0; i < 15 && !passiveResult; i++) await this._sleep(100);
-        }
-
-        const spoofScore = passiveResult?.score ?? 0.0;
-        // Fail-closed: if passive result not available within timeout, treat as spoof
-        const isReal     = passiveResult?.real ?? false;
-
-        // ถ้า passive บอกว่า spoof → ปฏิเสธทันที
-        if (!isReal && spoofScore < 0.50) {
-            this._stopStream(this._camStream);
-            this._showDone('spoof', 'ตรวจพบการโกง!', false);
-            return;
-        }
-
-        const frame1 = await this._captureFrame(video);
-        await this._sleep(500);
-        const capturedFrame = await this._captureFrame(video);
-        this._capturedFrames = [frame1, capturedFrame];
-        let livenessAction  = 'passive';
-
-        if (spoofScore >= 0.98) {
-            // Passive ผ่าน — ข้าม manual liveness
-            status.textContent = '✓ ตรวจสอบอัตโนมัติผ่าน';
-            await this._sleep(400);
-        } else {
-            // Borderline — ขอ 1 manual challenge (blink หรือ turn_left เท่านั้น)
-            const action  = Math.random() < 0.5 ? 'blink' : 'turn_left';
-            const labels  = { blink: 'กะพริบตา 1 ครั้ง', turn_left: 'หันหน้าไปทางซ้าย' };
-            status.textContent = `กรุณา${labels[action]}`;
-
-            const detector = new LivenessDetector(video, canvas, this.baselineEAR);
-            const result   = await detector.run(action, text => { status.textContent = text; });
-
-            if (!result.pass) {
-                this._stopStream(this._camStream);
-                this._showDone('error', result.error || 'Liveness ไม่ผ่าน — กรุณาลองใหม่', true);
-                return;
-            }
-            livenessAction = action;
-        }
-
-        this._stopStream(this._camStream);
-        status.textContent = '✓ ยืนยันตัวตนสำเร็จ — กำลังเช็คชื่อ...';
-        await this._submitCheckin(capturedFrame, livenessAction);
-    }
-
     async _captureFrame(videoEl) {
         const c = document.createElement('canvas');
         c.width  = videoEl.videoWidth;
@@ -423,6 +364,7 @@ class CheckinFlow {
     // ─── Submit ──────────────────────────────────────────
 
     _requestRoomCode() {
+        StepGuide.dismiss();
         clearInterval(this._receiptTimer);
         this._stopStream(this._camStream);
         this._proximity = null;
@@ -576,6 +518,8 @@ class CheckinFlow {
         this._retryRoomCode = false;
         this._goToStep(3);
         document.getElementById('doneLoadingView').style.display  = 'block';
+        const loadingMessage = document.querySelector('#doneLoadingView p');
+        if (loadingMessage) loadingMessage.textContent = 'กำลังเปรียบเทียบใบหน้ากับข้อมูลที่ลงทะเบียน กรุณารอและอย่าปิดหน้านี้';
         document.getElementById('doneResultView').style.display   = 'none';
 
         try {
@@ -597,11 +541,10 @@ class CheckinFlow {
                     liveness_pass:   true,
                     face_image:      faceImage,
                     face_images:     this._capturedFrames || [faceImage],
-                    ear_samples:     this._earSamples,
                 }),
             });
 
-            const json = await res.json();
+            const json = await this._readCheckinResponse(res);
             document.getElementById('doneLoadingView').style.display = 'none';
             document.getElementById('doneResultView').style.display  = 'block';
 
@@ -613,13 +556,39 @@ class CheckinFlow {
             } else if (json.spoof) {
                 this._showDone('spoof', json.error, true);
             } else {
-                this._showDone('error', json.error || 'เช็คชื่อไม่สำเร็จ', json.retry_face === true || this._retryRoomCode);
+                this._showDone('error', json.error || json.message || 'เช็คชื่อไม่สำเร็จ', json.retry_face === true || this._retryRoomCode);
             }
         } catch (e) {
             document.getElementById('doneLoadingView').style.display = 'none';
             document.getElementById('doneResultView').style.display  = 'block';
-            this._showDone('error', 'ไม่สามารถเชื่อมต่อ server ได้', true);
+            console.error('Check-in response failed', {name: e.name, status: e.httpStatus});
+            this._showDone('error', e.userMessage || 'การเชื่อมต่อขาดหาย กรุณาตรวจประวัติเช็คชื่อก่อนลองใหม่ หากยังไม่ได้บันทึกให้โหลดหน้าใหม่', false);
         }
+    }
+
+    async _readCheckinResponse(res) {
+        const fail = (message) => {
+            const error = new Error('Invalid check-in response');
+            error.userMessage = message;
+            error.httpStatus = res.status;
+            throw error;
+        };
+        if (res.status === 401 || (res.redirected && new URL(res.url, location.href).pathname === '/login')) {
+            fail('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่แล้วตรวจประวัติเช็คชื่อ');
+        }
+        let json;
+        try { json = await res.json(); } catch (_) {
+            if (res.status === 429) fail('คำขอมากเกินไป กรุณารอสักครู่แล้วโหลดหน้าใหม่');
+            if ([502, 503, 504, 520, 521, 522, 523, 524, 530].includes(res.status)) {
+                fail(`เว็บเชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ (HTTP ${res.status}) กรุณาตรวจประวัติเช็คชื่อก่อนลองใหม่`);
+            }
+            fail(`เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status}) กรุณาโหลดหน้าใหม่และตรวจประวัติเช็คชื่อ`);
+        }
+        if (!json || typeof json !== 'object' || Array.isArray(json)) {
+            fail(`เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status}) กรุณาโหลดหน้าใหม่`);
+        }
+        if (!res.ok) json.ok = false;
+        return json;
     }
 
     // ─── Result ──────────────────────────────────────────
@@ -665,9 +634,7 @@ class CheckinFlow {
         ctx.setLineDash([]);
     }
 
-    _calcEAR(lm, idx, video) {
-        return EARMetric.eye(lm, idx, video.videoWidth, video.videoHeight);
-    }
+
 
     _stopStream(stream) {
         this._captureGeneration = (this._captureGeneration || 0) + 1;

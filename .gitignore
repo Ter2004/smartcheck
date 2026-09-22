@@ -14,3 +14,4 @@ instance/
 flask_session/
 smartcheck_sessions/
 test_images/ 
+checkin-biometric-diagnostics.json

@@ -19,7 +19,7 @@ function harness(debug, options = {}) {
         getElementById(id) {if (!elements.has(id)) elements.set(id, node()); return elements.get(id);},
         createElement() {created++; return node();}};
     const context = vm.createContext({document, window: {addEventListener() {}}, console,
-        performance: {now: () => now}, Date,
+        performance: {now: () => now}, Date, StepGuide: {show: async () => {}, dismiss() {}},
         setInterval() {return 1;}, clearInterval() {},
         setTimeout(fn, delay) {const id = ++timerId; timers.set(id, {fn, delay}); return id;},
         clearTimeout(id) {timers.delete(id);},
@@ -30,14 +30,13 @@ function harness(debug, options = {}) {
             async send() {if (options.sendError) throw Error('send');}
             async close() {closes++; if (options.closeError) throw Error('close');}
         },
-        dist2D: (a, b) => Math.hypot(a.x - b.x, a.y - b.y),
     });
-    vm.runInContext(read('ear_metric.js') + (debug ? read('checkin_debug.js') : '') + read('checkin_flow.js') +
+    vm.runInContext((debug ? read('checkin_debug.js') : '') + read('checkin_flow.js') +
         `\nglobalThis.flow = new CheckinFlow({baselineEAR: 0.392436, debug: ${debug}, proximityMethod: 'ble'});`, context);
     const flow = context.flow;
     flow._sleep = async () => {};
     flow._drawFaceFeatures = () => {};
-    flow._submitCheckin = async () => {submits++;};
+    flow._submitCheckin = async frame => {submits++; flow.submittedFrame = frame;};
     flow._showDone = (kind, message) => {flow.result = {kind, message};};
     flow._proximity = {deadline: 90000};
     if (flow._debug) flow._debug.receiptDue = 90000;
@@ -56,13 +55,6 @@ function landmarks(ear = .28) {
     }
     return lm;
 }
-async function calibrate(h) {
-    for (let i = 0; i < 16; i++) { h.advance(i * 90); await h.frame(landmarks()); }
-    assert.equal(h.flow.baselineEAR, null, 'open hold alone must not calibrate');
-    h.advance(1500); await h.frame(landmarks(.10));
-    for (let i = 0; i < 5; i++) {h.advance(1600 + i * 90); await h.frame(landmarks());}
-    assert.ok(Math.abs(h.flow.baselineEAR - .28) < 1e-10);
-}
 (async () => {
     const off = harness(false);
     assert.equal(off.created(), 0);
@@ -70,20 +62,29 @@ async function calibrate(h) {
     assert.equal(off.flow._debug, null);
     assert.equal(off.streams(), 1, 'one stream per attempt');
     const h = harness(true);
-    await h.flow._startVerify(); await calibrate(h);
+    await h.flow._startVerify();
     const d = h.flow._debug;
     assert.match(d.panel.textContent, /v2 — pixel-v1/);
     assert.match(d.panel.textContent, /legacy baseline \(unused\)=0.392436/);
-    assert.match(d.panel.textContent, /earNow=0.280000 earMin=0.210000/);
     await h.frame(landmarks(.12));
-    assert.match(d.panel.textContent, /failed=eyesOk/);
-    assert.match(d.panel.textContent, /ready=0\/25/);
+    assert.doesNotMatch(d.panel.textContent, /failed=eyesOk/);
+    assert.match(d.panel.textContent, /ready=1/);
     assert.match(d.panel.textContent, /faceW=0.400000/);
-    for (let i = 0; i < 25; i++) await h.frame(landmarks());
+    for (let i = 0; i < 23; i++) await h.frame(landmarks());
+    assert.equal(h.submits(), 0, '24 ready frames must not submit');
+    await h.frame(landmarks());
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(h.submits(), 1);
+    assert.equal(h.submits(), 1, 'submit after 25 consecutive ready frames');
     assert.equal(h.closes(), 1, 'close model exactly once');
     await h.frame(landmarks()); assert.equal(h.submits(), 1, 'ignore stale results');
+    const reset = harness(false);
+    await reset.flow._startVerify();
+    for (let i = 0; i < 24; i++) await reset.frame(landmarks());
+    await reset.frame(null);
+    await reset.frame(landmarks());
+    assert.equal(reset.submits(), 0, 'lost face resets the ready frame count');
+    for (let i = 0; i < 24; i++) await reset.frame(landmarks());
+    assert.equal(reset.submits(), 1);
     const timeout = harness(true);
     await timeout.flow._startVerify(); await timeout.frame(landmarks());
     const timer = [...timeout.timers.values()].find(t => t.delay === 40000);
@@ -104,5 +105,5 @@ async function calibrate(h) {
         await new Promise(resolve => setImmediate(resolve));
         assert.equal(e.flow.result.kind, 'error'); assert.equal(e.closes(), 1);
     }
-    console.log('PASS: calibration, eye gates, one stream/close, timeout, expiry, stale callbacks and promise failures');
+    console.log('PASS: capture without eye calibration, one stream/close, timeout, expiry, stale callbacks and promise failures');
 })().catch(error => {console.error(error); process.exitCode = 1;});

@@ -92,7 +92,7 @@ def reset(connection, password):
                 cursor.execute("""
                     INSERT INTO public.schedules
                       (course_id, day_of_week, start_time, end_time, beacon_id)
-                    VALUES (%s, %s, '12:00', '22:00', %s)
+                    VALUES (%s, %s, '10:30', '22:00', %s)
                     """, (course_id, day, beacon[0]))
                 for student in range(1, 5):
                     cursor.execute("INSERT INTO public.course_enrollments (course_id, student_id) "
@@ -113,7 +113,7 @@ def main():
     parser.add_argument('--apply', action='store_true', help='Apply destructive reset')
     args = parser.parse_args()
     print('10 accounts: std1-std4, t1-t5, admin; 5 courses; 20 enrollments.')
-    print('Monday t1 through Friday t5, each 12:00-22:00 Asia/Bangkok.')
+    print('Monday t1 through Friday t5, each 10:30-22:00 Asia/Bangkok.')
     print('Clear old application data and Auth accounts; restore classroom hardware configuration.')
     if not args.apply:
         print('Plan only: database was not accessed.')

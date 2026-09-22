@@ -2,7 +2,8 @@ import logging
 import json
 import cv2
 import numpy as np
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app, g, Response
+from app.services.request_performance import execute_status_query
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
 from app.services.security_service import (
@@ -21,6 +22,59 @@ from app import limiter as _limiter
 student_bp = Blueprint("student", __name__)
 
 
+class EnrollmentStatusUnavailable(Exception):
+    """The current enrollment state could not be established."""
+
+
+@student_bp.errorhandler(EnrollmentStatusUnavailable)
+def enrollment_status_unavailable(error):
+    # Standalone response: rendering the shared layout would query status again.
+    return Response(
+        '<!doctype html><html lang="th"><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>ตรวจสอบสถานะไม่สำเร็จ</title><body>'
+        '<h1>ตรวจสอบสถานะลงทะเบียนไม่สำเร็จ</h1>'
+        '<p>กรุณาลองใหม่อีกครั้งในภายหลัง</p><a href="">ลองใหม่</a>'
+        '</body></html>',
+        status=503, mimetype="text/html", headers={"Cache-Control": "no-store"},
+    )
+
+
+def _enrollment_status():
+    try:
+        return _load_enrollment_status()
+    except Exception as error:
+        raise EnrollmentStatusUnavailable() from error
+
+
+def _load_enrollment_status():
+    """Share a fresh status read within this request, never across sessions."""
+    user_id = session["user_id"]
+    cache = g.setdefault("enrollment_status", {})
+    use_cache = current_app.config.get("ENROLLMENT_STATUS_CACHE", True)
+    if use_cache and user_id in cache:
+        return cache[user_id]
+    if current_app.config.get("ENROLLMENT_STATUS_RPC", False):
+        result = execute_status_query(supabase_admin.rpc(
+            "get_enrollment_status", {"p_user_id": user_id}))
+        rows = result.data if result else None
+        status = rows[0] if rows else {"is_enrolled": False, "baseline_ear": None}
+        if type(status.get("is_enrolled")) is not bool:
+            raise ValueError("Invalid enrollment status response")
+    else:
+        result = execute_status_query(supabase_admin.table("student_biometrics")
+            .select("face_embeddings, baseline_ear, consent_given")
+            .eq("user_id", user_id).maybe_single())
+        bio = result.data if result else None
+        status = {
+            "is_enrolled": bool(bio and bio.get("face_embeddings") and bio.get("consent_given")),
+            "baseline_ear": bio.get("baseline_ear") if bio else None,
+        }
+    if use_cache:
+        cache[user_id] = status
+    return status
+
+
 @student_bp.before_request
 def prevent_completed_enrollment():
     """Do not allow completed students to restart or overwrite enrollment."""
@@ -30,13 +84,12 @@ def prevent_completed_enrollment():
     } or session.get("user_role") != "student" or not session.get("user_id"):
         return None
     try:
-        result = (supabase_admin.table("student_biometrics")
-                  .select("face_embeddings, consent_given")
-                  .eq("user_id", session["user_id"]).maybe_single().execute())
-        bio = result.data if result else None
+        status = _enrollment_status()
     except Exception:
+        if request.endpoint == "student.enroll_face":
+            return enrollment_status_unavailable(None)
         return jsonify(status="error", message="ตรวจสอบสถานะลงทะเบียนไม่สำเร็จ กรุณาลองใหม่"), 503
-    if bio and bio.get("face_embeddings") and bio.get("consent_given"):
+    if status["is_enrolled"]:
         if request.endpoint == "student.enroll_face":
             flash("คุณลงทะเบียนใบหน้าสำเร็จแล้ว", "info")
             return redirect(url_for("student.dashboard"))
@@ -48,11 +101,7 @@ def enrollment_navigation():
     if session.get("user_role") != "student" or not session.get("user_id"):
         return {}
     try:
-        result = (supabase_admin.table("student_biometrics")
-                  .select("face_embeddings, consent_given")
-                  .eq("user_id", session["user_id"]).maybe_single().execute())
-        bio = result.data if result else None
-        return {"can_enroll_face": not bool(bio and bio.get("face_embeddings") and bio.get("consent_given"))}
+        return {"can_enroll_face": not _enrollment_status()["is_enrolled"]}
     except Exception:
         return {"can_enroll_face": False}
 
@@ -91,16 +140,7 @@ def _log(student_id, step, result, details=""):
 @login_required
 @role_required("student")
 def dashboard():
-    user_id = session["user_id"]
-    res = (
-        supabase_admin.table("student_biometrics")
-        .select("face_embeddings, baseline_ear, consent_given")
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    bio = res.data if res else None
-    enrolled = bool(bio and bio.get("face_embeddings") and bio.get("consent_given"))
+    enrolled = _enrollment_status()["is_enrolled"]
     return render_template("student/dashboard.html", enrolled=enrolled)
 
 
@@ -108,16 +148,7 @@ def dashboard():
 @login_required
 @role_required("student")
 def enroll_face():
-    user_id = session["user_id"]
-    res = (
-        supabase_admin.table("student_biometrics")
-        .select("face_embeddings, baseline_ear, consent_given")
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    bio = res.data if res else None
-    already_enrolled = bool(bio and bio.get("face_embeddings") and bio.get("consent_given"))
+    already_enrolled = _enrollment_status()["is_enrolled"]
     # Reset server-side retry counters when page is (re)loaded
     session.pop("enroll_retry", None)
     session.pop("consent_given_at", None)
@@ -133,19 +164,12 @@ def checkin():
     import re
     user_id = session["user_id"]
 
-    res = (
-        supabase_admin.table("student_biometrics")
-        .select("face_embeddings, baseline_ear, consent_given")
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    bio = res.data if res is not None else None
-    if not bio or not bio.get("face_embeddings") or not bio.get("consent_given"):
+    status = _enrollment_status()
+    if not status["is_enrolled"]:
         flash("กรุณาลงทะเบียนใบหน้าก่อน", "warning")
         return redirect(url_for("student.enroll_face"))
 
-    baseline_ear = bio.get("baseline_ear") or 0.25
+    baseline_ear = status.get("baseline_ear") or 0.25
 
     import datetime as _dt_mod
     _TH_S = _dt_mod.timezone(_dt_mod.timedelta(hours=7))
@@ -174,10 +198,12 @@ def checkin():
         )
     }
 
-    session_data = next(
-        (s for s in open_sessions if s["course_id"] in enrolled_course_ids),
-        None,
-    )
+    available_sessions = [s for s in open_sessions if s["course_id"] in enrolled_course_ids]
+    selected_id = request.args.get("session_id")
+    session_data = next((s for s in available_sessions if s["id"] == selected_id), None)
+    if selected_id and session_data is None:
+        flash("คาบนี้ไม่เปิดเช็คชื่อหรือคุณไม่ได้ลงทะเบียน กรุณาเลือกคาบใหม่", "warning")
+        return redirect(url_for("student.checkin"))
 
     already_checked = False
     if session_data:
@@ -232,13 +258,19 @@ def checkin():
     ua = request.headers.get("User-Agent", "")
     ios_warning = bool(re.search(r"iPhone|iPad|iPod", ua, re.I))
 
+    if not selected_id:
+        return render_template(
+            "student/checkin_select.html", available_sessions=available_sessions,
+            checked_session_ids=checked_session_ids, week_schedules=week_schedules,
+        )
+
     return render_template(
         "student/checkin.html",
         session_data=session_data,
         baseline_ear=baseline_ear,
         ios_warning=ios_warning,
         already_checked=already_checked,
-        week_schedules=week_schedules,
+        week_schedules=[],
         week_session_map=week_session_map,
         checked_session_ids=checked_session_ids,
         today_dow=_now_th.weekday(),
@@ -1150,6 +1182,11 @@ def api_spoof_check():
         # [-5:] keeps the 5 most-recent embeddings, ensuring continuity is checked
         # against the frames closest to the final enrollment capture.
         session["liveness_embeddings"] = stored[-5:]   # keep 5 most-recent embeddings
+
+    if result.get("retry_capture"):
+        _log(user_id, "spoof_check", "face_not_detected", "retry_capture=true")
+        return jsonify({"is_real": False, "confidence": 0.0,
+                        "retry_capture": True, "message": result["message"]})
 
     if result.get("system_failure"):
         # F-16 (docs/review/10-moire-frr-investigation.md §16-17): anti-spoof system

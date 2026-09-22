@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}เลือกคาบเรียน — SmartCheck{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <a href="{{ url_for('student.dashboard') }}" class="text-sm text-slate-500">← กลับหน้าหลัก</a>
+    <h1 class="text-xl font-semibold text-slate-900 mt-4 mb-2">เลือกคาบที่ต้องการเช็คชื่อ</h1>
+    <p class="text-sm text-slate-500 mb-6">เลือกคาบเรียน → หาสัญญาณห้องเรียน → ยืนยันใบหน้า → ผลเช็คชื่อ</p>
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-6">
+        <div class="p-5 border-b border-slate-100 font-semibold">คาบที่เปิดเช็คชื่อวันนี้</div>
+        {% if available_sessions %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-500"><tr>
+                    <th class="text-left p-4">วิชา / คาบเรียน</th>
+                    <th class="text-left p-4">ห้อง</th>
+                    <th class="text-left p-4">เลือกคาบ</th>
+                </tr></thead>
+                <tbody class="divide-y divide-slate-100">
+                {% for item in available_sessions %}
+                    <tr>
+                        <td class="p-4"><strong>{{ item.courses.code }} — {{ item.courses.name }}</strong><p class="text-slate-500 mt-1">{{ item.title }}</p></td>
+                        <td class="p-4">{{ item.beacons.room_name if item.beacons else '—' }}</td>
+                        <td class="p-4">
+                            {% if item.id in checked_session_ids %}
+                            <span class="text-emerald-700">✓ เช็คชื่อแล้ว</span>
+                            {% else %}
+                            <a href="{{ url_for('student.checkin', session_id=item.id) }}" aria-label="เลือกคาบ {{ item.courses.code }} {{ item.title }}"
+                               class="inline-flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl whitespace-nowrap">เลือกคาบ →</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="p-5 text-slate-500" role="status">ยังไม่มีคาบที่เปิดเช็คชื่อสำหรับคุณในวันนี้</p>
+        {% endif %}
+    </div>
+    {% if week_schedules %}
+    {% set days = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'] %}
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div class="p-5 border-b border-slate-100 font-semibold">ตารางเรียนของคุณ</div>
+        <div class="overflow-x-auto"><table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500"><tr><th class="text-left p-4">วัน</th><th class="text-left p-4">วิชา / ห้อง</th><th class="text-left p-4">เวลา</th></tr></thead>
+            <tbody class="divide-y divide-slate-100">{% for sch in week_schedules %}
+                <tr><td class="p-4">{{ days[sch.day_of_week] }}</td><td class="p-4">{{ sch.courses.code }} — {{ sch.courses.name }}<p class="text-slate-500">{{ sch.beacons.room_name if sch.beacons else '—' }}</p></td><td class="p-4 whitespace-nowrap">{{ sch.start_time[:5] }}–{{ sch.end_time[:5] }}</td></tr>
+            {% endfor %}</tbody>
+        </table></div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

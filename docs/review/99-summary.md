@@ -1,5 +1,21 @@
 # Pass 3 — Summary Review: SmartCheck
 
+## P-4 — Enrollment status performance (2026-09-19)
+
+Request-local status caching removes repeated enrollment-status reads; an
+optional service-role-only RPC returns the enrollment flag and baseline EAR
+without returning embeddings. Optional timing logs support baseline comparison.
+RPC and timing logging remain disabled by default pending rollout/measurement.
+Status lookup failures on dashboard/enroll/checkin show a standalone Thai HTTP
+503 retry page; guarded APIs keep JSON 503 and cannot continue enrollment.
+
+See [rollout, measurements, and validation scope](12-enrollment-status-performance.md).
+The original targeted unittest selection passed 14 tests (9 existing + 5 new),
+independently of the scheduler tests. This follow-up adds 2 page-failure tests.
+The user reports 8 pre-existing checkin TOTP failures in the full suite; P-4
+does not claim a green full-suite baseline or measured production speedups.
+Existing scheduler and camera JavaScript working-tree edits are outside P-4.
+
 ## FAR/FRR update — temporal audit policy (2026-09-07)
 
 Observed temporal ordering contradicts the low-variance spoof assumption.

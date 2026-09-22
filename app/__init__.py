@@ -66,6 +66,9 @@ def _refresh_clients():
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    if app.config["PERFORMANCE_LOG_ENABLED"]:
+        from app.services.request_performance import init_request_performance
+        init_request_performance(app)
     from app.services.esp32_totp import load_secret
     app.config["ESP32_TOTP_SECRET"] = load_secret()
 

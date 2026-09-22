@@ -31,6 +31,10 @@ def _require_env(key: str, fallback: str) -> str:
 
 
 class Config:
+    PERFORMANCE_LOG_ENABLED = os.getenv("PERFORMANCE_LOG_ENABLED", "false").lower() == "true"
+    ENROLLMENT_STATUS_CACHE = os.getenv("ENROLLMENT_STATUS_CACHE", "true").lower() == "true"
+    # Enable only after applying 20260919_enrollment_status.sql.
+    ENROLLMENT_STATUS_RPC = os.getenv("ENROLLMENT_STATUS_RPC", "false").lower() == "true"
     SECRET_KEY = _require_env("FLASK_SECRET_KEY", "dev-fallback-key-not-for-production")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")

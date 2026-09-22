@@ -88,14 +88,20 @@ def checkin():
     elif not raw_token:
         event("device_token", "absent")
     elif device_payload is None:
-        reject("device_token_" + token_reason)
-        return jsonify({"ok": False, "error": "Device token \u0e44\u0e21\u0e48\u0e16\u0e39\u0e01\u0e15\u0e49\u0e2d\u0e07"}), 403
+        # DT-2: a token that fails verification counts as no token, not as grounds
+        # for rejection. Sending no Authorization header at all already lands on the
+        # same path (untrusted -> NEW_DEVICE_THRESHOLD), so a 403 blocks nothing an
+        # attacker cannot sidestep, while locking out real users whose token expired
+        # (max_age_days=120) or was signed before a SECRET_KEY rotation.
+        event("device_token", "untrusted", reason=token_reason)
     else:
         event("device_token", "pass")
     if device_payload is not None and device_payload.get("uid") != student_id:
-        # Token is valid but belongs to a different user — reject immediately
-        reject("device_token_user_mismatch")
-        return jsonify({"ok": False, "error": "Device token ไม่ตรงกับบัญชีนี้"}), 403
+        # DT-2: a token owned by another account is untrusted, not rejected — the
+        # real case is one browser shared by two students, where a 403 would stop
+        # the second one from checking in at all.
+        event("device_token_user_mismatch", "untrusted")
+        device_payload = None
     # device_payload=None + no raw_token = legacy / first check-in — allowed
     _perf["validate"] = round((time.perf_counter() - _t0) * 1000, 2); _t1 = time.perf_counter()
 
@@ -137,15 +143,13 @@ def checkin():
     # ─── 3. Server-side EAR liveness check ──────────────────────────────────
     server_liveness_pass = False
     try:
-        ear_arr = np.asarray(ear_samples, dtype=float)
-        if ear_arr.ndim != 1 or len(ear_arr) < 2 or not np.all(np.isfinite(ear_arr)):
-            raise ValueError("invalid EAR samples")
-        if np.any((ear_arr < 0.0) | (ear_arr > 1.0)):
-            raise ValueError("EAR samples out of range")
-
-        # Only a blink challenge can be proven from EAR. Other challenge types
-        # still have to pass temporal and anti-spoof checks below.
+        # Passive check-in uses temporal and anti-spoof checks, without eye samples.
         if liveness_action == "blink":
+            ear_arr = np.asarray(ear_samples, dtype=float)
+            if ear_arr.ndim != 1 or len(ear_arr) < 2 or not np.all(np.isfinite(ear_arr)):
+                raise ValueError("invalid EAR samples")
+            if np.any((ear_arr < 0.0) | (ear_arr > 1.0)):
+                raise ValueError("EAR samples out of range")
             ear_std = float(np.std(ear_arr))
             ear_min = float(np.min(ear_arr))
             _log.info(f"[LIVENESS] ear std={ear_std:.4f} min={ear_min:.4f} n={len(ear_arr)}")

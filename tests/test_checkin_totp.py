@@ -143,9 +143,14 @@ class IntegratedTOTPTests(unittest.TestCase):
             (None, 200, 'step=device_token result=absent'),
             ('DeviceToken', 200, 'step=device_token_bare_scheme result=absent'),
             ('DeviceToken ', 200, 'step=device_token_bare_scheme result=absent'),
-            ('DeviceToken broken', 403, 'step=device_token_malformed result=reject'),
-            ('DeviceToken ' + wrong, 403, 'step=device_token_signature_mismatch result=reject'),
-            ('DeviceToken ' + expired, 403, 'step=device_token_expired result=reject'),
+            # DT-2: an unverifiable token is untrusted, not rejected — it must fall
+            # through to the same strict path as sending no token at all.
+            ('DeviceToken broken', 200,
+             'step=device_token result=untrusted details={"reason":"malformed"}'),
+            ('DeviceToken ' + wrong, 200,
+             'step=device_token result=untrusted details={"reason":"signature_mismatch"}'),
+            ('DeviceToken ' + expired, 200,
+             'step=device_token result=untrusted details={"reason":"expired"}'),
             ('DeviceToken ' + valid, 200, 'step=device_token result=pass'),
         ]:
             with self.subTest(header_kind=reason):

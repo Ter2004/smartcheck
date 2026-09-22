@@ -3,6 +3,7 @@ import logging
 import os
 import threading
 import time
+import traceback
 import numpy as np
 import cv2
 import json
@@ -51,6 +52,27 @@ SPOOF_DECISION_THRESHOLD = 0.50
 
 from app.services.request_audit import RequestLogger
 _audit = RequestLogger(logging.getLogger("smartcheck.enrollment"), {})
+
+
+class FaceNotDetectedError(ValueError):
+    """The frame cannot be evaluated; this is not a spoof verdict."""
+
+
+def _log_face_exception(stage, error):
+    # Do not log exception messages: upstream errors can include image inputs.
+    # A stable reason and stack locations still identify detector/model failures.
+    reason = (
+        "face_not_detected"
+        if isinstance(error, ValueError) and str(error).startswith("Face could not be detected")
+        else "inference_failed"
+    )
+    locations = " > ".join(
+        f"{os.path.basename(frame.filename)}:{frame.lineno}:{frame.name}"
+        for frame in traceback.extract_tb(error.__traceback__)[-6:]
+    )
+    _audit.error("[%s] error=%s reason=%s stack=%s", stage,
+                 type(error).__name__, reason, locations)
+    return reason
 
 # ─── Anti-spoof ONNX (Silent-Face MiniFASNetV2) ───────────────────────────────
 _antispoof_session    = None
@@ -172,7 +194,8 @@ def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
         spoof_score = max(0.0, min(1.0, spoof_score))
         return is_real, spoof_score
     except Exception as e:
-        _audit.error(f"[FASNET] inference error: {type(e).__name__}")
+        if _log_face_exception("FASNET", e) == "face_not_detected":
+            raise FaceNotDetectedError("face_not_detected") from e
         return None, None
 
 
@@ -268,7 +291,15 @@ def combined_spoof_score(
     # ── Layer 4: DeepFace Fasnet (primary ML, fail-open) ───────────────────
     # TEMP PERF: wall-clock this layer for docs/review/06-performance.md — remove after measurement
     _t0_fasnet = time.perf_counter()
-    fasnet_is_real, fasnet_spoof = _run_fasnet_antispoof(img_bgr)
+    try:
+        fasnet_is_real, fasnet_spoof = _run_fasnet_antispoof(img_bgr)
+    except FaceNotDetectedError:
+        return {
+            "is_real": False, "combined_score": 1.0,
+            "threshold": SPOOF_DECISION_THRESHOLD,
+            "layers": layers, "weights_used": {},
+            "disagreements": ["face_not_detected"], "retry_capture": True,
+        }
     _fasnet_ms = round((time.perf_counter() - _t0_fasnet) * 1000, 2)
     if fasnet_spoof is not None:
         layers["fasnet"] = {
@@ -562,6 +593,14 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
 
     spoof_result = combined_spoof_score(img)
 
+    if spoof_result.get("retry_capture"):
+        return {
+            "is_real": False, "confidence": 0.0, "combined_score": 1.0,
+            "embedding": None, "layers": spoof_result["layers"],
+            "system_failure": False, "retry_capture": True,
+            "message": "ไม่พบใบหน้าชัดเจน กรุณามองตรง จัดหน้าให้อยู่กลางกรอบ และเพิ่มแสงด้านหน้า",
+        }
+
     embedding = None
     error_msg = ""
     try:
@@ -577,7 +616,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
             error_msg = "ไม่พบใบหน้าในภาพ"
     except Exception as e:
         error_msg = f"face_detection_failed: {str(e)[:60]}"
-        _audit.warning(f"[SPOOF_CHECK_EMBED] embedding extraction failed: {type(e).__name__}")
+        _log_face_exception("SPOOF_CHECK_EMBED", e)
 
     confidence = 1.0 - spoof_result["combined_score"]
 

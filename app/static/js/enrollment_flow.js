@@ -108,43 +108,15 @@ function _log(...args)  { if (DEBUG) console.log('[SmartCheck]', ...args); }
 function _warn(...args) { if (DEBUG) console.warn('[SmartCheck]', ...args); }
 
 // ─── T16: Step Transition Modal ───────────────────────────────────────────────
-let _modalResolve = null;
-let _modalAutoDismissTimer = null;
-
-/**
- * Show step transition modal.
- * @param {string}      icon
- * @param {string}      title
- * @param {string}      desc
- * @param {string|null} btnText        — button label; pass null when using autoDismissMs
- * @param {number|null} autoDismissMs  — if set, hide button and auto-dismiss after N ms
- */
-function _showStepModal(icon, title, desc, btnText, autoDismissMs) {
-    return new Promise(resolve => {
-        _modalResolve = resolve;
-        document.getElementById('stepModalIcon').textContent  = icon;
-        document.getElementById('stepModalTitle').textContent = title;
-        document.getElementById('stepModalDesc').textContent  = desc;
-        const btn = document.getElementById('stepModalBtn');
-        if (autoDismissMs) {
-            btn.style.display = 'none';
-            _modalAutoDismissTimer = setTimeout(_dismissStepModal, autoDismissMs);
-        } else {
-            btn.style.display = '';
-            btn.textContent = btnText || 'เข้าใจแล้ว เริ่มเลย →';
-        }
-        document.getElementById('stepModal').style.display = 'flex';
-    });
+function _showStepModal(icon, title, desc) {
+    return StepGuide.show(icon, title, desc);
 }
 
-function _dismissStepModal() {
-    // Clear auto-dismiss timer to prevent double-fire if user taps the button manually
-    if (_modalAutoDismissTimer) { clearTimeout(_modalAutoDismissTimer); _modalAutoDismissTimer = null; }
-    document.getElementById('stepModal').style.display = 'none';
-    if (_modalResolve) { _modalResolve(); _modalResolve = null; }
-}
+document.addEventListener('DOMContentLoaded', () => {
+    StepGuide.show('👋', 'เตรียมลงทะเบียนใบหน้า',
+        'อ่านรายละเอียดการใช้ข้อมูลใบหน้า แล้วติ๊กช่องยินยอมและกดยืนยันเพื่อดำเนินการต่อ');
+});
 
-// ─── Blink micro-check constants (Step 2 pre-calibration) ────────────────────
 const BLINK_DROP_RATIO    = 0.70;   // EAR must drop below openEAR × 0.70 to count as closing
 const BLINK_RECOVER_RATIO = 0.65;   // EAR must recover above openEAR × 0.65 to complete cycle
 const BLINK_TIMEOUT_MS    = 10000;  // 10 s to complete one blink
@@ -161,10 +133,6 @@ const GATE_CENTER_X_MIN       = 0.25;   // face cx must be within 25%–75% of f
 const GATE_CENTER_X_MAX       = 0.75;
 const GATE_CENTER_Y_MIN       = 0.20;   // face cy must be within 20%–80% of frame height
 const GATE_CENTER_Y_MAX       = 0.80;
-// CHECK 2: Neutral expression (ratios relative to face dimensions)
-const GATE_MOUTH_OPEN_RATIO   = 0.045;  // mouth gap / face height — reject if above
-const GATE_SMILE_RATIO        = 0.44;   // mouth width / face width  — reject if above
-const GATE_BROW_RAISE_RATIO   = 0.085;  // avg brow-to-eye dist / face height — reject if above
 
 // ─────────────────────────────────────────────
 // Step navigation
@@ -325,6 +293,7 @@ async function goToLiveness() {
     challengeAttempts   = 0;
     enrollmentSessionId = null;   // new session ID for spoof_check rate limiting
     goToStep(2);   // step index 2 → light check (stepLightCheck element, position 2)
+    await _showStepModal('💡', 'จัดแสงและตำแหน่งใบหน้า', 'อนุญาตให้ใช้กล้อง จัดใบหน้าในกรอบ หันเข้าหาแสงและหลีกเลี่ยงแสงจ้าด้านหลัง เมื่อแสงพร้อมระบบจะพาไปขั้นตอนถัดไป');
     startLightCheck();
 }
 
@@ -398,9 +367,10 @@ async function startLightCheck() {
                 if (status) { status.textContent = rt.reason; status.style.color = '#dc2626'; }
                 if (guide)  { guide.classList.remove('ok'); guide.classList.add('fail'); }
                 if (btn)    btn.disabled = true;
-                setTimeout(() => {
+                setTimeout(async () => {
                     _lightSpoofBlocked = false;
                     _rtResetCounters();
+                    await _showStepModal('💡', 'จัดแสงและตำแหน่งใบหน้า', 'อนุญาตให้ใช้กล้อง จัดใบหน้าในกรอบ หันเข้าหาแสงและหลีกเลี่ยงแสงจ้าด้านหลัง เมื่อแสงพร้อมระบบจะพาไปขั้นตอนถัดไป');
                     startLightCheck();
                 }, 3000);
             }
@@ -464,7 +434,7 @@ async function proceedFromLightCheck() {
     stopLightCheck();
     _stopStepCamera();
     await _showStepModal('✓', 'แสงผ่าน — ตรวจพบใบหน้าจริง',
-        'ระบบตรวจสอบแสงและยืนยันว่าเป็นใบหน้าจริงแล้ว', null, 1500);
+        'ต่อไปให้มองตรงและลืมตาตามปกติ กดเริ่มตรวจ EAR แล้วอยู่นิ่งประมาณ 3 วินาที');
     goToStep(3);
     startEarCheck();
 }
@@ -614,8 +584,9 @@ async function runEarCheck() {
         if (status) status.textContent = `✓ EAR baseline = ${median.toFixed(3)}`;
 
         _showStepModal('✓', 'วัด EAR สำเร็จ',
-            `ค่า EAR baseline = ${median.toFixed(3)} — ระบบพร้อม Liveness Challenge`,
-            null, 1500
+            document.getElementById('stepCircular')
+                ? 'หมุนหน้าช้า ๆ เพื่อเก็บหน้าตรง ซ้าย ขวา เงยและก้ม เมื่อมีคำสั่งให้กะพริบตา 1 ครั้ง'
+                : 'มองตรงและอยู่นิ่งเพื่อให้ระบบตรวจภาพก่อน จากนั้นทำตามคำสั่งทีละท่าจนครบ 2 ท่า'
         ).then(() => {
             stopEarCheck();
             goToStep(4);
@@ -657,7 +628,11 @@ async function startLivenessChallenge() {
     _livenessRetryTimer = null;
     const actions = randomChallengeActions(2);
 
-    _buildChallengePills(actions, 0);
+    // Do not reveal gesture names while the initial still frame is checked.
+    document.getElementById('challengeSteps').style.display = 'none';
+    document.getElementById('challengeSteps').textContent = '';
+    document.getElementById('livenessPhaseInstruction').textContent =
+        'มองตรงเข้ากล้องและอยู่นิ่งก่อน — รอคำสั่งเริ่มทำท่าทาง';
     document.getElementById('challengeInstruction').style.display = 'none';  // hidden until pre-spoof check passes
     document.getElementById('livenessStatus').textContent = 'กำลังเปิดกล้อง...';
 
@@ -688,7 +663,7 @@ async function startLivenessChallenge() {
             setTimeout(() => { videoLiv.removeEventListener('canplay', onReady); resolve(); }, 3000);
         });
     }
-    document.getElementById('livenessStatus').textContent = 'กำลังตรวจสอบใบหน้า...';
+    document.getElementById('livenessStatus').textContent = 'กำลังตรวจภาพใบหน้า กรุณารอสักครู่ ยังไม่ต้องทำท่าทาง';
     {
         const videoLiv = document.getElementById('videoLiveness');
         const frame1   = _captureFrameFromVideo(videoLiv);
@@ -699,6 +674,12 @@ async function startLivenessChallenge() {
             return;
         }
         const sc1 = await _callSpoofCheckSafe(frame1);
+        if (sc1.retry_capture) {
+            if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());
+            document.getElementById('livenessStatus').textContent = sc1.message;
+            _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 2500);
+            return;
+        }
         _setSpoofLabel('spoofLabelLiveness', sc1.is_real, sc1.confidence);
         setTimeout(() => _clearSpoofLabel('spoofLabelLiveness'), 2000);
         if (!sc1.is_real) {
@@ -730,6 +711,10 @@ async function startLivenessChallenge() {
 
     // Show challenge instruction only AFTER pre-spoof check completes to avoid
     // user performing the gesture during the check and needing to repeat it
+    document.getElementById('livenessPhaseInstruction').textContent =
+        'เริ่มทำท่าทางได้แล้ว — ทำตามคำสั่งทีละท่าจนครบ 2 ท่า';
+    _buildChallengePills(actions, 0);
+    document.getElementById('challengeSteps').style.display = 'flex';
     document.getElementById('challengeInstruction').style.display = 'block';
     document.getElementById('challengeActionLabel').textContent = CHALLENGE_ACTION_LABELS[actions[0]] || actions[0];
 
@@ -752,6 +737,9 @@ async function startLivenessChallenge() {
         if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());
         challengeAttempts++;
         document.getElementById('challengeInstruction').style.display = 'none';
+        document.getElementById('challengeSteps').style.display = 'none';
+        document.getElementById('livenessPhaseInstruction').textContent =
+            'หยุดทำท่าทางก่อน — รอระบบเริ่มรอบใหม่';
 
         // B3: enforce attempt cap with cooldown
         if (challengeAttempts >= MAX_CHALLENGE_ATTEMPTS) {
@@ -771,6 +759,11 @@ async function startLivenessChallenge() {
     }
     // Reset counter on success
     challengeAttempts = 0;
+    document.getElementById('challengeInstruction').style.display = 'none';
+    document.getElementById('challengeSteps').style.display = 'none';
+    document.getElementById('livenessPhaseInstruction').textContent =
+        'ทำท่าทางครบแล้ว — รอระบบตรวจสอบ';
+    document.getElementById('livenessStatus').textContent = 'กำลังตรวจสอบใบหน้าอีกครั้ง กรุณารอสักครู่';
 
     // ── Spoof check after challenge (Step 3, check #2) ───────────────────────
     {
@@ -778,6 +771,12 @@ async function startLivenessChallenge() {
         const frame2   = _captureFrameFromVideo(videoLiv);
         if (frame2) {
             const sc2 = await _callSpoofCheckSafe(frame2);
+            if (sc2.retry_capture) {
+                if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());
+                document.getElementById('livenessStatus').textContent = sc2.message;
+                _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 2500);
+                return;
+            }
             _setSpoofLabel('spoofLabelLiveness', sc2.is_real, sc2.confidence);
             if (!sc2.is_real && !sc2._networkError) {
                 // Hard spoof detected post-challenge — require full restart (face swap suspected)
@@ -800,8 +799,7 @@ async function startLivenessChallenge() {
     await _showStepModal(
         '✓',
         'ยืนยันตัวตนผ่าน',
-        'ทำท่าทางครบทั้ง 2 ท่าเรียบร้อยแล้ว — กดปุ่มเมื่อพร้อมถ่ายรูปใบหน้า 5 รูป',
-        null, 1500
+        'กดเริ่มถ่ายรูป มองตรงและอยู่นิ่ง ระบบจะถ่ายอัตโนมัติจนครบ 5 รูป จากนั้นรอผลการลงทะเบียน'
     );
 
     goToStep(5);
@@ -881,44 +879,6 @@ function _checkCentering(lm) {
     const ok = cx >= GATE_CENTER_X_MIN && cx <= GATE_CENTER_X_MAX
             && cy >= GATE_CENTER_Y_MIN && cy <= GATE_CENTER_Y_MAX;
     return { ok, cx, cy };
-}
-
-/**
- * CHECK 2 — Neutral expression gate.
- * All distances are normalised by face height/width so the check is
- * resolution-independent.  Returns { ok, reason }.
- *
- * Landmarks used:
- *   lm[13]  upper inner lip   lm[14]  lower inner lip
- *   lm[61]  left mouth corner lm[291] right mouth corner
- *   lm[65]  left brow inner   lm[159] left eye top
- *   lm[295] right brow inner  lm[386] right eye top
- */
-function _checkNeutral(lm) {
-    function d(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-
-    const faceH = d(lm[10], lm[152]);
-    const faceW = d(lm[234], lm[454]);
-    // M11: use epsilon threshold — values near 0 cause Infinity in ratio calculations
-    if (faceH < 1e-6 || faceW < 1e-6) return { ok: false, reason: 'ไม่พบใบหน้าที่ชัดเจน' };
-
-    // Mouth open: gap between inner upper/lower lip
-    const mouthGap = d(lm[13], lm[14]) / faceH;
-    if (mouthGap > GATE_MOUTH_OPEN_RATIO)
-        return { ok: false, reason: 'กรุณาทำหน้าปกติ ไม่อ้าปาก' };
-
-    // Smile / grimace: mouth corner span vs face width
-    const mouthW = d(lm[61], lm[291]) / faceW;
-    if (mouthW > GATE_SMILE_RATIO)
-        return { ok: false, reason: 'กรุณาทำหน้าปกติ ไม่อ้าปาก' };
-
-    // Eyebrows raised: inner brow to eye-top distance vs face height
-    const leftBrow  = d(lm[65],  lm[159]) / faceH;
-    const rightBrow = d(lm[295], lm[386]) / faceH;
-    if ((leftBrow + rightBrow) / 2 > GATE_BROW_RAISE_RATIO)
-        return { ok: false, reason: 'กรุณาทำหน้าปกติ ไม่ยกคิ้ว' };
-
-    return { ok: true, reason: null };
 }
 
 // Camera environment condition check (brightness + backlight)
@@ -1097,10 +1057,6 @@ function startCaptureWithDetection() {
         const centering = _checkCentering(lm);
         if (!centering.ok) { _failGate('กรุณาจัดหน้าให้อยู่กึ่งกลางกล้อง'); return; }
 
-        // CHECK 2 — Neutral expression
-        const neutral = _checkNeutral(lm);
-        if (!neutral.ok) { _failGate(neutral.reason); return; }
-
         // ── All checks passed — green border ────────────────────────────────
         guide.classList.remove('fail');
         guide.classList.add('ok');
@@ -1137,6 +1093,14 @@ function startCaptureWithDetection() {
             return;
         }
         const sc = await _callSpoofCheckSafe(snapB64);
+        if (sc.retry_capture) {
+            _clearSpoofLabel('spoofLabelCapture');
+            status.textContent = sc.message;
+            guide.classList.remove('ok');
+            guide.classList.add('fail');
+            capturePaused = false;
+            return;
+        }
         _setSpoofLabel('spoofLabelCapture', sc.is_real, sc.confidence);
 
         if (!sc.is_real) {
@@ -1476,6 +1440,7 @@ async function fullRestart() {
 
     _updateCaptureDots();
     goToStep(2);
+    await _showStepModal('💡', 'จัดแสงและตำแหน่งใบหน้า', 'อนุญาตให้ใช้กล้อง จัดใบหน้าในกรอบ หันเข้าหาแสงและหลีกเลี่ยงแสงจ้าด้านหลัง เมื่อแสงพร้อมระบบจะพาไปขั้นตอนถัดไป');
     startLightCheck();
 }
 

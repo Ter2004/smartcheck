@@ -205,8 +205,8 @@
     <!-- ─── Step 4: Interactive Challenge ─── -->
     <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="step4">
         <h3 class="text-sm font-semibold text-slate-800 mb-1">ยืนยันตัวตน (Interactive Challenge)</h3>
-        <p class="text-sm text-slate-500 mb-3">ทำตามคำแนะนำบนหน้าจอ 2 ท่า</p>
-        <div id="challengeSteps" class="flex gap-2 justify-center mb-3"></div>
+        <p id="livenessPhaseInstruction" class="text-base font-semibold text-indigo-700 bg-indigo-50 rounded-lg p-3 mb-3" role="status" aria-live="polite">มองตรงเข้ากล้องและอยู่นิ่งก่อน — รอคำสั่งเริ่มทำท่าทาง</p>
+        <div id="challengeSteps" class="flex gap-2 justify-center mb-3" style="display:none"></div>
         <div id="challengeInstruction" class="text-center mb-2" style="display:none">
             <div id="challengeActionLabel" class="text-xl font-bold text-indigo-600">—</div>
         </div>
@@ -399,40 +399,11 @@
 
 </div>
 
-<!-- T16: Step Transition Notification Modal -->
-<div id="stepModal" style="display:none; position:fixed; inset:0; z-index:9999;
-     background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
-    <div style="background:#fff; border-radius:16px; padding:2rem; max-width:360px; width:90%;
-         text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-        <div id="stepModalIcon" style="font-size:2.5rem; margin-bottom:0.75rem;">📸</div>
-        <h3 id="stepModalTitle" style="font-size:1.1rem; font-weight:700; color:#1e293b; margin-bottom:0.5rem;">
-            ขั้นตอนถัดไป
-        </h3>
-        <p id="stepModalDesc" style="font-size:0.875rem; color:#64748b; line-height:1.6; margin-bottom:1.5rem;">
-            คำอธิบาย
-        </p>
-        <button id="stepModalBtn" onclick="_dismissStepModal()"
-                style="width:100%; padding:0.7rem; background:#4f46e5; color:#fff; border:none;
-                border-radius:12px; font-size:0.9rem; font-weight:600; cursor:pointer;
-                transition:background 0.2s;">
-            เข้าใจแล้ว เริ่มเลย →
-        </button>
-    </div>
-</div>
-
-<style>
-@keyframes _modalIn {
-    from { opacity:0; transform:scale(0.9) translateY(10px); }
-    to   { opacity:1; transform:scale(1) translateY(0); }
-}
-#stepModal > div { animation: _modalIn 0.3s ease; }
-#stepModalBtn:hover { background: #4338ca; }
-</style>
-
 <canvas id="captureCanvas" style="display:none"></canvas>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/step_guide.js') }}"></script>
 <script>
 // T15: URL endpoints injected here so enrollment_flow.js stays Jinja-free
 const ENROLL_CONFIG = {

@@ -17,11 +17,11 @@ class CheckinSelectionTests(unittest.TestCase):
             {'id': 'foreign', 'course_id': 'other'},
         ]
 
-    def invoke(self, query=''):
+    def invoke(self, query='', baseline_ear=None, attendance=None, user_agent='test'):
         def table(name):
             data = {'sessions': self.sessions,
                     'course_enrollments': [{'course_id': 'course-a'}, {'course_id': 'course-b'}],
-                    'attendance': [], 'schedules': []}[name]
+                    'attendance': attendance or [], 'schedules': []}[name]
             builder = Mock()
             for method in ['select', 'eq', 'gte', 'lt', 'lte', 'in_', 'order', 'limit']:
                 getattr(builder, method).return_value = builder
@@ -30,10 +30,12 @@ class CheckinSelectionTests(unittest.TestCase):
         handler = student.checkin
         while hasattr(handler, '__wrapped__'):
             handler = handler.__wrapped__
-        with self.app.test_request_context('/student/checkin' + query):
+        with self.app.test_request_context('/student/checkin' + query,
+                                           headers={'User-Agent': user_agent}):
             from flask import session
             session['user_id'] = 'student'
-            with patch.object(student, '_enrollment_status', return_value={'is_enrolled': True}), \
+            with patch.object(student, '_enrollment_status', return_value={
+                    'is_enrolled': True, 'baseline_ear': baseline_ear}), \
                  patch.object(student, 'supabase_admin') as database, \
                  patch.object(student, 'render_template', side_effect=lambda name, **kwargs: (name, kwargs)):
                 database.table.side_effect = table
@@ -49,6 +51,25 @@ class CheckinSelectionTests(unittest.TestCase):
         self.assertEqual(template, 'student/checkin.html')
         self.assertEqual(context['session_data']['id'], 'second')
         self.assertEqual(context['week_schedules'], [])
+
+    def test_capture_receives_enrolled_baseline_ear(self):
+        template, context = self.invoke('?session_id=second', baseline_ear=0.31)
+        self.assertEqual(template, 'student/checkin.html')
+        self.assertEqual(context['session_data']['id'], 'second')
+        self.assertEqual(context['baseline_ear'], 0.31)
+        self.assertFalse(context['already_checked'])
+
+    def test_capture_uses_default_when_ear_was_not_measured(self):
+        template, context = self.invoke('?session_id=first')
+        self.assertEqual(template, 'student/checkin.html')
+        self.assertEqual(context['baseline_ear'], 0.25)
+
+    def test_capture_receives_attendance_and_iphone_state(self):
+        _, context = self.invoke('?session_id=first',
+                                 attendance=[{'id': 'attendance', 'session_id': 'first'}],
+                                 user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')
+        self.assertTrue(context['already_checked'])
+        self.assertTrue(context['ios_warning'])
 
     def test_unavailable_or_unenrolled_session_returns_to_selection(self):
         for selected in ['foreign', 'closed', 'invalid']:

@@ -53,6 +53,17 @@ SPOOF_DECISION_THRESHOLD = 0.50
 from app.services.request_audit import RequestLogger
 _audit = RequestLogger(logging.getLogger("smartcheck.enrollment"), {})
 
+# DeepFace caches one OpenCV face/eye detector per process. Its native cascade
+# buffers must not be used concurrently by enrollment and check-in requests.
+_deepface_lock = threading.RLock()
+_cascade_lock = threading.Lock()
+
+
+def _call_deepface(method, **kwargs):
+    with _deepface_lock:
+        from deepface import DeepFace
+        return getattr(DeepFace, method)(**kwargs)
+
 
 class FaceNotDetectedError(ValueError):
     """The frame cannot be evaluated; this is not a spoof verdict."""
@@ -72,6 +83,10 @@ def _log_face_exception(stage, error):
     )
     _audit.error("[%s] error=%s reason=%s stack=%s", stage,
                  type(error).__name__, reason, locations)
+    if isinstance(error, cv2.error):
+        # Native diagnostics only: never log image inputs or full error text.
+        _audit.error("[%s] opencv_code=%s opencv_func=%s", stage,
+                     error.code, error.func)
     return reason
 
 # ─── Anti-spoof ONNX (Silent-Face MiniFASNetV2) ───────────────────────────────
@@ -108,7 +123,8 @@ def _get_antispoof_session():
 
 def _crop_face_for_antispoof(img_bgr: np.ndarray, scale: float = 2.7, size: int = 80) -> np.ndarray:
     gray  = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    faces = _face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40))
+    with _cascade_lock:
+        faces = _face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40))
     h_img, w_img = img_bgr.shape[:2]
     if len(faces) > 0:
         x, y, w, h = faces[0]
@@ -178,8 +194,7 @@ def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
     On exception returns (None, None) — caller redistributes weight.
     """
     try:
-        from deepface import DeepFace
-        faces = DeepFace.extract_faces(
+        faces = _call_deepface("extract_faces",
             img_path=img_bgr,
             detector_backend="opencv",
             anti_spoofing=True,
@@ -512,12 +527,10 @@ def extract_embedding(base64_image: str, include_metadata: bool = False):
     Decode base64 image → CLAHE normalize → FaceNet512 embedding (512-D list).
     Raises ValueError if face not detected or image unreadable.
     """
-    from deepface import DeepFace
-
     img = _decode_image(base64_image)
     img = normalize_illumination(img)
 
-    result = DeepFace.represent(
+    result = _call_deepface("represent",
         img_path=img,
         model_name="Facenet512",
         enforce_detection=True,
@@ -581,8 +594,6 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
     Embedding is always attempted for audit but withheld from callers
     if spoof is detected or face extraction fails.
     """
-    from deepface import DeepFace
-
     try:
         img = _decode_image(base64_image)
     except Exception as e:
@@ -605,7 +616,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
     error_msg = ""
     try:
         img_clahe = normalize_illumination(img)
-        rep = DeepFace.represent(
+        rep = _call_deepface("represent",
             img_path=img_clahe,
             model_name="Facenet512",
             enforce_detection=True,
@@ -925,9 +936,10 @@ def detect_static_image(frames: list, threshold: float = TEMPORAL_VAR_THRESHOLD)
 
     # ── Detect face ROI from first frame (Haar cascade — bundled in OpenCV) ──
     first_gray = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
-    detected = _face_cascade.detectMultiScale(
-        first_gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40)
-    )
+    with _cascade_lock:
+        detected = _face_cascade.detectMultiScale(
+            first_gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40)
+        )
     crop = None
     if len(detected) > 0:
         x, y, w, h = detected[0]

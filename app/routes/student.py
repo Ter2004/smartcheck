@@ -300,7 +300,7 @@ def record_consent():
             "user_id":          user_id,
             "consent_type":     "biometric_enrollment",
             "consent_given":    True,
-            "consent_version":  "1.0",
+            "consent_version":  "1.1",
             "ip_address":       _safe_ip(),
             "user_agent":       request.headers.get("User-Agent", "")[:500],
         }).execute()
@@ -1256,7 +1256,7 @@ def api_withdraw_consent():
             "user_id":         user_id,
             "consent_type":    "biometric_enrollment",
             "consent_given":   False,
-            "consent_version": "1.0",
+            "consent_version": "1.1",
             "ip_address":      _safe_ip(),
             "user_agent":      request.headers.get("User-Agent", "")[:500],
         }).execute()

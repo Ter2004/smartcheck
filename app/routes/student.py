@@ -1244,7 +1244,8 @@ def api_withdraw_consent():
       1. Insert consent_given=False into consent_logs (audit trail — always first)
       2. Hard-delete sensitive biometric columns (fail LOUD if this fails)
       3. Clear session state
-      4. Audit log event_type=consent_withdrawn_data_deleted
+      4. Remove the stored profile photo (retryable if storage is unavailable)
+      5. Audit log event_type=consent_withdrawn_data_deleted
     consent_logs rows are NEVER deleted — they are the audit trail.
     """
     from app.services.security_service import log_audit_event
@@ -1293,9 +1294,26 @@ def api_withdraw_consent():
     session.pop("consent_given_at",    None)
     session.pop("consent_ip",          None)
     session.pop("liveness_embeddings", None)
+    session.pop("enroll_baseline_ear", None)
+    session.pop("enroll_retry", None)
+    session.pop("spoof_check_acc", None)
     _log(user_id, "withdraw_consent", "biometrics_deleted")
 
-    # ── 4. Audit log (non-fatal — consent + delete already committed above) ──
+    # Both enrollment upload paths use this server-derived key. Remove it even
+    # when face_image_url was already cleared, so failed cleanup can be retried
+    # and orphaned uploads are covered. Never accept a deletion path from input.
+    try:
+        supabase_admin.storage.from_("face-images").remove([f"{user_id}.jpg"])
+    except Exception as error:
+        _log(user_id, "withdraw_consent", "photo_delete_failed", type(error).__name__)
+        return jsonify({
+            "status": "error",
+            "consent_withdrawn": True,
+            "photo_cleanup_pending": True,
+            "message": "ถอนความยินยอมแล้ว แต่ยังลบรูปไม่สำเร็จ กรุณาลองอีกครั้งหรือติดต่อผู้ดูแลระบบ",
+        }), 503
+
+    # ── 5. Audit log (non-fatal — consent + deletion already completed) ──────
     try:
         log_audit_event(
             supabase_admin,
@@ -1312,5 +1330,5 @@ def api_withdraw_consent():
     return jsonify({
         "status":  "ok",
         "message": "ถอนความยินยอมและลบข้อมูลชีวมิติเรียบร้อยแล้ว",
-        "deleted": ["face_embeddings", "baseline_ear", "face_image_url", "integrity_hash"],
+        "deleted": ["face_embeddings", "baseline_ear", "face_image_url", "integrity_hash", "face_photo"],
     })

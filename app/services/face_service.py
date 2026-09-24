@@ -145,8 +145,9 @@ def _crop_face_for_antispoof(img_bgr: np.ndarray, scale: float = 2.7, size: int 
 def _run_antispoof(img_bgr: np.ndarray) -> tuple:
     session    = _get_antispoof_session()
     crop       = _crop_face_for_antispoof(img_bgr)
-    rgb        = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    blob       = np.transpose(rgb, (2, 0, 1))[np.newaxis, :]
+    # Silent-Face MiniFASNet expects BGR in 0-255 (DeepFace FasNet.to_tensor
+    # deliberately drops div(255)); RGB/255 made the output constant.
+    blob       = np.transpose(crop.astype(np.float32), (2, 0, 1))[np.newaxis, :]
     input_name = session.get_inputs()[0].name
     raw        = session.run(None, {input_name: blob})[0][0]   # (3,)
 

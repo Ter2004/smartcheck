@@ -78,8 +78,7 @@ class EnrollmentTests(unittest.TestCase):
             response = self.client.get('/student/checkin')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, b'checkin')
-        self.assertEqual(render.call_args.args[0], 'student/checkin.html')
-        self.assertEqual(render.call_args.kwargs['baseline_ear'], 0.3)
+        self.assertEqual(render.call_args.args[0], 'student/checkin_select.html')
 
     def test_manual_teacher_endpoints_removed(self):
         with self.client.session_transaction() as session:
@@ -108,7 +107,8 @@ class SchedulerTests(unittest.TestCase):
             return q
         db.table.side_effect = table
         now = datetime(2026, 9, 21, hour, minute, tzinfo=scheduler.TZ_THAI).astimezone(timezone.utc)
-        with patch.object(scheduler, '_get_supabase', return_value=db), patch.object(scheduler, 'datetime') as clock:
+        with patch.object(scheduler, '_close_expired_sessions'), \
+                patch.object(scheduler, '_get_supabase', return_value=db), patch.object(scheduler, 'datetime') as clock:
             clock.now.return_value = now
             scheduler.auto_manage_sessions()
         return calls

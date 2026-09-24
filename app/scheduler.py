@@ -16,10 +16,75 @@ TZ_THAI = ZoneInfo("Asia/Bangkok")
 
 DAY_NAMES = ["จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์", "อาทิตย์"]
 
+# Open sessions already warned about as unmatched (once per session per process).
+_warned_unmatched = set()
+
 
 def _get_supabase():
     from app import supabase_admin
     return supabase_admin
+
+
+def _read_all(make_query):
+    """Read a stable snapshot before closing rows (avoid skipping paged results)."""
+    rows = []
+    while True:
+        # postgrest's range() appends offset/limit params, so each page needs a fresh builder.
+        page = make_query().range(len(rows), len(rows) + 199).execute().data or []
+        rows.extend(page)
+        if len(page) < 200:
+            return rows
+
+
+def _scheduled_end(sess, schedules):
+    opened = datetime.fromisoformat(sess["start_time"].replace("Z", "+00:00"))
+    if opened.tzinfo is None:
+        raise ValueError("Session start_time must include a timezone")
+    opened = opened.astimezone(TZ_THAI)
+    matches = []
+    exact = []
+    for sch in schedules:
+        if sch["course_id"] != sess["course_id"] or sch["day_of_week"] != opened.weekday():
+            continue
+        start = datetime.combine(opened.date(), _parse_time(sch["start_time"]), TZ_THAI)
+        end = datetime.combine(opened.date(), _parse_time(sch["end_time"]), TZ_THAI)
+        # Automatic creation currently supports same-day schedules only.
+        if end <= start:
+            continue
+        if opened == start:
+            exact.append(end)
+        if start <= opened < end:
+            matches.append(end)
+    # Exact occurrences take priority over overlapping windows. For ambiguous
+    # manual starts, wait until every matching window has ended.
+    return max(exact or matches, default=None)
+
+
+def _close_expired_sessions(sb, now):
+    schedules = _read_all(lambda: sb.table("schedules")
+                          .select("id, course_id, day_of_week, start_time, end_time").order("id"))
+    sessions = _read_all(lambda: sb.table("sessions")
+                        .select("id, course_id, start_time, end_time")
+                        .eq("is_open", True).order("id"))
+    unmatched = set()
+    for sess in sessions:
+        try:
+            end = _scheduled_end(sess, schedules)
+            if end is None:
+                unmatched.add(sess["id"])
+                if sess["id"] not in _warned_unmatched:
+                    _log.warning("[SCHEDULER] No matching schedule for open session %s", sess["id"])
+                continue
+            if end <= now:
+                sb.table("sessions").update({
+                    "is_open": False,
+                    "end_time": end.astimezone(timezone.utc).isoformat(),
+                }).eq("id", sess["id"]).eq("is_open", True).eq("start_time", sess["start_time"]).execute()
+        except Exception:
+            _log.exception("[SCHEDULER] Could not close session %s", sess.get("id"))
+    # Forget sessions that closed or now match a schedule, so a recurrence warns again.
+    _warned_unmatched.clear()
+    _warned_unmatched.update(unmatched)
 
 
 def auto_manage_sessions():
@@ -30,6 +95,9 @@ def auto_manage_sessions():
         today_dow  = local_now.weekday()
         today_date = local_now.date().isoformat()
         now_time   = local_now.time()
+
+        # Recover missed closures even when the server was down for days.
+        _close_expired_sessions(sb, now)
 
         # ─── ดึง schedules ที่ตรงกับวันนี้ ─────────────────────────────
         schedules = (

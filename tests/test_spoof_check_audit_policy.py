@@ -2,6 +2,7 @@ import ast
 import base64
 import inspect
 import json
+import time
 import unittest
 from contextlib import ExitStack
 from pathlib import Path
@@ -97,6 +98,8 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
             sess["user_id"] = "test-student"
             sess["consent_given_at"] = "2026-08-27T00:00:00+00:00"
             sess["liveness_embeddings"] = [[1.0, 0.0]]
+            # These tests exercise the pipeline after the head-turn challenge passed.
+            sess["liveness_verified_at"] = time.time()
 
         # Identical frames deliberately produce temporal variance 0. Validation
         # is mocked because these tests exercise route control flow, not JPEG quality.

@@ -372,7 +372,9 @@ class InteractiveChallengeDetector {
     /**
      * @param {string[]} actions — ordered list of actions to perform
      * @param {number} perActionTimeout — ms per action (default 8000)
-     * @returns {Promise<{ pass: boolean, sequence: string[], failedAt: string|null, error: string|null }>}
+     * @returns {Promise<{ pass: boolean, sequence: string[], failedAt: string|null, error: string|null,
+     *                     actionFrames: string[] }>}  actionFrames: one JPEG per completed action,
+     *                     taken the moment it completed (the server re-checks the pose).
      */
     run(actions, perActionTimeout = 8000) {
         return new Promise((resolve) => {
@@ -381,13 +383,22 @@ class InteractiveChallengeDetector {
             let checker    = buildActionChecker(actions[0], this.baselineEAR, this.video);
             const guard    = new RigidBodyGuard();
             let actionTimer = null;
+            const actionFrames = [];
+            const snapshot = () => {
+                const snap = document.createElement('canvas');
+                snap.width  = this.video.videoWidth  || 640;
+                snap.height = this.video.videoHeight || 480;
+                snap.getContext('2d').drawImage(this.video, 0, 0);
+                return snap.toDataURL('image/jpeg', 0.88);
+            };
 
             const fail = (reason) => {
                 if (resolved) return;
                 resolved = true;
                 clearTimeout(actionTimer);
                 this.stop();
-                resolve({ pass: false, sequence: actions, failedAt: actions[currentIdx], error: reason });
+                resolve({ pass: false, sequence: actions, failedAt: actions[currentIdx], error: reason,
+                          actionFrames: [] });
             };
 
             const startActionTimer = () => {
@@ -449,14 +460,15 @@ class InteractiveChallengeDetector {
 
                 if (!done) return;
 
-                // Current action completed → advance to next
+                // Current action completed → keep its frame, advance to next
+                actionFrames.push(snapshot());
                 currentIdx++;
                 if (currentIdx >= actions.length) {
                     // All actions completed in correct sequence
                     resolved = true;
                     clearTimeout(actionTimer);
                     this.stop();
-                    resolve({ pass: true, sequence: actions, failedAt: null, error: null });
+                    resolve({ pass: true, sequence: actions, failedAt: null, error: null, actionFrames });
                 } else {
                     // Start next action
                     checker = buildActionChecker(actions[currentIdx], this.baselineEAR, this.video);

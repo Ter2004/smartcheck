@@ -623,10 +623,59 @@ function _buildChallengePills(actions, currentIdx) {
     });
 }
 
+// The server picks the turn order and re-checks the frames afterwards
+// (app/services/liveness_challenge.py) — browser checks alone can be bypassed.
+async function _fetchLivenessChallenge() {
+    const res = await fetch(ENROLL_CONFIG.livenessChallengeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken() },
+        body: '{}',
+    });
+    if (!res.ok) throw new Error(`challenge HTTP ${res.status}`);
+    return res.json();
+}
+
+async function _verifyLivenessChallenge(nonce, before, actionFrames, after) {
+    try {
+        const res = await fetch(ENROLL_CONFIG.livenessVerifyUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken() },
+            body: JSON.stringify({ nonce, before, action_frames: actionFrames, after }),
+        });
+        const body = await res.json().catch(() => ({}));
+        return { passed: body.passed === true, message: body.message || '',
+                 networkError: res.status >= 500 || res.status === 429 };
+    } catch (e) {
+        return { passed: false, message: '', networkError: true };
+    }
+}
+
+function _scheduleChallengeRetry(message) {
+    challengeAttempts++;
+    document.getElementById('challengeInstruction').style.display = 'none';
+    document.getElementById('challengeSteps').style.display = 'none';
+    document.getElementById('livenessPhaseInstruction').textContent =
+        'หยุดทำท่าทางก่อน — รอระบบเริ่มรอบใหม่';
+
+    // B3: enforce attempt cap with cooldown
+    if (challengeAttempts >= MAX_CHALLENGE_ATTEMPTS) {
+        challengeAttempts = 0;
+        document.getElementById('livenessStatus').textContent =
+            'ลองเกินจำนวนครั้งที่กำหนด — กรุณารอ 30 วินาที';
+        setTimeout(() => {
+            document.getElementById('livenessStatus').textContent = 'พร้อมลองอีกครั้ง';
+            _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 500);
+        }, CHALLENGE_COOLDOWN_MS);
+    } else {
+        document.getElementById('livenessStatus').textContent =
+            (message || 'ไม่ผ่าน') + ` — กรุณาลองใหม่ (${challengeAttempts}/${MAX_CHALLENGE_ATTEMPTS})`;
+        _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 2000);
+    }
+}
+
 async function startLivenessChallenge() {
     clearTimeout(_livenessRetryTimer);
     _livenessRetryTimer = null;
-    const actions = randomChallengeActions(2);
 
     // Do not reveal gesture names while the initial still frame is checked.
     document.getElementById('challengeSteps').style.display = 'none';
@@ -635,6 +684,19 @@ async function startLivenessChallenge() {
         'มองตรงเข้ากล้องและอยู่นิ่งก่อน — รอคำสั่งเริ่มทำท่าทาง';
     document.getElementById('challengeInstruction').style.display = 'none';  // hidden until pre-spoof check passes
     document.getElementById('livenessStatus').textContent = 'กำลังเปิดกล้อง...';
+
+    let challenge;
+    try {
+        challenge = await _fetchLivenessChallenge();
+    } catch (e) {
+        _warn('liveness challenge request failed: ' + e.message);
+        document.getElementById('livenessStatus').textContent = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — กำลังลองใหม่';
+        _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 3000);
+        return;
+    }
+    const actions = challenge.actions;
+    let beforeFrame = null;
+    let afterFrame  = null;
 
     try {
         livenessStream = await navigator.mediaDevices.getUserMedia({
@@ -705,7 +767,7 @@ async function startLivenessChallenge() {
                 return;
             }
         }
-        // embedding ถูกเก็บที่ server แล้ว
+        beforeFrame = frame1;  // frontal reference for the server challenge check
     }
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -735,30 +797,9 @@ async function startLivenessChallenge() {
 
     if (!result.pass) {
         if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());
-        challengeAttempts++;
-        document.getElementById('challengeInstruction').style.display = 'none';
-        document.getElementById('challengeSteps').style.display = 'none';
-        document.getElementById('livenessPhaseInstruction').textContent =
-            'หยุดทำท่าทางก่อน — รอระบบเริ่มรอบใหม่';
-
-        // B3: enforce attempt cap with cooldown
-        if (challengeAttempts >= MAX_CHALLENGE_ATTEMPTS) {
-            challengeAttempts = 0;
-            document.getElementById('livenessStatus').textContent =
-                'ลองเกินจำนวนครั้งที่กำหนด — กรุณารอ 30 วินาที';
-            setTimeout(() => {
-                document.getElementById('livenessStatus').textContent = 'พร้อมลองอีกครั้ง';
-                _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 500);
-            }, CHALLENGE_COOLDOWN_MS);
-        } else {
-            document.getElementById('livenessStatus').textContent =
-                (result.error || 'ไม่ผ่าน') + ` — กรุณาลองใหม่ (${challengeAttempts}/${MAX_CHALLENGE_ATTEMPTS})`;
-            _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 2000);
-        }
+        _scheduleChallengeRetry(result.error);
         return;
     }
-    // Reset counter on success
-    challengeAttempts = 0;
     document.getElementById('challengeInstruction').style.display = 'none';
     document.getElementById('challengeSteps').style.display = 'none';
     document.getElementById('livenessPhaseInstruction').textContent =
@@ -787,11 +828,33 @@ async function startLivenessChallenge() {
                 setTimeout(() => fullRestart(), 2500);
                 return;
             }
-            // is_real=true or network error — continue to Step 4
-            // embedding ถูกเก็บที่ server แล้ว
+            // is_real=true or network error — continue to the server gesture check
+            afterFrame = frame2;
             setTimeout(() => _clearSpoofLabel('spoofLabelLiveness'), 1500);
         }
     }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ── Server check of the gestures (Step 3, check #3) ─────────────────────
+    // Required: /api/enroll refuses to run until this passes.
+    document.getElementById('livenessStatus').textContent = 'กำลังตรวจสอบท่าทาง กรุณารอสักครู่';
+    const lv = (beforeFrame && afterFrame && result.actionFrames?.length === actions.length)
+        ? await _verifyLivenessChallenge(challenge.nonce, beforeFrame, result.actionFrames, afterFrame)
+        : { passed: false, message: '', networkError: false };
+    if (!lv.passed) {
+        if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());
+        if (lv.networkError) {
+            // Server busy/unavailable — retry without counting it against the user
+            document.getElementById('livenessStatus').textContent =
+                'ระบบตรวจสอบขัดข้องชั่วคราว — กำลังเริ่มใหม่';
+            _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 3000);
+        } else {
+            _scheduleChallengeRetry(lv.message || 'ตรวจท่าทางไม่ผ่าน');
+        }
+        return;
+    }
+    // Reset counter on success
+    challengeAttempts = 0;
     // ─────────────────────────────────────────────────────────────────────────
 
     if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());

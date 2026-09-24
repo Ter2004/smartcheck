@@ -1,5 +1,6 @@
 import logging
 import json
+import time
 import cv2
 import numpy as np
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app, g, Response
@@ -81,6 +82,7 @@ def prevent_completed_enrollment():
     if request.endpoint not in {
         "student.enroll_face", "student.record_consent", "student.api_enroll",
         "student.api_self_verify", "student.api_spoof_check", "student.api_reset_liveness",
+        "student.api_liveness_challenge", "student.api_liveness_verify",
     } or session.get("user_role") != "student" or not session.get("user_id"):
         return None
     try:
@@ -107,6 +109,13 @@ def enrollment_navigation():
 
 # ─── Enrollment thresholds ────────────────────────────────────────────────────
 MAX_RETRY             = 3      # max outlier-retry rounds (server-enforced — A4)
+LIVENESS_MAX_AGE_S    = 15 * 60  # a passed head-turn challenge is valid this long
+
+
+def _liveness_verified():
+    """True if this session passed the server-verified head-turn challenge recently."""
+    verified_at = session.get("liveness_verified_at")
+    return bool(verified_at) and 0 <= time.time() - verified_at <= LIVENESS_MAX_AGE_S
 
 # ─── Audit logger (D1) ───────────────────────────────────────────────────────
 _audit = logging.getLogger("smartcheck.enrollment")
@@ -416,6 +425,14 @@ def api_enroll():
     if len(face_images) != 5:
         return jsonify({"status": "error",
                         "message": f"ต้องการรูป 5 รูป (ได้รับ {len(face_images)})"}), 400
+
+    # Server-verified head-turn challenge must pass first; browser checks alone
+    # can be skipped by calling this API directly. Checked before the DB attempt
+    # counter so an unverified request does not use up an attempt.
+    if not _liveness_verified():
+        _log(user_id, "enroll_liveness", "blocked", "no recent server-verified challenge")
+        return jsonify({"status": "error",
+                        "message": "กรุณาทำ Liveness Check ก่อน — กรุณาเริ่มใหม่"}), 400
 
     if retry_count >= MAX_RETRY:
         session.pop("enroll_retry", None)
@@ -881,6 +898,11 @@ def api_self_verify():
     if not verify_img:
         return jsonify({"status": "error", "message": "ไม่พบรูปภาพ"}), 400
 
+    if not _liveness_verified():
+        _log(user_id, "self_verify_liveness", "blocked", "no recent server-verified challenge")
+        return jsonify({"status": "continuity_fail",
+                        "message": "กรุณาทำ Liveness Check ก่อน — กรุณาเริ่มใหม่"}), 400
+
     # ── Zero-trust frame validation ───────────────────────────────────────────
     v = server_validate_frame(verify_img)
     if not v["valid"]:
@@ -1048,6 +1070,7 @@ def api_self_verify():
         session.pop("enroll_baseline_ear", None)
         session.pop("consent_given_at", None)
         session.pop("liveness_embeddings", None)
+        session.pop("liveness_verified_at", None)
 
         _log(user_id, "enroll_finalize", "success",
              f"best_sim={best_sim:.4f} device_bound={bool(device_fingerprint)}")
@@ -1172,8 +1195,12 @@ def api_spoof_check():
                         "message": "ไม่สามารถตรวจสอบได้ กรุณาลองใหม่อีกครั้ง"}), 500
 
     # ถ้า real face → บันทึก embedding ลง session (สำหรับ server-side continuity check)
-    if result["is_real"] and result.get("embedding"):
-        stored = session.get("liveness_embeddings", [])
+    # Only after the head-turn challenge passed, and only for the same face: the
+    # reference set starts from challenge frames and each addition must match it,
+    # so a still image sent here later cannot become the continuity reference.
+    stored = session.get("liveness_embeddings", [])
+    if (result["is_real"] and result.get("embedding") and _liveness_verified() and stored
+            and max(cosine_similarity(result["embedding"], ref) for ref in stored) >= CONTINUITY_THRESHOLD):
         stored.append(result["embedding"])
         # Bug fix: use [-5:] not [:5].
         # /api/spoof_check is called up to 8 times (liveness ×3, capture ×5).
@@ -1227,8 +1254,94 @@ def api_reset_liveness():
     """ล้าง session['liveness_embeddings'] และ spoof_check_acc — เรียกเมื่อ user เริ่มลงทะเบียนใหม่ตั้งแต่ Step 2"""
     session.pop("liveness_embeddings", None)
     session.pop("spoof_check_acc", None)
+    session.pop("liveness_challenge", None)
+    session.pop("liveness_verified_at", None)
     _log(session.get("user_id", ""), "reset_liveness", "cleared")
     return jsonify({"status": "cleared"})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Server-verified head-turn challenge (Step 4 liveness)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@student_bp.route("/api/liveness/challenge", methods=["POST"])
+@login_required
+@role_required("student")
+@_limiter.limit("10 per minute")
+@csrf_protect
+def api_liveness_challenge():
+    """Issue a random turn order bound to a one-time nonce; resets liveness state."""
+    from app.services.liveness_challenge import new_challenge, CHALLENGE_TTL_S
+
+    challenge = new_challenge()
+    session["liveness_challenge"] = challenge
+    session.pop("liveness_embeddings", None)
+    session.pop("liveness_verified_at", None)
+    _log(session["user_id"], "liveness_challenge", "issued", f"actions={challenge['actions']}")
+    return jsonify({"nonce": challenge["nonce"], "actions": challenge["actions"],
+                    "expires_in": CHALLENGE_TTL_S})
+
+
+@student_bp.route("/api/liveness/verify", methods=["POST"])
+@login_required
+@role_required("student")
+@_limiter.limit("10 per minute")
+@csrf_protect
+def api_liveness_verify():
+    """Check the frames of a completed challenge. One attempt per challenge.
+
+    Body: {nonce, before, action_frames: [one per action], after} (JPEG data URLs).
+    On success the before/after embeddings become the continuity reference used
+    by /api/enroll and /api/self_verify.
+    """
+    from app.services.face_service import server_validate_frame, extract_embedding
+    from app.services.liveness_challenge import verify, decode_frame
+
+    user_id   = session["user_id"]
+    data      = request.get_json(silent=True) or {}
+    challenge = session.pop("liveness_challenge", None)  # consumed even on failure
+    retry_msg = "ตรวจท่าทางไม่ผ่าน — กรุณาทำใหม่ตามคำสั่ง"
+
+    action_frames = data.get("action_frames")
+    if not isinstance(action_frames, list) or not 1 <= len(action_frames) <= 4:
+        _log(user_id, "liveness_verify", "fail", "reason=bad_request")
+        return jsonify({"passed": False, "message": retry_msg}), 400
+    frames = [data.get("before")] + action_frames + [data.get("after")]
+    if not all(isinstance(f, str) and f for f in frames):
+        _log(user_id, "liveness_verify", "fail", "reason=bad_request")
+        return jsonify({"passed": False, "message": retry_msg}), 400
+    for idx, frame in enumerate(frames):
+        v = server_validate_frame(frame)
+        if not v["valid"]:
+            _log(user_id, "liveness_verify", "fail", f"reason=frame_invalid frame={idx} detail={v['reason']}")
+            return jsonify({"passed": False, "message": retry_msg}), 400
+
+    try:
+        decoded = [decode_frame(f) for f in frames]
+        result = verify(challenge, data.get("nonce"), decoded[0], decoded[1:-1], decoded[-1])
+    except Exception as e:
+        _log(user_id, "liveness_verify", "error", f"{type(e).__name__}: {str(e)[:80]}")
+        return jsonify({"passed": False,
+                        "message": "ระบบตรวจสอบใบหน้าขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง"}), 503
+
+    _log(user_id, "liveness_verify", "pass" if result["passed"] else "fail",
+         f"reason={result['reason']} yaws={result['yaws']} scores={result['scores']}")
+    if not result["passed"]:
+        return jsonify({"passed": False, "message": retry_msg}), 400
+
+    # Continuity references in the same pipeline /api/enroll uses.
+    refs = []
+    for frame in (frames[0], frames[-1]):
+        try:
+            refs.append(extract_embedding(frame))
+        except Exception:
+            pass
+    if not refs:
+        _log(user_id, "liveness_verify", "fail", "reason=reference_embedding_failed")
+        return jsonify({"passed": False, "message": retry_msg}), 400
+    session["liveness_embeddings"]  = refs
+    session["liveness_verified_at"] = time.time()
+    return jsonify({"passed": True})
 
 
 # ─── PDPA: Consent Withdrawal ─────────────────────────────────────────────────

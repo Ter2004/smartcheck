@@ -16,7 +16,14 @@ docker build -t smartcheck .
 docker run -p 8080:8080 --env-file .env smartcheck
 ```
 
-No test suite exists. Verify changes by running the app and testing in the browser.
+Python tests use `unittest` (pytest is not required):
+
+```bash
+python -m unittest discover -s tests -v
+python -m unittest discover -s tests -p 'test_checkin_selection.py' -v
+```
+
+Use the project's virtual environment. Face tests need the installed DeepFace/TensorFlow dependencies; tests mock model calls where appropriate. JavaScript checks are in `scripts/test_*.js` and run individually with Node. Browser and real-device checks are still needed for camera/BLE flows, including iPhone.
 
 ## Architecture
 
@@ -66,7 +73,9 @@ APScheduler (BackgroundScheduler, Asia/Bangkok timezone) runs two jobs:
 - `auto_manage_sessions` every 1 min — creates/closes class sessions from `schedules` table
 - `keep_alive` every 3 min — pings Supabase to prevent idle HTTP/2 connection drops
 
-Scheduler only starts when `WERKZEUG_RUN_MAIN == "true"` (reloader child) or when not in debug mode, to avoid double-start.
+Scheduler startup is deferred to the first request via `before_request`, guarded by a lock so concurrent requests start it only once per process. The first session-management tick is scheduled immediately. A reloader supervisor receives no requests and does not start the scheduler; startup does not depend on `WERKZEUG_RUN_MAIN`. Multiple serving processes each have their own scheduler.
+
+Each tick also closes expired open sessions from previous days using current schedules and Bangkok dates. Sessions that cannot be matched remain open and warn once per session per process until closed or matched.
 
 ### Database schema (`database/schema.sql`)
 Tables: `users`, `student_biometrics`, `consent_logs`, `audit_logs`, `courses`, `course_enrollments`, `beacons`, `sessions`, `schedules`, `attendance`. All use UUID PKs. RLS is enabled on every table — service key bypasses it.

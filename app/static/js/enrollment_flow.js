@@ -673,6 +673,28 @@ function _scheduleChallengeRetry(message) {
     }
 }
 
+// Reopen the camera for the post-challenge frame. Always a fresh stream: on
+// iPhones a second getUserMedia can mute or end the first one.
+async function _recaptureAfterChallenge(videoEl) {
+    document.getElementById('livenessPhaseInstruction').textContent = 'มองตรงเข้ากล้องอีกครั้ง';
+    if (livenessStream) livenessStream.getTracks().forEach(t => t.stop());
+    try {
+        livenessStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: 640, height: 480 }
+        });
+    } catch (e) {
+        _warn('post-challenge camera reopen failed: ' + e.message);
+        return null;   // no "after" frame → the challenge is retried
+    }
+    videoEl.srcObject = livenessStream;
+    try { await videoEl.play(); } catch (_) {}
+    for (let i = 0; i < 30 && (videoEl.readyState < 2 || !videoEl.videoWidth); i++) {
+        await new Promise(r => setTimeout(r, 100));
+    }
+    await new Promise(r => setTimeout(r, 800));  // user faces the camera; exposure settles
+    return _captureFrameFromVideo(videoEl);
+}
+
 async function startLivenessChallenge() {
     clearTimeout(_livenessRetryTimer);
     _livenessRetryTimer = null;
@@ -809,7 +831,9 @@ async function startLivenessChallenge() {
     // ── Spoof check after challenge (Step 3, check #2) ───────────────────────
     {
         const videoLiv = document.getElementById('videoLiveness');
-        const frame2   = _captureFrameFromVideo(videoLiv);
+        // The gesture detector's MediaPipe Camera stopped its own stream, leaving
+        // the video black; open the camera again before taking the "after" frame.
+        const frame2   = await _recaptureAfterChallenge(videoLiv);
         if (frame2) {
             const sc2 = await _callSpoofCheckSafe(frame2);
             if (sc2.retry_capture) {

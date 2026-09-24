@@ -53,9 +53,11 @@ All application data access uses `supabase_admin`. `supabase` (anon) is used onl
 ### Face pipeline (`app/services/face_service.py`)
 The core AI pipeline runs entirely server-side:
 1. `server_validate_frame()` — zero-trust JPEG validation (size, magic bytes, blur, color variance)
-2. `combined_spoof_score()` — 5-layer weighted anti-spoof: Fasnet (0.15), Moiré FFT (0.30), Temporal variance (0.30), Screen texture (0.15), ONNX (0.10). Fasnet unavailable → fail-close.
+2. `combined_spoof_score()` — only Fasnet (0.70) and ONNX (0.10) vote; Moiré, screen texture and temporal variance are computed and logged only. Fasnet unavailable → fail-close.
 3. `extract_embedding()` — CLAHE normalization → FaceNet512 (512-D vector) via DeepFace
 4. `verify_face_multi()` — cosine similarity against all stored embeddings; decision on best (not average)
+
+Liveness is decided server-side by a head-turn challenge (`app/services/liveness_challenge.py`): the server picks the turn order, RetinaFace landmarks confirm each turn and FaceNet confirms the same face. Enrollment uses two turns (`/student/api/liveness/*`; `/api/enroll` and `/api/self_verify` require a pass within 15 min). Check-in uses one turn (`/api/checkin/liveness/challenge`) verified inside `/api/checkin` against the submitted frame. `CHECKIN_LIVENESS=passive` reverts check-in to hands-free capture.
 
 Key thresholds (edit in `face_service.py` top section):
 - `SAME_DEVICE_THRESHOLD = 0.70`, `NEW_DEVICE_THRESHOLD = 0.80`

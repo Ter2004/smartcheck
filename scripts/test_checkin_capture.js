@@ -15,7 +15,7 @@ function harness(debug, options = {}) {
     elements.get('videoVerify').parentElement = node();
     elements.get('stepVerify').parentElement = node();
     Object.assign(elements.get('videoVerify'), {videoWidth: 480, videoHeight: 640, readyState: options.sendError ? 2 : 0});
-    const document = {visibilityState: 'visible', addEventListener() {},
+    const document = {visibilityState: 'visible', addEventListener() {}, querySelector() {return null;},
         getElementById(id) {if (!elements.has(id)) elements.set(id, node()); return elements.get(id);},
         createElement() {created++; return node();}};
     const context = vm.createContext({document, window: {addEventListener() {}}, console,
@@ -25,6 +25,10 @@ function harness(debug, options = {}) {
         clearTimeout(id) {timers.delete(id);},
         navigator: {bluetooth: {}, mediaDevices: {async getUserMedia() {streams++; return {getTracks: () => [{stop() {}}]};}}},
         detectVirtualCamera: async () => ({blocked: false}),
+        fetch: async () => {
+            if (options.fetchError) throw Error('offline');
+            return {ok: true, json: async () => ({nonce: 'n-1', actions: [options.turn || 'turn_left']})};
+        },
         FaceMesh: class {
             setOptions() {} onResults(fn) {callback = fn;} async initialize() {}
             async send() {if (options.sendError) throw Error('send');}
@@ -32,11 +36,12 @@ function harness(debug, options = {}) {
         },
     });
     vm.runInContext((debug ? read('checkin_debug.js') : '') + read('checkin_flow.js') +
-        `\nglobalThis.flow = new CheckinFlow({baselineEAR: 0.392436, debug: ${debug}, proximityMethod: 'ble'});`, context);
+        `\nglobalThis.flow = new CheckinFlow({baselineEAR: 0.392436, debug: ${debug}, proximityMethod: 'ble',
+            livenessMode: '${options.livenessMode || 'passive'}'});`, context);
     const flow = context.flow;
     flow._sleep = async () => {};
     flow._drawFaceFeatures = () => {};
-    flow._submitCheckin = async frame => {submits++; flow.submittedFrame = frame;};
+    flow._submitCheckin = async (frame, action) => {submits++; flow.submittedFrame = frame; flow.submittedAction = action;};
     flow._showDone = (kind, message) => {flow.result = {kind, message};};
     flow._proximity = {deadline: 90000};
     if (flow._debug) flow._debug.receiptDue = 90000;
@@ -105,5 +110,36 @@ function landmarks(ear = .28) {
         await new Promise(resolve => setImmediate(resolve));
         assert.equal(e.flow.result.kind, 'error'); assert.equal(e.closes(), 1);
     }
-    console.log('PASS: capture without eye calibration, one stream/close, timeout, expiry, stale callbacks and promise failures');
+
+    // head_turn: frontal → server-chosen turn held 3 frames → 5 frontal frames → submit.
+    const turned = x => { const lm = landmarks(); lm[1] = {x, y: .5}; return lm; };  // noseRelX=(x-.3)/.4
+    const turn = harness(false, {livenessMode: 'head_turn', turn: 'turn_left'});
+    await turn.flow._startVerify();
+    for (let i = 0; i < 25; i++) await turn.frame(landmarks());
+    assert.equal(turn.submits(), 0, 'head_turn does not submit after the frontal frames alone');
+    assert.match(turn.elements.get('verifyStatus').textContent, /ซ้าย/);
+    for (let i = 0; i < 2; i++) await turn.frame(turned(.6));
+    await turn.frame(landmarks());
+    for (let i = 0; i < 3; i++) await turn.frame(turned(.2));   // wrong way never counts
+    for (let i = 0; i < 3; i++) await turn.frame(turned(.6));   // 3 consecutive after the reset
+    for (let i = 0; i < 4; i++) await turn.frame(landmarks());
+    assert.equal(turn.submits(), 0, 'waits for 5 frontal frames after the turn');
+    await turn.frame(landmarks());
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(turn.submits(), 1);
+    assert.equal(turn.flow.submittedAction, 'head_turn');
+    assert.equal(turn.flow._liveness.nonce, 'n-1');
+    assert.equal(turn.flow._liveness.turnFrames.length, 1);
+    assert.equal(typeof turn.flow._liveness.after, 'string');
+    const right = harness(false, {livenessMode: 'head_turn', turn: 'turn_right'});
+    await right.flow._startVerify();
+    for (let i = 0; i < 25; i++) await right.frame(landmarks());
+    for (let i = 0; i < 5; i++) await right.frame(turned(.6));   // turned left: not the request
+    for (let i = 0; i < 5; i++) await right.frame(landmarks());
+    assert.equal(right.submits(), 0, 'the other direction does not complete the challenge');
+    const offline = harness(false, {livenessMode: 'head_turn', fetchError: true});
+    await offline.flow._startVerify();
+    assert.equal(offline.flow.result.kind, 'error');
+    assert.equal(offline.streams(), 0, 'no camera without a challenge');
+    console.log('PASS: capture without eye calibration, one stream/close, timeout, expiry, stale callbacks, promise failures and head turn');
 })().catch(error => {console.error(error); process.exitCode = 1;});

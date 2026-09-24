@@ -64,6 +64,10 @@ class IntegratedTOTPTests(unittest.TestCase):
             self.stack.enter_context(patch.object(route, name, return_value=result))
         self.stack.enter_context(patch.object(route, '_decode_image',
             side_effect=lambda image: np.full((64, 64, 3), int(image), dtype=np.uint8)))
+        # Head-turn verification (RetinaFace/FaceNet) is covered by
+        # test_liveness_challenge; here it passes unless a test says otherwise.
+        self.verify_liveness = self.stack.enter_context(patch.object(route, 'verify_liveness',
+            return_value={'passed': True, 'reason': 'passed', 'yaws': [0., .3, 0.], 'scores': {}}))
         self.web = Flask(__name__)
         self.web.config.update(SECRET_KEY='test', ESP32_TOTP_SECRET=SECRET,
                                PROXIMITY_RECEIPT_SECRET='r' * 64,
@@ -73,8 +77,9 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.client = self.web.test_client()
         with self.client.session_transaction() as session:
             session.update(user_id='student', user_role='student', csrf_token='csrf')
-        self.payload = dict(session_id='session', liveness_action='passive',
+        self.payload = dict(session_id='session', liveness_action='head_turn',
                             face_image='20', face_images=['20', '80', '140'],
+                            liveness_nonce='n-1', liveness_turn_frames=['60'], liveness_after='100',
                             ear_samples=[.25, .26], room_code=totp.generate_code(SECRET, NOW))
 
     def post(self):
@@ -93,6 +98,57 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.assertEqual(len(self.db.records), 1)
         self.assertTrue(self.db.records[0]['face_pass'])
         self.assertTrue(self.db.records[0]['liveness_pass'])
+
+    def test_head_turn_is_checked_against_the_matched_frame(self):
+        issued = self.client.post('/api/checkin/liveness/challenge', headers={'X-CSRF-Token': 'csrf'})
+        self.assertEqual(issued.status_code, 200)
+        self.assertEqual(len(issued.json['actions']), 1)
+        self.payload['liveness_nonce'] = issued.json['nonce']
+        self.assertEqual(self.post().status_code, 200)
+        challenge, nonce, before, turns, after = self.verify_liveness.call_args.args
+        self.assertEqual(challenge['nonce'], issued.json['nonce'])
+        self.assertEqual(nonce, issued.json['nonce'])
+        # face_image ('20') is the frontal frame; turn '60' and after '100' follow.
+        self.assertEqual((before[0, 0, 0], turns[0][0, 0, 0], after[0, 0, 0]), (20, 60, 100))
+        with self.client.session_transaction() as session:
+            self.assertNotIn('checkin_liveness_challenge', session)
+
+    def test_failed_head_turn_does_not_check_in(self):
+        self.verify_liveness.return_value = {'passed': False, 'reason': 'wrong_direction:action_1:frontal',
+                                             'yaws': [0., 0., 0.], 'scores': {}}
+        response = self.post()
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(response.json['retry_face'])
+        self.assertEqual(self.db.records, [])
+
+    def test_passive_is_refused_unless_configured(self):
+        self.payload['liveness_action'] = 'passive'
+        response = self.post()
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(response.json['retry_face'])
+        self.assertEqual(self.db.records, [])
+        self.verify_liveness.assert_not_called()
+        self.web.config['CHECKIN_LIVENESS'] = 'passive'
+        self.assertEqual(self.post().status_code, 200)
+        self.verify_liveness.assert_not_called()
+
+    def test_malformed_turn_frames_are_rejected_before_verification(self):
+        for key, value in [('liveness_turn_frames', None), ('liveness_turn_frames', '60'),
+                           ('liveness_turn_frames', []), ('liveness_turn_frames', ['60'] * 3),
+                           ('liveness_turn_frames', [60]), ('liveness_after', None)]:
+            with self.subTest(key=key, value=value):
+                previous = self.payload[key]
+                self.payload[key] = value
+                self.assertEqual(self.post().status_code, 400)
+                self.payload[key] = previous
+        self.verify_liveness.assert_not_called()
+        self.assertEqual(self.db.records, [])
+
+    def test_head_turn_verifier_failure_is_503(self):
+        self.verify_liveness.side_effect = RuntimeError('model unavailable')
+        response = self.post()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.db.records, [])
 
     def test_existing_attendance_rejects_duplicate_without_insert(self):
         self.db.attendance = [{'id': 'existing', 'status': 'present'}]

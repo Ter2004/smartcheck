@@ -66,6 +66,16 @@ class Config:
         )
         CHECKIN_PROXIMITY_METHOD = "totp"
 
+    # Check-in liveness: "head_turn" (server-verified random turn, default) or
+    # "passive" (legacy hands-free capture; anti-spoof only). Rollback switch only.
+    CHECKIN_LIVENESS = os.getenv("CHECKIN_LIVENESS", "head_turn").lower()
+    if CHECKIN_LIVENESS not in ("head_turn", "passive"):
+        _log.warning(
+            f"[SmartCheck] CHECKIN_LIVENESS={CHECKIN_LIVENESS!r} is invalid "
+            f"(expected 'head_turn' or 'passive') — falling back to 'head_turn'."
+        )
+        CHECKIN_LIVENESS = "head_turn"
+
     # ── Flask-Session: server-side SQLAlchemy sessions (Railway deployment) ──
     SESSION_TYPE               = "sqlalchemy"
     SESSION_SQLALCHEMY_TABLE   = "flask_sessions"

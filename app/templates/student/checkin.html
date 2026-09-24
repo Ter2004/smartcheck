@@ -256,6 +256,8 @@
         debug:         {{ (request.args.get('debug') == '1') | tojson }},
         apiUrl:        "{{ url_for('api_checkin.checkin') }}",
         proximityMethod: "{{ config.CHECKIN_PROXIMITY_METHOD }}",
+        livenessMode:  "{{ config.CHECKIN_LIVENESS | default('head_turn') }}",
+        livenessChallengeUrl: "{{ url_for('api_checkin.checkin_liveness_challenge') }}",
     });
     document.addEventListener('DOMContentLoaded', () => flow.start());
 </script>

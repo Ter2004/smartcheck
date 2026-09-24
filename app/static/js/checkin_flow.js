@@ -12,6 +12,10 @@ class CheckinFlow {
         this.baselineEAR   = opts.baselineEAR;
         this.apiUrl        = opts.apiUrl || '/api/checkin';
         this.proximityMethod = opts.proximityMethod || 'totp';
+        // 'head_turn': one server-chosen turn, re-checked by the server; 'passive': legacy.
+        this.livenessMode  = opts.livenessMode === 'passive' ? 'passive' : 'head_turn';
+        this.livenessChallengeUrl = opts.livenessChallengeUrl || '/api/checkin/liveness/challenge';
+        this._liveness     = null;
 
         this._bleRSSI    = null;
         this._bleSkip    = false;
@@ -94,7 +98,25 @@ class CheckinFlow {
         setTimeout(() => this._startVerify(), 600);
     }
 
-    // Step 2: Detect face and submit automatically; no interactive challenge.
+    // Step 2: Detect a steady frontal face, then (head_turn mode) one server-chosen
+    // head turn and a look back, and submit automatically.
+
+    async _fetchLivenessChallenge() {
+        const res = await fetch(this.livenessChallengeUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+            },
+            body: '{}',
+        });
+        if (!res.ok) throw new Error(`challenge HTTP ${res.status}`);
+        const body = await res.json();
+        if (!body || typeof body.nonce !== 'string' || !Array.isArray(body.actions) || body.actions.length !== 1) {
+            throw new Error('challenge response invalid');
+        }
+        return body;
+    }
 
     async _startVerify() {
         if (!this._proximity || performance.now() >= this._proximity.deadline) {
@@ -107,6 +129,9 @@ class CheckinFlow {
         this.baselineEAR = null;
         this._earSamples = [];
         let faceReadyFrames = 0, countingDown = false, verified = false;
+        // head_turn phases: 'frontal' → 'turn' → 'return' → submit
+        let phase = 'frontal', turnCount = 0, backCount = 0, beforeFrame = null, turnFrame = null;
+        this._liveness = null;
         this._debug?.begin();
         this._goToStep(2);
         document.getElementById("stepRoomCode").style.display = "none";
@@ -119,7 +144,28 @@ class CheckinFlow {
         const countdown = document.getElementById('countdownBadge');
 
         await StepGuide.show('📷', 'เตรียมยืนยันใบหน้า',
-            'จัดหน้าในกรอบแล้วอยู่นิ่ง ระบบจะถ่ายและเช็คชื่อให้อัตโนมัติ เวลายืนยันห้องยังคงนับถอยหลัง');
+            this.livenessMode === 'head_turn'
+                ? 'จัดหน้าในกรอบแล้วอยู่นิ่ง จากนั้นหันหน้าตามคำสั่ง 1 ครั้งแล้วมองตรงอีกครั้ง ระบบจะเช็คชื่อให้อัตโนมัติ เวลายืนยันห้องยังคงนับถอยหลัง'
+                : 'จัดหน้าในกรอบแล้วอยู่นิ่ง ระบบจะถ่ายและเช็คชื่อให้อัตโนมัติ เวลายืนยันห้องยังคงนับถอยหลัง');
+        if (!active()) return;
+
+        let turnAction = null, challengeNonce = null;
+        if (this.livenessMode === 'head_turn') {
+            try {
+                const challenge = await this._fetchLivenessChallenge();
+                turnAction = challenge.actions[0];
+                challengeNonce = challenge.nonce;
+            } catch (e) {
+                if (!active()) return;
+                console.info('step=liveness_challenge result=error details={}');
+                this._goToStep(3);
+                document.getElementById('doneLoadingView').style.display = 'none';
+                document.getElementById('doneResultView').style.display = 'block';
+                this._showDone('error', 'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ — กดลองใหม่', true);
+                return;
+            }
+        }
+        const turnLabel = turnAction === 'turn_left' ? 'หันหน้าไปทางซ้าย' : 'หันหน้าไปทางขวา';
         if (!active()) return;
         if (performance.now() >= this._proximity.deadline) {
             this._expireProximity();
@@ -184,6 +230,13 @@ class CheckinFlow {
             }
         };
         this._streamTimeoutId = setTimeout(expireCapture, 40000);
+        const snapFrame = () => {
+            const snap = document.createElement('canvas');
+            snap.width  = video.videoWidth  || 640;
+            snap.height = video.videoHeight || 480;
+            snap.getContext('2d').drawImage(video, 0, 0);
+            return snap.toDataURL('image/jpeg', 0.85);
+        };
 
         // รอให้กล้องเริ่มก่อน 1.5 วินาที
         await this._sleep(1500);
@@ -279,6 +332,37 @@ class CheckinFlow {
             this._drawFaceFeatures(ctx, lm, canvas.width, canvas.height,
                 faceOk ? 'rgba(74,222,128,0.95)' : 'rgba(255,255,255,0.6)');
 
+            if (phase === 'turn') {
+                // Same thresholds as mediapipe_liveness.js turn checks (raw frame coordinates).
+                const turned = turnAction === 'turn_left' ? noseRelX > 0.62 : noseRelX < 0.38;
+                turnCount = turned ? turnCount + 1 : 0;
+                guide.classList.remove('fail');
+                guide.classList.add('ok');
+                status.textContent = turned ? '✓ ค้างไว้สักครู่...' : `${turnLabel} แล้วค้างไว้สักครู่`;
+                if (turnCount >= 3) {
+                    turnFrame = snapFrame();
+                    phase = 'return';
+                    status.textContent = 'มองตรงเข้ากล้องอีกครั้ง';
+                }
+                return;
+            }
+            if (phase === 'return') {
+                backCount = yawOk ? backCount + 1 : 0;
+                if (backCount < 5) {
+                    status.textContent = 'มองตรงเข้ากล้องอีกครั้ง';
+                    return;
+                }
+                this._debug?.event('head turn complete; submitting');
+                countingDown = true;
+                clearTimeout(this._streamTimeoutId);
+                verified = true;
+                status.textContent = '✓ ครบแล้ว — กำลังเช็คชื่อ...';
+                const afterFrame = snapFrame();
+                this._stopStream(this._camStream);
+                this._liveness = {nonce: challengeNonce, turnFrames: [turnFrame], after: afterFrame};
+                await this._submitCheckin(beforeFrame, 'head_turn');
+                return;
+            }
 
             if (faceOk) {
                 guide.classList.remove('fail');
@@ -286,7 +370,13 @@ class CheckinFlow {
                 faceReadyFrames++;
                 status.textContent = '✓ พบใบหน้า — กรุณานิ่งสักครู่...';
 
-                if (faceReadyFrames >= 25) {
+                if (faceReadyFrames >= 25 && this.livenessMode === 'head_turn') {
+                    // The frontal frame the server matches; the turn follows.
+                    this._debug?.event('25 ready frames; head turn requested');
+                    beforeFrame = snapFrame();
+                    phase = 'turn';
+                    status.textContent = `${turnLabel} แล้วค้างไว้สักครู่`;
+                } else if (faceReadyFrames >= 25) {
                     this._debug?.event('25 ready frames; capture complete');
                     countingDown = true;
                     clearTimeout(this._streamTimeoutId);
@@ -541,6 +631,10 @@ class CheckinFlow {
                     liveness_pass:   true,
                     face_image:      faceImage,
                     face_images:     this._capturedFrames || [faceImage],
+                    // head_turn only: the server re-checks these against face_image.
+                    liveness_nonce:       this._liveness?.nonce,
+                    liveness_turn_frames: this._liveness?.turnFrames,
+                    liveness_after:       this._liveness?.after,
                 }),
             });
 

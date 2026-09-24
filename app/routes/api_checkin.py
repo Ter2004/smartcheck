@@ -23,6 +23,10 @@ from app.services.security_service import (
 )
 from app.services.esp32_totp import verify_code
 from app.services import proximity_receipt
+from app.services.liveness_challenge import (
+    new_challenge as new_liveness_challenge, verify as verify_liveness,
+    CHALLENGE_TTL_S as LIVENESS_CHALLENGE_TTL_S,
+)
 from app import limiter as _limiter
 
 api_checkin_bp = Blueprint("api_checkin", __name__)
@@ -58,10 +62,17 @@ def checkin():
         return receipt_error
 
     # M7: whitelist liveness_action — reject arbitrary strings
-    _ALLOWED_LIVENESS_ACTIONS = {"passive", "blink", "turn_left"}
+    _ALLOWED_LIVENESS_ACTIONS = {"passive", "blink", "turn_left", "head_turn"}
     if not isinstance(liveness_action, str) or liveness_action not in _ALLOWED_LIVENESS_ACTIONS:
         reject("liveness_action_invalid", received=data.get("liveness_action"))
         return jsonify({"ok": False, "error": "ข้อมูลไม่ถูกต้อง"}), 400
+    # The client chooses liveness_action, so in head_turn mode anything else is
+    # refused; otherwise a still photo could be submitted as "passive".
+    if current_app.config.get("CHECKIN_LIVENESS", "head_turn") == "head_turn" \
+            and liveness_action != "head_turn":
+        reject("liveness_challenge_required", received=liveness_action)
+        return jsonify({"ok": False, "retry_face": True,
+                        "error": "กรุณาทำตามคำสั่งหันหน้าก่อนเช็คชื่อ — กดลองใหม่"}), 400
 
     # M6: validate ble_rssi before int() conversion
     if ble_rssi is not None:
@@ -257,6 +268,42 @@ def checkin():
             "error": "ไม่สามารถตรวจสอบใบหน้าได้ — กรุณาถ่ายใหม่อีกครั้ง",
             "retry_face": True,
         }), 400
+
+    # ─── 4c. Server-verified head turn ───────────────────────────────────────
+    # face_image is the frontal frame of the challenge, so the face matched below
+    # is the one the turn frames show. One attempt per challenge.
+    if liveness_action == "head_turn":
+        challenge   = session.pop("checkin_liveness_challenge", None)
+        turn_frames = data.get("liveness_turn_frames")
+        after_frame = data.get("liveness_after")
+        retry_turn  = "ตรวจท่าทางหันหน้าไม่ผ่าน — กดลองใหม่แล้วหันหน้าตามคำสั่ง"
+        if (not isinstance(turn_frames, list) or not 1 <= len(turn_frames) <= 2
+                or not all(isinstance(f, str) and f for f in turn_frames + [after_frame])):
+            reject("liveness_frames_invalid")
+            return jsonify({"ok": False, "error": retry_turn, "retry_face": True}), 400
+        extra_frames = []
+        for frame in turn_frames + [after_frame]:
+            if not server_validate_frame(frame)["valid"]:
+                reject("liveness_frame_invalid")
+                return jsonify({"ok": False, "error": retry_turn, "retry_face": True}), 400
+            try:
+                extra_frames.append(_decode_image(frame))
+            except Exception as error:
+                reject("liveness_frame_decode_error", exception_type=type(error).__name__)
+                return jsonify({"ok": False, "error": retry_turn, "retry_face": True}), 400
+        try:
+            with stage("liveness_challenge"):
+                live = verify_liveness(challenge, data.get("liveness_nonce"), raw_frame,
+                                       extra_frames[:-1], extra_frames[-1])
+        except Exception as error:
+            _log.error(f"[LIVENESS] challenge check unavailable: {type(error).__name__}")
+            reject("liveness_challenge_unavailable", exception_type=type(error).__name__)
+            return jsonify({"ok": False, "retry_face": True,
+                            "error": "ระบบตรวจสอบใบหน้าขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง"}), 503
+        if not live["passed"]:
+            reject("liveness_challenge_failed", failure=live["reason"], yaws=live["yaws"])
+            return jsonify({"ok": False, "error": retry_turn, "retry_face": True}), 400
+        event("liveness_challenge", "pass", yaws=live["yaws"], scores=live["scores"])
     _t8 = time.perf_counter()
 
     # ─── 5. Device binding (determines threshold) ─────────────────────────────
@@ -413,6 +460,21 @@ def checkin():
 
     status_label = "มาเรียน" if status == "present" else "มาสาย"
     return jsonify({"ok": True, "message": f"เช็คชื่อสำเร็จ — {status_label}"})
+
+
+# ─── Head-turn challenge for check-in liveness ───────────────────────────────
+
+@api_checkin_bp.route("/api/checkin/liveness/challenge", methods=["POST"])
+@login_required
+@role_required("student")
+@_limiter.limit("10 per minute")
+@csrf_protect
+def checkin_liveness_challenge():
+    """Issue the single random head turn the next /api/checkin must show."""
+    challenge = new_liveness_challenge(count=1)
+    session["checkin_liveness_challenge"] = challenge
+    return jsonify({"nonce": challenge["nonce"], "actions": challenge["actions"],
+                    "expires_in": LIVENESS_CHALLENGE_TTL_S})
 
 
 # ─── Passive anti-spoof (hybrid liveness) ────────────────────────────────────

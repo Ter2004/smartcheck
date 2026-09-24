@@ -1,8 +1,9 @@
-"""Server-verified head-turn challenge for enrollment liveness.
+"""Server-verified head-turn challenge for enrollment and check-in liveness.
 
 The browser performs the gestures, but the server decides whether they happened.
-A challenge is a random order of turn_left / turn_right bound to a one-time
-nonce. The client returns one frame taken before the gestures, one frame per
+A challenge is a random order of turn_left / turn_right (both for enrollment,
+one for check-in) bound to a one-time nonce. The client returns one frame taken
+before the gestures, one frame per
 gesture (captured when the browser detector reports it done) and one after.
 The server then checks from RetinaFace landmarks that each gesture frame shows
 the head turned the requested way, and from FaceNet embeddings that every frame
@@ -18,6 +19,7 @@ pre-made images of one face in the right poses, or a live deepfake.
 import secrets
 import time
 
+import cv2
 import numpy as np
 
 from app.services import face_service
@@ -37,6 +39,11 @@ TURN_MIN_YAW = 0.20
 TURN_IDENTITY_MIN = 0.45
 FRONTAL_IDENTITY_MIN = face_service.CONTINUITY_THRESHOLD
 MIN_FACE_SCORE = 0.9
+# Landmark detection resolution (px, longest side), without RetinaFace's default
+# upscaling to ~1024 px (750 ms -> ~120 ms per 640x480 frame on CPU). Measured on
+# 60 LFW faces placed on 640x480 frames: yaw differs from full resolution by at
+# most 0.11 at 480 px; 320 px produced a 1.2 outlier.
+DETECT_MAX_SIDE = 480
 # A second face at least this fraction of the main face's area fails the frame.
 SECOND_FACE_AREA_RATIO = 0.5
 
@@ -45,10 +52,10 @@ class FrameError(ValueError):
     """A frame cannot be evaluated (no face, several faces)."""
 
 
-def new_challenge(now=None, rng=None):
+def new_challenge(now=None, rng=None, count=len(ACTIONS)):
+    """Random order of `count` distinct turns (enrollment: both; check-in: one)."""
     rng = rng or secrets.SystemRandom()
-    actions = list(ACTIONS)
-    rng.shuffle(actions)
+    actions = rng.sample(ACTIONS, count)
     return {
         "nonce": secrets.token_urlsafe(16),
         "actions": actions,
@@ -88,9 +95,15 @@ def analyze_frame(img_bgr):
     """Return {"yaw", "embedding"} for the single main face in a BGR frame."""
     from retinaface import RetinaFace
 
+    # Landmarks on a downscaled copy (selfie faces are large), identity crop
+    # from the full-resolution frame.
+    h, w = img_bgr.shape[:2]
+    scale = min(1.0, DETECT_MAX_SIDE / max(h, w))
+    small = img_bgr if scale == 1.0 else cv2.resize(
+        img_bgr, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
     # One TF model at a time per process, like the other face calls.
     with face_service._deepface_lock:
-        faces = RetinaFace.detect_faces(img_bgr, threshold=MIN_FACE_SCORE)
+        faces = RetinaFace.detect_faces(small, threshold=MIN_FACE_SCORE, allow_upscaling=False)
     if not isinstance(faces, dict) or not faces:
         raise FrameError("no_face")
     ranked = sorted(faces.values(), key=lambda f: _area(f["facial_area"]), reverse=True)
@@ -98,9 +111,8 @@ def analyze_frame(img_bgr):
     if len(ranked) > 1 and _area(ranked[1]["facial_area"]) >= SECOND_FACE_AREA_RATIO * _area(main["facial_area"]):
         raise FrameError("multiple_faces")
 
-    x1, y1, x2, y2 = main["facial_area"]
+    x1, y1, x2, y2 = (int(round(v / scale)) for v in main["facial_area"])
     mx, my = int((x2 - x1) * 0.1), int((y2 - y1) * 0.1)
-    h, w = img_bgr.shape[:2]
     crop = img_bgr[max(0, y1 - my):min(h, y2 + my), max(0, x1 - mx):min(w, x2 + mx)]
     crop = face_service.normalize_illumination(crop)
     rep = face_service._call_deepface("represent", img_path=crop,

@@ -23,12 +23,14 @@ NOW = 1788758850
 class Database:
     def __init__(self):
         self.records = []
+        self.attendance = []
 
     def table(self, name):
         query = Mock()
-        for method in ['select', 'eq', 'neq', 'maybe_single']:
+        for method in ['select', 'eq', 'neq', 'maybe_single', 'limit']:
             getattr(query, method).return_value = query
         data = {
+            'attendance': self.attendance,
             'sessions': {'id': 'session', 'course_id': 'course', 'is_open': True},
             'course_enrollments': {'id': 'enrollment'},
             'users': {'device_id': ''},
@@ -91,6 +93,13 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.assertEqual(len(self.db.records), 1)
         self.assertTrue(self.db.records[0]['face_pass'])
         self.assertTrue(self.db.records[0]['liveness_pass'])
+
+    def test_existing_attendance_rejects_duplicate_without_insert(self):
+        self.db.attendance = [{'id': 'existing', 'status': 'present'}]
+        response = self.post()
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(response.json['already_checked'])
+        self.assertEqual(self.db.records, [])
 
     def preflight(self):
         return self.client.post('/api/checkin/proximity', json=self.payload,

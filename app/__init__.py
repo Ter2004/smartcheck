@@ -63,6 +63,18 @@ def _refresh_clients():
     supabase_admin = create_client(Config.SUPABASE_URL, Config.SUPABASE_SERVICE_KEY)
 
 
+def _trust_proxies(app):
+    """Take the client address from X-Forwarded-For set by our own proxy.
+
+    Without this, every request through cloudflared comes from 127.0.0.1, so
+    per-IP rate limits (login: 10/min) are shared by all users.
+    """
+    hops = app.config.get("TRUSTED_PROXY_HOPS", 0)
+    if hops:
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops)
+
+
 def create_app():
     # Runs for both `python run.py` and gunicorn "app:create_app()".
     from app.runtime_check import check_face_runtime
@@ -73,6 +85,7 @@ def create_app():
     if app.config["PERFORMANCE_LOG_ENABLED"]:
         from app.services.request_performance import init_request_performance
         init_request_performance(app)
+    _trust_proxies(app)
     from app.services.esp32_totp import load_secret
     app.config["ESP32_TOTP_SECRET"] = load_secret()
 

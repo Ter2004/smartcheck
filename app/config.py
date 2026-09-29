@@ -53,6 +53,10 @@ class Config:
     # Redis URL for rate limiter (production)
     REDIS_URL = os.getenv("REDIS_URL", "")
 
+    # Reverse proxies in front of Flask (cloudflared = 1). 0 trusts no
+    # X-Forwarded-* header: the client address is the TCP peer.
+    TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
+
     # Enrollment flow variant: "classic" | "circular"
     ENROLL_FLOW_MODE = os.getenv("ENROLL_FLOW_MODE", "classic")
 

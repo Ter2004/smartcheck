@@ -120,16 +120,13 @@ def _liveness_verified():
 _audit = logging.getLogger("smartcheck.enrollment")
 
 
-import re as _re
-_IP_RE = _re.compile(r'^(\d{1,3}\.){3}\d{1,3}$')
-
 def _safe_ip():
-    """M13: Return client IP — validate X-Forwarded-For to prevent log spoofing."""
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        first = xff.split(",")[0].strip()
-        if _IP_RE.match(first):
-            return first
+    """Client IP for audit and consent records.
+
+    X-Forwarded-For is trusted only through ProxyFix (TRUSTED_PROXY_HOPS).
+    Reading its first entry here let any client write an arbitrary IP into
+    consent_logs.
+    """
     return request.remote_addr or "unknown"
 
 

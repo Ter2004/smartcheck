@@ -184,7 +184,7 @@ def create_app():
         # Content-Security-Policy — adjust CDN allowlist as needed
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' cdn.tailwindcss.com cdn.jsdelivr.net "
+            "script-src 'self' cdn.jsdelivr.net "
                 "'unsafe-inline' 'unsafe-eval'; "   # unsafe-eval required by MediaPipe WASM
             "style-src 'self' fonts.googleapis.com 'unsafe-inline'; "
             "font-src fonts.gstatic.com data:; "

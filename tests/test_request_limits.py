@@ -1,4 +1,3 @@
-import base64
 import unittest
 from unittest.mock import patch
 
@@ -7,13 +6,6 @@ from flask import Flask
 import app
 from app.config import Config
 from app.routes import api_checkin as route
-
-
-def jpeg_b64(size):
-    # JPEG markers around filler: passes the header/footer checks, so only the
-    # size limit can reject it.
-    body = b"\xff\xd8\xff" + b"\x00" * (size - 5) + b"\xff\xd9"
-    return "data:image/jpeg;base64," + base64.b64encode(body).decode()
 
 
 class RequestLimitTests(unittest.TestCase):
@@ -27,38 +19,23 @@ class RequestLimitTests(unittest.TestCase):
         with self.client.session_transaction() as session:
             session.update(user_id="student", user_role="student", csrf_token="csrf")
 
-    def post_passive(self, **json):
-        return self.client.post("/api/antispoof-passive", json=json,
-                                headers={"X-CSRF-Token": "csrf"})
+    def post(self, path, **json):
+        return self.client.post(path, json=json, headers={"X-CSRF-Token": "csrf"})
 
     def test_body_limit_is_10_mb(self):
         self.assertEqual(Config.MAX_CONTENT_LENGTH, 10 * 1024 * 1024)
 
     def test_oversized_body_is_refused_before_the_route(self):
-        with patch.object(route, "check_anti_spoof_with_score") as scorer:
-            response = self.post_passive(face_image="A" * (11 * 1024 * 1024))
+        with patch.object(route, "extract_embedding") as extraction, \
+                patch.object(route, "combined_spoof_score") as spoof:
+            response = self.post("/api/checkin", face_image="A" * (11 * 1024 * 1024))
         self.assertEqual(response.status_code, 413)
-        scorer.assert_not_called()
+        extraction.assert_not_called()
+        spoof.assert_not_called()
 
-    def test_passive_antispoof_rejects_large_frame_before_decoding(self):
-        with patch.object(route, "check_anti_spoof_with_score") as scorer:
-            response = self.post_passive(face_image=jpeg_b64(600 * 1024))
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(response.json["real"])
-        scorer.assert_not_called()
-
-    def test_passive_antispoof_rejects_non_string_image(self):
-        with patch.object(route, "check_anti_spoof_with_score") as scorer:
-            response = self.post_passive(face_image=["not", "a", "frame"])
-        self.assertEqual(response.status_code, 400)
-        scorer.assert_not_called()
-
-    def test_passive_antispoof_scores_a_valid_frame(self):
-        with patch.object(route, "server_validate_frame", return_value={"valid": True}), \
-                patch.object(route, "check_anti_spoof_with_score", return_value=(True, 0.91)):
-            response = self.post_passive(face_image="frame")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json, {"ok": True, "real": True, "score": 0.91})
+    def test_passive_antispoof_score_endpoint_is_gone(self):
+        # It returned a numeric anti-spoof score: an oracle for tuning fakes.
+        self.assertEqual(self.post("/api/antispoof-passive", face_image="x").status_code, 404)
 
 
 if __name__ == "__main__":

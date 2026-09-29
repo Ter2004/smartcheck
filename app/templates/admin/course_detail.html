@@ -286,16 +286,25 @@ function previewCSV(input) {
         if (!rows.length) return;
         const header = rows[0].split(',');
         const dataRows = rows.slice(1);
-        table.innerHTML =
-            '<thead class="bg-slate-50"><tr>' +
-            header.map(h => '<th class="px-2 py-1.5 text-left font-medium text-slate-600 border-b border-slate-200">' + h + '</th>').join('') +
-            '</tr></thead><tbody>' +
-            dataRows.slice(0, 5).map(r =>
-                '<tr class="border-b border-slate-100">' +
-                r.split(',').map(c => '<td class="px-2 py-1.5 text-slate-700">' + c + '</td>').join('') +
-                '</tr>'
-            ).join('') +
-            '</tbody>';
+        // CSV cells are untrusted: build nodes and set text, never HTML.
+        const cell = (tag, cls, text) => {
+            const node = document.createElement(tag);
+            node.className = cls;
+            node.textContent = text;
+            return node;
+        };
+        const thead = document.createElement('thead');
+        thead.className = 'bg-slate-50';
+        const headRow = thead.appendChild(document.createElement('tr'));
+        header.forEach(h => headRow.appendChild(
+            cell('th', 'px-2 py-1.5 text-left font-medium text-slate-600 border-b border-slate-200', h)));
+        const tbody = document.createElement('tbody');
+        dataRows.slice(0, 5).forEach(r => {
+            const tr = tbody.appendChild(document.createElement('tr'));
+            tr.className = 'border-b border-slate-100';
+            r.split(',').forEach(c => tr.appendChild(cell('td', 'px-2 py-1.5 text-slate-700', c)));
+        });
+        table.replaceChildren(thead, tbody);
         summary.textContent = 'พบ ' + dataRows.length + ' แถว (ไม่นับ header)';
         preview.classList.remove('hidden');
     };

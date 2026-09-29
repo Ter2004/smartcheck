@@ -12,7 +12,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <!-- Configure the CDN runtime after it has initialized. -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind Play CDN 3.4.17, served locally (the CDN sends no CORS header, so SRI cannot apply). -->
+    <script src="{{ url_for('static', filename='vendor/tailwindcss-3.4.17.js') }}"></script>
     <script>
         tailwind.config = {
             corePlugins: { preflight: false },
@@ -265,12 +266,15 @@ function showToast(message, type) {
     const c = cfg[type] || cfg.info;
     const el = document.createElement('div');
     el.className = `toast-item pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg text-sm ${c.bg} ${c.border} ${c.text}`;
+    // Markup is fixed; the message (flash text, may echo CSV input) is text only.
     el.innerHTML = `
         <svg class="w-4 h-4 mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${c.icon}</svg>
-        <span class="flex-1 leading-snug">${message}</span>
-        <button onclick="this.closest('.toast-item').remove()" class="opacity-50 hover:opacity-100 -mr-1 -mt-0.5 p-0.5 transition-opacity flex-shrink-0">
+        <span class="flex-1 leading-snug"></span>
+        <button type="button" class="opacity-50 hover:opacity-100 -mr-1 -mt-0.5 p-0.5 transition-opacity flex-shrink-0">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>`;
+    el.querySelector('span').textContent = message;
+    el.querySelector('button').addEventListener('click', () => el.remove());
     document.getElementById('toast-container').appendChild(el);
     setTimeout(() => { el.style.opacity='0'; el.style.transform='translateX(100%)'; el.style.transition='all 0.3s'; setTimeout(()=>el.remove(),300); }, 4500);
 }

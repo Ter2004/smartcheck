@@ -877,7 +877,7 @@ def api_spoof_check():
     Called ~8 times per enrollment (Step 2×1, Step 3×2, Step 4×5).
 
     ถ้า is_real=True → เก็บ embedding ลง session["liveness_embeddings"] (server-side)
-    Response: { is_real, confidence, message } — ไม่ส่ง embedding กลับ client
+    Response: { is_real, message } — ไม่ส่ง embedding กลับ client
     """
     import base64 as _b64
     from app.services.face_service import (
@@ -891,7 +891,7 @@ def api_spoof_check():
     img_b64 = (data or {}).get("image")
 
     if not img_b64:
-        return jsonify({"is_real": False, "confidence": 0.0,
+        return jsonify({"is_real": False,
                         "message": "ไม่พบรูปภาพ"}), 400
 
     # ── 1. Zero-trust frame validation ───────────────────────────────────────
@@ -903,14 +903,14 @@ def api_spoof_check():
             if key in metadata:
                 diagnostic_fields.append(f"{key}={metadata[key]}")
         _log(user_id, "spoof_check", "frame_invalid", " ".join(diagnostic_fields))
-        return jsonify({"is_real": False, "confidence": 0.0,
+        return jsonify({"is_real": False,
                         "message": "รูปภาพไม่ถูกต้อง"}), 400
 
     # ── 2. Decode once — shared by all checks below ───────────────────────────
     try:
         raw = _decode_image(img_b64)
     except Exception as e:
-        return jsonify({"is_real": False, "confidence": 0.0,
+        return jsonify({"is_real": False,
                         "message": "อ่านรูปภาพไม่ได้"}), 400
 
     # ── 3. Single-frame Moiré FFT — audit-only; verdict/error never rejects ──
@@ -967,7 +967,7 @@ def api_spoof_check():
         result = spoof_check_with_embedding(img_b64)
     except Exception as e:
         _log(user_id, "spoof_check", "exception", str(e)[:80])
-        return jsonify({"is_real": False, "confidence": 0.0,
+        return jsonify({"is_real": False,
                         "message": "ไม่สามารถตรวจสอบได้ กรุณาลองใหม่อีกครั้ง"}), 500
 
     # ถ้า real face → บันทึก embedding ลง session (สำหรับ server-side continuity check)
@@ -988,7 +988,7 @@ def api_spoof_check():
 
     if result.get("retry_capture"):
         _log(user_id, "spoof_check", "face_not_detected", "retry_capture=true")
-        return jsonify({"is_real": False, "confidence": 0.0,
+        return jsonify({"is_real": False,
                         "retry_capture": True, "message": result["message"]})
 
     if result.get("system_failure"):
@@ -1001,7 +1001,7 @@ def api_spoof_check():
         # change needed for that part.
         _log(user_id, "spoof_check", "system_failure",
              f"confidence={result['confidence']}")
-        return jsonify({"is_real": False, "confidence": 0.0,
+        return jsonify({"is_real": False,
                         "message": "ระบบตรวจสอบใบหน้าขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง หรือแจ้งเจ้าหน้าที่หากยังพบปัญหา"}), 503
 
     _log(user_id, "spoof_check",
@@ -1010,9 +1010,9 @@ def api_spoof_check():
          f"liveness_count={len(session.get('liveness_embeddings', []))}")
 
     # ไม่ส่ง embedding กลับ client — ป้องกัน JS inspection/bypass
+    # Pass/fail only: a numeric score would let a client tune a fake frame.
     return jsonify({
         "is_real":    result["is_real"],
-        "confidence": result["confidence"],
         "message":    result.get("message", ""),
     })
 

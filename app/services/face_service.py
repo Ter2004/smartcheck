@@ -568,22 +568,6 @@ def check_anti_spoof(base64_image: str) -> bool:
         return False
 
 
-def check_anti_spoof_with_score(base64_image: str) -> tuple:
-    """
-    Real anti-spoof check returning (is_real, confidence_score).
-    confidence_score ∈ [0,1] where higher = more confident real
-    (i.e. confidence_score = 1 - combined_spoof_score).
-    """
-    try:
-        img = _decode_image(base64_image)
-        result = combined_spoof_score(img)
-        confidence = 1.0 - result["combined_score"]
-        return result["is_real"], round(confidence, 4)
-    except Exception as e:
-        _audit.error(f"[ANTISPOOF] check_anti_spoof_with_score fail-close: {type(e).__name__}")
-        return False, 0.0
-
-
 def spoof_check_with_embedding(base64_image: str) -> dict:
     """
     Combined spoof detection + FaceNet512 embedding extraction.

@@ -18,7 +18,7 @@ let _stepCamera = null;   // currently active Camera (stopped between steps)
 function _getSharedFM(opts = {}) {
     if (!_sharedFM) {
         _sharedFM = new FaceMesh({ locateFile: f =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}` });
     }
     // Confidence 0.5 (was 0.7): lower threshold reduces detection lag on mobile
     // without meaningful accuracy loss for enrollment actions and capture gate checks.
@@ -248,10 +248,10 @@ function _stopAllStreams() {
 
 window.addEventListener('beforeunload', _stopAllStreams);
 
-function _setSpoofLabel(labelId, isReal, confidence) {
+function _setSpoofLabel(labelId, isReal) {
     const el = document.getElementById(labelId);
     if (!el) return;
-    console.log(`[spoof] ${labelId}: ${isReal ? 'REAL' : 'SPOOF'} ${confidence.toFixed(3)}`);
+    console.log(`[spoof] ${labelId}: ${isReal ? 'REAL' : 'SPOOF'}`);
     el.textContent       = isReal ? 'REAL ✓' : '⚠️ SPOOF';
     el.style.background  = isReal ? 'rgba(34,197,94,0.85)' : 'rgba(239,68,68,0.85)';
     el.style.color       = '#fff';
@@ -519,7 +519,7 @@ async function runEarCheck() {
     // leaves the WASM graph in a stale state where send() succeeds but onResults never fires.
     // A new instance + explicit initialize() guarantees a clean pipeline.
     const fm = new FaceMesh({ locateFile: f =>
-        `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+        `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}` });
     fm.setOptions({
         maxNumFaces: 1,
         refineLandmarks: false,
@@ -764,7 +764,7 @@ async function startLivenessChallenge() {
             _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 2500);
             return;
         }
-        _setSpoofLabel('spoofLabelLiveness', sc1.is_real, sc1.confidence);
+        _setSpoofLabel('spoofLabelLiveness', sc1.is_real);
         setTimeout(() => _clearSpoofLabel('spoofLabelLiveness'), 2000);
         if (!sc1.is_real) {
             if (sc1._networkError) {
@@ -842,7 +842,7 @@ async function startLivenessChallenge() {
                 _livenessRetryTimer = setTimeout(() => startLivenessChallenge(), 2500);
                 return;
             }
-            _setSpoofLabel('spoofLabelLiveness', sc2.is_real, sc2.confidence);
+            _setSpoofLabel('spoofLabelLiveness', sc2.is_real);
             if (!sc2.is_real && !sc2._networkError) {
                 // Hard spoof detected post-challenge — require full restart (face swap suspected)
                 _showSpoofWarn();
@@ -1188,7 +1188,7 @@ function startCaptureWithDetection() {
             capturePaused = false;
             return;
         }
-        _setSpoofLabel('spoofLabelCapture', sc.is_real, sc.confidence);
+        _setSpoofLabel('spoofLabelCapture', sc.is_real);
 
         if (!sc.is_real) {
             if (sc._networkError) {

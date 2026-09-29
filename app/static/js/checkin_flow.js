@@ -203,7 +203,7 @@ class CheckinFlow {
 
         // FaceMesh ตรวจตำแหน่งหน้า
         const faceMesh = new FaceMesh({ locateFile: f =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}` });
         this._activeMesh = faceMesh;
         faceMesh.setOptions({
             maxNumFaces: 1, refineLandmarks: false,

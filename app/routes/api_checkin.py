@@ -12,7 +12,7 @@ from app.services.request_audit import RequestLogger, audited_checkin, event, re
 _log = RequestLogger(logging.getLogger("smartcheck.checkin"), {})
 from app.services.face_service import (
     extract_embedding, verify_face_multi,
-    check_anti_spoof, check_anti_spoof_with_score, combined_spoof_score,
+    check_anti_spoof, combined_spoof_score,
     is_system_failure,
     detect_screen_moire, detect_screen_texture,
     MOIRE_THRESHOLD_SINGLE, _decode_image, server_validate_frame,
@@ -469,33 +469,6 @@ def checkin_liveness_challenge():
     session["checkin_liveness_challenge"] = challenge
     return jsonify({"nonce": challenge["nonce"], "actions": challenge["actions"],
                     "expires_in": LIVENESS_CHALLENGE_TTL_S})
-
-
-# ─── Passive anti-spoof (hybrid liveness) ────────────────────────────────────
-
-@api_checkin_bp.route("/api/antispoof-passive", methods=["POST"])
-@login_required
-@role_required("student")
-@_limiter.limit("20 per minute")
-@csrf_protect
-def antispoof_passive():
-    data       = request.get_json()
-    face_image = data.get("face_image") if data else None
-    if not face_image or not isinstance(face_image, str):
-        return jsonify({"ok": False, "real": False, "score": 0.0}), 400
-    frame_check = server_validate_frame(face_image)
-    if not frame_check["valid"]:
-        _log.info(f"[FRAME_VALIDATE] antispoof-passive fail reason={frame_check['reason']}")
-        return jsonify({"ok": False, "real": False, "score": 0.0,
-                        "message": "รูปภาพไม่ถูกต้อง — กรุณาถ่ายใหม่อีกครั้ง"}), 400
-    try:
-        is_real, score = check_anti_spoof_with_score(face_image)
-        return jsonify({"ok": True, "real": is_real, "score": round(score, 4)})
-    except Exception as e:
-        _log.error(f"[ANTISPOOF-PASSIVE] error: {type(e).__name__}")
-        # Fail-close: exception → treat as spoof, not real
-        return jsonify({"ok": False, "real": False, "score": 0.0,
-                        "message": "ไม่สามารถตรวจสอบได้ กรุณาลองใหม่"}), 500
 
 
 def _eligible(data):

@@ -257,7 +257,7 @@ class LivenessDetector {
             const TIMEOUT_MS = 20000;
 
             const faceMesh = new FaceMesh({ locateFile: f =>
-                `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+                `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}` });
             faceMesh.setOptions({
                 maxNumFaces: 1, refineLandmarks: true,
                 minDetectionConfidence: 0.7, minTrackingConfidence: 0.7,
@@ -422,7 +422,7 @@ class InteractiveChallengeDetector {
                 // _faceMesh stays null → stop() will not close the shared instance
             } else {
                 faceMesh = new FaceMesh({ locateFile: f =>
-                    `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+                    `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}` });
                 faceMesh.setOptions({
                     maxNumFaces: 1, refineLandmarks: false,
                     minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,

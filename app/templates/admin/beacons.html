@@ -50,14 +50,14 @@
                     <td class="px-4 py-3.5">
                         <div class="flex items-center gap-2">
                             {% if b.has_ble_secret %}
-                            <span class="text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">ตั้งแล้ว</span>
+                            <span class="whitespace-nowrap text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">ตั้งแล้ว</span>
                             {% else %}
-                            <span class="text-xs font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">ยังไม่ตั้ง</span>
+                            <span class="whitespace-nowrap text-xs font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">ยังไม่ตั้ง</span>
                             {% endif %}
                             <form method="POST" action="{{ url_for('admin.beacon_ble_secret', beacon_id=b.id) }}"
                                   onsubmit="return confirm('บอร์ดของห้องนี้จะใช้เช็คชื่อไม่ได้จนกว่าจะแฟลช firmware ใหม่ ยืนยัน?')">
                                 <button type="submit"
-                                        class="text-xs text-slate-500 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition-colors">
+                                        class="whitespace-nowrap text-xs text-slate-500 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition-colors">
                                     {{ 'สร้างใหม่' if b.has_ble_secret else 'สร้าง secret' }}
                                 </button>
                             </form>
@@ -65,11 +65,11 @@
                     </td>
                     <td class="px-4 py-3.5">
                         {% if b.is_active %}
-                        <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        <span class="whitespace-nowrap inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
                             <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>เปิดใช้งาน
                         </span>
                         {% else %}
-                        <span class="text-xs font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">ปิดใช้งาน</span>
+                        <span class="whitespace-nowrap text-xs font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">ปิดใช้งาน</span>
                         {% endif %}
                     </td>
                     <td class="px-4 py-3.5">

@@ -75,6 +75,25 @@ def _trust_proxies(app):
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops)
 
 
+def rate_limit_exceeded(e):
+    from flask import jsonify, request as freq
+    retry_after = getattr(e, "retry_after", None) or getattr(e, "description", None)
+    # JSON response for API endpoints; plain redirect for page requests
+    if freq.is_json or freq.path.startswith("/api/") or freq.path.startswith("/student/api/"):
+        return jsonify({
+            "status":      "error",
+            "message":     "คำขอมากเกินไป กรุณารอสักครู่แล้วลองใหม่",
+            "retry_after": str(retry_after) if retry_after else None,
+        }), 429
+    from flask import flash, redirect, render_template, session as fsession, url_for
+    if fsession.get("user_id"):
+        # Logged in: a redirect to the login form would show it inside the
+        # app layout, and one to the dashboard can hit the same limit again.
+        return render_template("errors/rate_limited.html"), 429
+    flash("คำขอมากเกินไป กรุณารอสักครู่แล้วลองใหม่", "warning")
+    return redirect(url_for("auth.login"))
+
+
 def create_app():
     # Runs for both `python run.py` and gunicorn "app:create_app()".
     from app.runtime_check import check_face_runtime
@@ -157,20 +176,7 @@ def create_app():
         _refresh_clients()
         return redirect(freq.url)
 
-    @app.errorhandler(429)
-    def rate_limit_exceeded(e):
-        from flask import jsonify, request as freq
-        retry_after = getattr(e, "retry_after", None) or getattr(e, "description", None)
-        # JSON response for API endpoints; plain redirect for page requests
-        if freq.is_json or freq.path.startswith("/api/") or freq.path.startswith("/student/api/"):
-            return jsonify({
-                "status":      "error",
-                "message":     "คำขอมากเกินไป กรุณารอสักครู่แล้วลองใหม่",
-                "retry_after": str(retry_after) if retry_after else None,
-            }), 429
-        from flask import flash, redirect, url_for
-        flash("คำขอมากเกินไป กรุณารอสักครู่แล้วลองใหม่", "warning")
-        return redirect(url_for("auth.login"))
+    app.register_error_handler(429, rate_limit_exceeded)
 
     # --- Security headers (A9) ---
     @app.after_request

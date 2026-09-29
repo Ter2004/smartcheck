@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}คำขอมากเกินไป — SmartCheck{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm px-6 py-8 text-center">
+    <h1 class="text-lg font-semibold text-slate-900">คำขอมากเกินไป</h1>
+    <p class="text-sm text-slate-500 mt-2">กรุณารอสักครู่แล้วลองใหม่อีกครั้ง</p>
+    <a href="{{ request.full_path }}"
+       class="inline-flex mt-5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium px-4 py-2.5 rounded-xl transition-colors">
+        ลองใหม่
+    </a>
+</div>
+{% endblock %}

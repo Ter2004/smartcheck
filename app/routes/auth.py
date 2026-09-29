@@ -71,6 +71,9 @@ def index():
 @_limiter.limit("10 per minute", methods=["POST"], key_func=get_remote_address)
 def login():
     if request.method == "GET":
+        # Logged in already: the login form would render inside the app layout.
+        if "user_id" in session:
+            return _redirect_by_role(session.get("user_role"))
         return render_template("auth/login.html")
 
     email = request.form.get("email", "").strip()

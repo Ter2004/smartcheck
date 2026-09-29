@@ -136,7 +136,7 @@ def checkin():
     _perf["session"] = round((time.perf_counter() - _t1) * 1000, 2); _t3 = time.perf_counter()
 
     # ─── 3. Server-side EAR liveness check ──────────────────────────────────
-    server_liveness_pass = False
+    antispoof_pass = False
     try:
         # Passive check-in uses temporal and anti-spoof checks, without eye samples.
         if liveness_action == "blink":
@@ -248,7 +248,7 @@ def checkin():
                 "spoof": True,
                 "retry_face": True,
             }), 400
-        server_liveness_pass = True
+        antispoof_pass = True
     except Exception as e:
         _log.error(f"[ANTISPOOF] check error (fail-close): {type(e).__name__}")
         reject("antispoof_error")
@@ -423,7 +423,10 @@ def checkin():
             # No RSSI check runs at check-in; room proximity is the receipt
             # (TOTP code or BLE GATT read) verified above.
             "ble_pass":        False,
-            "liveness_pass":   server_liveness_pass,
+            # DB column keeps its name. It records the anti-spoof result; in
+            # head_turn mode the turn was also verified (a failure returned
+            # above), in passive mode anti-spoof is the only liveness signal.
+            "liveness_pass":   antispoof_pass,
             "liveness_action": liveness_action or "",
             "face_score":      round(score, 4),
             "face_pass":       True,

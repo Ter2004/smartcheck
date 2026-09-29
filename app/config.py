@@ -36,6 +36,10 @@ class Config:
     # Enable only after applying 20260919_enrollment_status.sql.
     ENROLLMENT_STATUS_RPC = os.getenv("ENROLLMENT_STATUS_RPC", "false").lower() == "true"
     SECRET_KEY = _require_env("FLASK_SECRET_KEY", "dev-fallback-key-not-for-production")
+    # Flask answers 413 before a route reads a larger body. The largest real
+    # payload is check-in: 7 frames, each accepted only up to 500 KB
+    # (server_validate_frame), sent as base64 (about 4.7 MB in total).
+    MAX_CONTENT_LENGTH = 10 * 1024 * 1024
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
     SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")

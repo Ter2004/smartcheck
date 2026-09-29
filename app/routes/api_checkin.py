@@ -210,6 +210,11 @@ def checkin():
         frames_gray = []
         for img_b64 in face_images_list[-3:]:
             try:
+                # Same size/format gate as face_image before anything is decoded.
+                frame_check = server_validate_frame(img_b64)
+                if not frame_check["valid"]:
+                    event("temporal_frame", "invalid_log_only", reason=frame_check["reason"], decision="log_only")
+                    continue
                 frame_bgr = _decode_image(img_b64)
                 gray = cv2.resize(
                     cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY),
@@ -487,8 +492,13 @@ def checkin_liveness_challenge():
 def antispoof_passive():
     data       = request.get_json()
     face_image = data.get("face_image") if data else None
-    if not face_image:
+    if not face_image or not isinstance(face_image, str):
         return jsonify({"ok": False, "real": False, "score": 0.0}), 400
+    frame_check = server_validate_frame(face_image)
+    if not frame_check["valid"]:
+        _log.info(f"[FRAME_VALIDATE] antispoof-passive fail reason={frame_check['reason']}")
+        return jsonify({"ok": False, "real": False, "score": 0.0,
+                        "message": "รูปภาพไม่ถูกต้อง — กรุณาถ่ายใหม่อีกครั้ง"}), 400
     try:
         is_real, score = check_anti_spoof_with_score(face_image)
         return jsonify({"ok": True, "real": is_real, "score": round(score, 4)})

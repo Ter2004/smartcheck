@@ -113,6 +113,14 @@ class IntegratedTOTPTests(unittest.TestCase):
         with self.client.session_transaction() as session:
             self.assertNotIn('checkin_liveness_challenge', session)
 
+    def test_invalid_temporal_frame_is_not_decoded(self):
+        route.server_validate_frame.side_effect = (
+            lambda image: {'valid': image != '80', 'reason': 'frame_too_large', 'metadata': {}})
+        self.assertEqual(self.post().status_code, 200)
+        decoded = [call.args[0] for call in route._decode_image.call_args_list]
+        self.assertIn('140', decoded)
+        self.assertNotIn('80', decoded)
+
     def test_failed_head_turn_does_not_check_in(self):
         self.verify_liveness.return_value = {'passed': False, 'reason': 'wrong_direction:action_1:frontal',
                                              'yaws': [0., 0., 0.], 'scores': {}}

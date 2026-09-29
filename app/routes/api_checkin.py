@@ -49,8 +49,6 @@ def checkin():
         reject("payload_empty")
         return jsonify({"ok": False, "error": "ไม่พบข้อมูล"}), 400
 
-    proximity_method = current_app.config.get("CHECKIN_PROXIMITY_METHOD", "totp")
-
     session_id      = data.get("session_id")
     ble_rssi        = data.get("ble_rssi")
     liveness_action = data.get("liveness_action", "") or ""
@@ -135,21 +133,7 @@ def checkin():
             "retry_face": True,
         }), 400
 
-    _perf["session"] = round((time.perf_counter() - _t1) * 1000, 2); _t2 = time.perf_counter()
-
-    # ─── 2. BLE RSSI check ───────────────────────────────────────────────────
-    if current_app.config.get("BLE_CHECK_ENABLED", False):
-        rssi_threshold = -70  # dBm — must be within range
-        ble_skip       = data.get("ble_skip", False)
-        if not ble_skip and (ble_rssi is None or ble_rssi < rssi_threshold):
-            _log.warning(f"[BLE] RSSI fail: rssi={ble_rssi} threshold={rssi_threshold}")
-            reject("ble_proximity_failed")
-            return jsonify({"ok": False, "error": "ไม่พบสัญญาณ Beacon ในห้องเรียน"}), 400
-        ble_pass = True
-    else:
-        _log.debug("[BLE] check skipped (BLE_CHECK_ENABLED=false)")
-        ble_pass = True
-    _perf["ble"] = round((time.perf_counter() - _t2) * 1000, 2); _t3 = time.perf_counter()
+    _perf["session"] = round((time.perf_counter() - _t1) * 1000, 2); _t3 = time.perf_counter()
 
     # ─── 3. Server-side EAR liveness check ──────────────────────────────────
     server_liveness_pass = False
@@ -436,7 +420,9 @@ def checkin():
             "session_id":      session_id,
             "student_id":      student_id,
             "ble_rssi":        ble_rssi,  # already int or None from validation above
-            "ble_pass":        ble_pass,
+            # No RSSI check runs at check-in; room proximity is the receipt
+            # (TOTP code or BLE GATT read) verified above.
+            "ble_pass":        False,
             "liveness_pass":   server_liveness_pass,
             "liveness_action": liveness_action or "",
             "face_score":      round(score, 4),
@@ -458,7 +444,7 @@ def checkin():
     _perf["db"] = round((time.perf_counter() - _t10) * 1000, 2)
     _perf["total"] = round((time.perf_counter() - _t0) * 1000, 2)
     _log.info(
-        "[PERF] total={total}ms validate={validate}ms session={session}ms ble={ble}ms "
+        "[PERF] total={total}ms validate={validate}ms session={session}ms "
         "ear={ear}ms moire={moire}ms texture={texture}ms temporal={temporal}ms "
         "fasnet={fasnet}ms onnx={onnx}ms embed={embed}ms verify={verify}ms db={db}ms".format(**_perf)
     )

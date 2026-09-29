@@ -17,8 +17,6 @@ class CheckinFlow {
         this.livenessChallengeUrl = opts.livenessChallengeUrl || '/api/checkin/liveness/challenge';
         this._liveness     = null;
 
-        this._bleRSSI    = null;
-        this._bleSkip    = false;
         this._camStream  = null;
         this._earSamples = [];
         this._proximity = null;
@@ -27,9 +25,7 @@ class CheckinFlow {
 
     async start() {
         if (!document.getElementById('stepRoomCode')) return;
-        // Proximity always gates the camera; legacy RSSI is a separate option.
-        this._bleRSSI = null;
-        this._bleSkip = true;
+        // Proximity (room code or BLE room read) always gates the camera.
         await StepGuide.show('📍', 'ยืนยันห้องเรียนก่อนเช็คชื่อ',
             this.proximityMethod === 'ble'
                 ? 'เปิด Bluetooth แล้วกดหาอุปกรณ์ในห้อง เลือกอุปกรณ์ของห้องเรียน เมื่อยืนยันสำเร็จระบบจะเปิดกล้อง'
@@ -58,44 +54,6 @@ class CheckinFlow {
                 dot.classList.toggle('done',   i < n);
             }
         }
-    }
-
-    // ─── Step 1: BLE ─────────────────────────────────────
-
-    skipBLE() {
-        this._bleRSSI = -60;
-        this._bleSkip = true;
-        document.getElementById('bleStatus').textContent = '⚙️ ข้าม BLE (โหมดทดสอบ)';
-        setTimeout(() => this._startVerify(), 400);
-    }
-
-    async startBLEScan() {
-        const btn    = document.getElementById('bleBtn');
-        const status = document.getElementById('bleStatus');
-        btn.disabled = true;
-        status.textContent = 'กำลังสแกน Bluetooth...';
-
-        const scanner = new BLEScanner(this.beaconUUID, this.rssiThreshold);
-        const result  = await scanner.scan();
-
-        if (result.error) {
-            status.textContent = result.error;
-            btn.disabled = false;
-            btn.textContent = 'ลองใหม่';
-            return;
-        }
-
-        this._bleRSSI = result.rssi;
-
-        if (!result.pass) {
-            status.textContent = `อยู่นอกห้องเรียน — RSSI: ${result.rssi} dBm (ต้องการ ≥ ${this.rssiThreshold})`;
-            btn.disabled = false;
-            btn.textContent = 'สแกนใหม่';
-            return;
-        }
-
-        status.textContent = `✓ พบ Beacon — RSSI: ${result.rssi} dBm`;
-        setTimeout(() => this._startVerify(), 600);
     }
 
     // Step 2: Detect a steady frontal face, then (head_turn mode) one server-chosen
@@ -625,8 +583,6 @@ class CheckinFlow {
                     session_id:      this.sessionId,
                     room_code:       this._proximity.room,
                     proximity_receipt: this._proximity.receipt,
-                    ble_rssi:        this._bleRSSI,
-                    ble_skip:        this._bleSkip || false,
                     liveness_action: livenessAction,
                     liveness_pass:   true,
                     face_image:      faceImage,

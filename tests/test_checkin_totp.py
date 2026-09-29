@@ -98,6 +98,8 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.assertEqual(len(self.db.records), 1)
         self.assertTrue(self.db.records[0]['face_pass'])
         self.assertTrue(self.db.records[0]['liveness_pass'])
+        # No RSSI check runs, so the record must not claim one passed.
+        self.assertFalse(self.db.records[0]['ble_pass'])
 
     def test_head_turn_is_checked_against_the_matched_frame(self):
         issued = self.client.post('/api/checkin/liveness/challenge', headers={'X-CSRF-Token': 'csrf'})

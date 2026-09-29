@@ -15,7 +15,6 @@ teacher_bp = Blueprint("teacher", __name__)
 @teacher_bp.route("/history")
 @login_required
 @role_required("teacher")
-@csrf_protect_form
 def history():
     teacher_id  = session["user_id"]
     course_filter = request.args.get("course_id", "")
@@ -84,7 +83,6 @@ def history():
 @teacher_bp.route("/dashboard")
 @login_required
 @role_required("teacher")
-@csrf_protect_form
 def dashboard():
     teacher_id = session["user_id"]
 
@@ -162,7 +160,6 @@ def dashboard():
 @teacher_bp.route("/session/<session_id>")
 @login_required
 @role_required("teacher")
-@csrf_protect_form
 def session_view(session_id):
     teacher_id = session["user_id"]
 
@@ -293,7 +290,6 @@ def override_attendance(session_id):
 @teacher_bp.route("/session/<session_id>/export")
 @login_required
 @role_required("teacher")
-@csrf_protect_form
 def export_csv(session_id):
     teacher_id = session["user_id"]
 

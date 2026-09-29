@@ -15,7 +15,6 @@ admin_bp = Blueprint("admin", __name__)
 @admin_bp.route("/dashboard")
 @login_required
 @role_required("admin")
-@csrf_protect_form
 def dashboard():
     users_res = supabase_admin.table("users").select("*", count="exact").execute()
     beacons_res = supabase_admin.table("beacons").select("*", count="exact").execute()
@@ -38,7 +37,6 @@ def dashboard():
 @admin_bp.route("/users")
 @login_required
 @role_required("admin")
-@csrf_protect_form
 def users():
     role_filter = request.args.get("role", "")
     query = supabase_admin.table("users").select("*").order("created_at", desc=True)
@@ -137,7 +135,6 @@ def import_csv():
 @admin_bp.route("/beacons")
 @login_required
 @role_required("admin")
-@csrf_protect_form
 def beacons():
     beacons_data = (
         supabase_admin.table("beacons").select("*").order("room_name").execute().data or []
@@ -205,7 +202,6 @@ def beacon_delete(beacon_id):
 @admin_bp.route("/sessions")
 @login_required
 @role_required("admin")
-@csrf_protect_form
 def sessions():
     sessions_data = (
         supabase_admin.table("sessions")
@@ -297,7 +293,6 @@ def session_delete(session_id):
 @admin_bp.route("/courses")
 @login_required
 @role_required("admin")
-@csrf_protect_form
 def courses():
     courses_data = (
         supabase_admin.table("courses")
@@ -418,7 +413,6 @@ def section_add(course_id):
 @admin_bp.route("/courses/<course_id>")
 @login_required
 @role_required("admin")
-@csrf_protect_form
 def course_detail(course_id):
     course = (
         supabase_admin.table("courses")
@@ -652,7 +646,6 @@ def schedule_delete(course_id, schedule_id):
 @admin_bp.route("/biometrics")
 @login_required
 @role_required("admin")
-@csrf_protect_form
 def biometrics():
     res = (
         supabase_admin.table("student_biometrics")

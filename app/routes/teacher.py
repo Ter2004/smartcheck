@@ -287,6 +287,21 @@ def override_attendance(session_id):
 
 # ─── Export CSV ───────────────────────────────────────────────
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value):
+    """Stop Excel from running a text cell as a formula (CSV injection).
+
+    Names and override reasons are typed by users, so a text cell starting
+    with a formula character gets a leading apostrophe. Numbers such as a
+    negative ble_rssi are left as numbers.
+    """
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 @teacher_bp.route("/session/<session_id>/export")
 @login_required
 @role_required("teacher")
@@ -324,7 +339,7 @@ def export_csv(session_id):
     ])
     for a in attendance:
         u = a.get("users") or {}
-        writer.writerow([
+        writer.writerow([_csv_safe(value) for value in (
             u.get("student_id", ""),
             u.get("full_name", ""),
             u.get("email", ""),
@@ -334,7 +349,7 @@ def export_csv(session_id):
             a.get("ble_rssi", ""),
             a.get("liveness_action", ""),
             a.get("override_reason", ""),
-        ])
+        )])
 
     course_code = (sess.get("courses") or {}).get("code", "unknown").replace("/", "-")
     date_str = (sess.get("start_time") or "")[:10]

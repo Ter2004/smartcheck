@@ -467,7 +467,7 @@ class CheckinFlow {
 
         let result;
         try {
-            result = await new BLERoomScanner().findRoom();
+            result = await new BLERoomScanner().proveRoom(room => this._fetchBleChallenge(room));
         } catch (error) {
             console.info('step=ble_read result=error details={}');
             result = {ok: false, error: 'ไม่สามารถเชื่อมต่อหรืออ่านค่าจากอุปกรณ์ได้ — กรุณาลองใหม่อีกครั้ง'};
@@ -485,13 +485,31 @@ class CheckinFlow {
         status.textContent = 'อ่านค่าห้องแล้ว — กำลังตรวจสอบก่อนเปิดกล้อง...';
         this._submitting = true;
         try {
-            await this._verifyProximity(result.room);
+            await this._verifyProximity(result.room, result.response);
         } finally {
             this._submitting = false;
         }
     }
 
-    async _verifyProximity(room) {
+    async _fetchBleChallenge(room) {
+        try {
+            const res = await fetch('/api/checkin/ble/challenge', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
+                body: JSON.stringify({session_id: this.sessionId, room_code: room}),
+            });
+            const body = await res.json();
+            if (res.ok && body.ok && typeof body.nonce === 'string') return {ok: true, nonce: body.nonce};
+            return {ok: false, error: body.error || 'ขอรหัสยืนยันจากระบบไม่สำเร็จ กรุณาลองใหม่'};
+        } catch {
+            return {ok: false, error: 'ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่'};
+        }
+    }
+
+    async _verifyProximity(room, bleResponse) {
         const status = document.getElementById('proximityStatus');
         status.textContent = 'กำลังตรวจสอบตำแหน่งห้องเรียน...';
         const started = performance.now();
@@ -502,7 +520,8 @@ class CheckinFlow {
                     'Content-Type': 'application/json',
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
                 },
-                body: JSON.stringify({session_id: this.sessionId, room_code: room}),
+                body: JSON.stringify({session_id: this.sessionId, room_code: room,
+                                      ...(bleResponse ? {ble_response: bleResponse} : {})}),
             });
             const result = await response.json();
             if (!response.ok || !result.ok) {

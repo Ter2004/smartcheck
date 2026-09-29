@@ -1,21 +1,36 @@
 /**
- * ble_room_scanner.js — Web Bluetooth GATT room-identifier reader
+ * ble_room_scanner.js — Web Bluetooth proof that the student is at the room board
  *
  * Talks to the SmartCheck ESP32 classroom peripheral (firmware/README.md):
- * a connectable GATT device, not an RSSI/iBeacon broadcaster. Proximity proof
- * is "we connected to this specific board and read its room value" — there
- * is no RSSI in this protocol, so BLE-mode check-ins never populate ble_rssi.
+ * a connectable GATT device, not an RSSI/iBeacon broadcaster, so BLE-mode
+ * check-ins never populate ble_rssi. The room value the board exposes is
+ * public and only picks the room. Presence is proven by the board signing a
+ * server nonce:
+ *   connect → read room → getNonce(room) → write nonce → read HMAC-SHA256.
+ * The nonce is requested after connecting, so the device picker does not eat
+ * into its 30 s lifetime.
  *
  * Usage:
- *   const result = await new BLERoomScanner().findRoom();
- *   // { ok: true, room: 'TEST-101' }
+ *   const result = await new BLERoomScanner().proveRoom(room => fetchNonce(room));
+ *   // getNonce resolves { ok: true, nonce: '<32 hex>' } or { ok: false, error }
+ *   // { ok: true, room: 'TEST-101', response: '<64 hex>' }
  *   // { ok: false, code: '...', error: 'Thai message' }
  */
 class BLERoomScanner {
     static SERVICE_UUID        = '7c6b1000-9f3a-4b27-8d15-6e2a90c4f801';
     static CHARACTERISTIC_UUID = '7c6b1001-9f3a-4b27-8d15-6e2a90c4f801';
+    // Write the 16-byte nonce, then read the 32-byte HMAC of it.
+    static CHALLENGE_UUID      = '7c6b1002-9f3a-4b27-8d15-6e2a90c4f801';
 
-    async findRoom() {
+    static hexToBytes(hex) {
+        return new Uint8Array(hex.match(/../g).map(pair => parseInt(pair, 16)));
+    }
+
+    static bytesToHex(bytes) {
+        return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async proveRoom(getNonce) {
         if (!navigator.bluetooth) {
             return {
                 ok: false, code: 'unsupported',
@@ -87,7 +102,29 @@ class BLERoomScanner {
                                  error: 'อ่านค่าจากอุปกรณ์ไม่สำเร็จ (ค่าว่าง) — กรุณาลองใหม่' });
                         return;
                     }
-                    finish({ ok: true, room });
+                    const challenge = await getNonce(room);
+                    if (!challenge || !challenge.ok) {
+                        finish({ ok: false, code: 'challenge_refused',
+                                 error: challenge?.error || 'ขอรหัสยืนยันจากระบบไม่สำเร็จ กรุณาลองใหม่' });
+                        return;
+                    }
+                    let signer;
+                    try {
+                        signer = await service.getCharacteristic(BLERoomScanner.CHALLENGE_UUID);
+                    } catch {
+                        finish({ ok: false, code: 'board_outdated',
+                                 error: 'อุปกรณ์ในห้องยังไม่รองรับการยืนยันแบบใหม่ กรุณาแจ้งอาจารย์ให้อัปเดตอุปกรณ์' });
+                        return;
+                    }
+                    await signer.writeValueWithResponse(BLERoomScanner.hexToBytes(challenge.nonce));
+                    const view   = await signer.readValue();
+                    const signed = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+                    if (signed.length !== 32) {
+                        finish({ ok: false, code: 'bad_signature',
+                                 error: 'อ่านค่ายืนยันจากอุปกรณ์ไม่สำเร็จ — กรุณาลองใหม่' });
+                        return;
+                    }
+                    finish({ ok: true, room, response: BLERoomScanner.bytesToHex(signed) });
                 } catch (err) {
                     finish({ ok: false, code: 'connection_dropped',
                              error: 'ไม่สามารถเชื่อมต่อหรืออ่านค่าจากอุปกรณ์ได้ — กรุณาลองใหม่อีกครั้ง' });

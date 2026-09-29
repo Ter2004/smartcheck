@@ -33,11 +33,16 @@ def history():
     )
 
     course_ids = [c["id"] for c in courses] or ["00000000-0000-0000-0000-000000000000"]
+    # A course_id from the query string is only a filter over the teacher's own
+    # courses; any other id is dropped rather than queried.
+    if course_filter and course_filter not in course_ids:
+        flash("ไม่มีสิทธิ์ดูประวัติของวิชานี้", "warning")
+        course_filter = ""
 
     query = (
         supabase_admin.table("sessions")
         .select("*, courses(code, name, section)")
-        .in_("course_id", course_ids if not course_filter else [course_filter])
+        .in_("course_id", [course_filter] if course_filter else course_ids)
         .order("start_time", desc=True)
     )
     if date_from:

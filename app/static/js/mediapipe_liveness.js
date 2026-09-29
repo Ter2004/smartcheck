@@ -34,6 +34,18 @@ function noseRelX(lm) {
     return faceW > 0 ? (lm[1].x - lm[234].x) / faceW : 0.5;
 }
 
+/** Eye-line angle (degrees) on the raw frame; positive = image-right eye lower = tilt_left.
+ *  Same convention as liveness_challenge.roll_deg on the server. */
+function eyeRollDeg(lm, video) {
+    if (!lm || lm.length < 468) return 0;
+    let a = lm[33], b = lm[263];
+    if (a.x > b.x) [a, b] = [b, a];
+    return Math.atan2((b.y - a.y) * (video?.videoHeight || 480),
+                      (b.x - a.x) * (video?.videoWidth || 640)) * 180 / Math.PI;
+}
+// Asks for more than the server's TILT_MIN_DEG, so frames it accepts pass there.
+const TILT_DEG = 18;
+
 /** Pitch proxy: nose y relative to forehead-chin span */
 function nosePitch(lm) {
     if (!lm || lm.length < 468) return 0.5;
@@ -47,11 +59,14 @@ const ACTION_LABELS = {
     smile:          'ยิ้มให้กว้าง',
     turn_left:      'หันหน้าไปทางซ้าย',
     turn_right:     'หันหน้าไปทางขวา',
+    tilt_left:      'เอียงศีรษะไปทางซ้าย (หูซ้ายเข้าหาไหล่)',
+    tilt_right:     'เอียงศีรษะไปทางขวา (หูขวาเข้าหาไหล่)',
     nod:            'พยักหน้าขึ้น-ลง',
     raise_eyebrows: 'ยกคิ้วขึ้น',
 };
 
-/** Build a stateful checker for one action. Returns { check(lm) → { done, statusText } } */
+/** Build a stateful checker for one action. Returns { check(lm, baselineRoll) → { done, statusText } }
+ *  baselineRoll: eye-line angle when the challenge started (tilts are measured from it). */
 function buildActionChecker(action, baselineEAR, video) {
     const EAR_THRESHOLD = Number.isFinite(baselineEAR) && baselineEAR > 0 ? baselineEAR * 0.70 : NaN;
 
@@ -129,6 +144,27 @@ function buildActionChecker(action, baselineEAR, video) {
                 }
                 turnFrames = 0;
                 return { done: false, statusText: `กรุณาหันหน้าไปทางขวา (${rel.toFixed(2)})` };
+            }
+        };
+    }
+
+    if (action === 'tilt_left' || action === 'tilt_right') {
+        const TILT_FRAMES = 3;
+        const sign = action === 'tilt_left' ? 1 : -1;
+        const label = ACTION_LABELS[action];
+        let tiltFrames = 0;
+        return {
+            check(lm, baselineRoll = 0) {
+                const delta = (eyeRollDeg(lm, video) - baselineRoll) * sign;
+                const rel = noseRelX(lm);
+                // A tilt, not a turn: the server rejects a tilt frame that is also turned.
+                if (delta >= TILT_DEG && rel > 0.35 && rel < 0.65) {
+                    tiltFrames++;
+                    if (tiltFrames >= TILT_FRAMES) return { done: true, statusText: '✓ เอียงศีรษะสำเร็จ!' };
+                    return { done: false, statusText: `กำลังเอียง... (${tiltFrames}/${TILT_FRAMES})` };
+                }
+                tiltFrames = 0;
+                return { done: false, statusText: `กรุณา${label}` };
             }
         };
     }
@@ -381,6 +417,7 @@ class InteractiveChallengeDetector {
             let currentIdx = 0;
             let resolved   = false;
             let checker    = buildActionChecker(actions[0], this.baselineEAR, this.video);
+            let baselineRoll = null;   // eye-line angle on the first face frame (still frontal)
             const guard    = new RigidBodyGuard();
             let actionTimer = null;
             const actionFrames = [];
@@ -455,7 +492,8 @@ class InteractiveChallengeDetector {
                 const guardResult = guard.check(lm);
                 if (guardResult.spoof) { fail(guardResult.reason); return; }
 
-                const { done, statusText } = checker.check(lm);
+                if (baselineRoll === null) baselineRoll = eyeRollDeg(lm, this.video);
+                const { done, statusText } = checker.check(lm, baselineRoll);
                 this.onProgress(currentIdx, actions.length, statusText);
 
                 if (!done) return;

@@ -1101,7 +1101,7 @@ def api_liveness_verify():
                         "message": "ระบบตรวจสอบใบหน้าขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง"}), 503
 
     _log(user_id, "liveness_verify", "pass" if result["passed"] else "fail",
-         f"reason={result['reason']} yaws={result['yaws']} scores={result['scores']}")
+         f"reason={result['reason']} yaws={result['yaws']} rolls={result['rolls']} scores={result['scores']}")
     if not result["passed"]:
         return jsonify({"passed": False, "message": retry_msg}), 400
 

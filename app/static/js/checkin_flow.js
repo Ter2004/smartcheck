@@ -5,6 +5,24 @@
  */
 
 class CheckinFlow {
+    // Gestures the server may request (app/services/liveness_challenge.py ACTIONS).
+    static GESTURE_LABELS = {
+        turn_left:  'หันหน้าไปทางซ้าย',
+        turn_right: 'หันหน้าไปทางขวา',
+        tilt_left:  'เอียงศีรษะไปทางซ้าย (หูซ้ายเข้าหาไหล่)',
+        tilt_right: 'เอียงศีรษะไปทางขวา (หูขวาเข้าหาไหล่)',
+    };
+    // Asks for more than the server's TILT_MIN_DEG, so frames it accepts pass there.
+    static TILT_DEG = 18;
+    static LEVEL_DEG = 8;
+
+    /** Eye-line angle (degrees) on the raw frame; positive = image-right eye lower = tilt_left. */
+    static eyeRollDeg(lm, width, height) {
+        let a = lm[33], b = lm[263];
+        if (a.x > b.x) [a, b] = [b, a];
+        return Math.atan2((b.y - a.y) * (height || 480), (b.x - a.x) * (width || 640)) * 180 / Math.PI;
+    }
+
     constructor(opts) {
         this.sessionId     = opts.sessionId;
         this.beaconUUID    = opts.beaconUUID;
@@ -89,6 +107,7 @@ class CheckinFlow {
         let faceReadyFrames = 0, countingDown = false, verified = false;
         // head_turn phases: 'frontal' → 'turn' → 'return' → submit
         let phase = 'frontal', turnCount = 0, backCount = 0, beforeFrame = null, turnFrame = null;
+        let baselineRoll = 0;
         this._liveness = null;
         this._debug?.begin();
         this._goToStep(2);
@@ -103,7 +122,7 @@ class CheckinFlow {
 
         await StepGuide.show('📷', 'เตรียมยืนยันใบหน้า',
             this.livenessMode === 'head_turn'
-                ? 'จัดหน้าในกรอบแล้วอยู่นิ่ง จากนั้นหันหน้าตามคำสั่ง 1 ครั้งแล้วมองตรงอีกครั้ง ระบบจะเช็คชื่อให้อัตโนมัติ เวลายืนยันห้องยังคงนับถอยหลัง'
+                ? 'จัดหน้าในกรอบแล้วอยู่นิ่ง จากนั้นทำท่าตามคำสั่ง 1 ท่า (หันหรือเอียงศีรษะ) แล้วมองตรงอีกครั้ง ระบบจะเช็คชื่อให้อัตโนมัติ เวลายืนยันห้องยังคงนับถอยหลัง'
                 : 'จัดหน้าในกรอบแล้วอยู่นิ่ง ระบบจะถ่ายและเช็คชื่อให้อัตโนมัติ เวลายืนยันห้องยังคงนับถอยหลัง');
         if (!active()) return;
 
@@ -123,7 +142,8 @@ class CheckinFlow {
                 return;
             }
         }
-        const turnLabel = turnAction === 'turn_left' ? 'หันหน้าไปทางซ้าย' : 'หันหน้าไปทางขวา';
+        const turnLabel = CheckinFlow.GESTURE_LABELS[turnAction] || 'ทำตามคำสั่ง';
+        const isTilt = !!turnAction && turnAction.startsWith('tilt_');
         if (!active()) return;
         if (performance.now() >= this._proximity.deadline) {
             this._expireProximity();
@@ -290,9 +310,14 @@ class CheckinFlow {
             this._drawFaceFeatures(ctx, lm, canvas.width, canvas.height,
                 faceOk ? 'rgba(74,222,128,0.95)' : 'rgba(255,255,255,0.6)');
 
+            const rollDelta = CheckinFlow.eyeRollDeg(lm, video.videoWidth, video.videoHeight) - baselineRoll;
             if (phase === 'turn') {
-                // Same thresholds as mediapipe_liveness.js turn checks (raw frame coordinates).
-                const turned = turnAction === 'turn_left' ? noseRelX > 0.62 : noseRelX < 0.38;
+                // Same thresholds as mediapipe_liveness.js (raw frame coordinates). A tilt
+                // is measured from the frontal frame and must not also be a turn.
+                const turned = isTilt
+                    ? noseRelX > 0.35 && noseRelX < 0.65 &&
+                      (turnAction === 'tilt_left' ? rollDelta >= CheckinFlow.TILT_DEG : rollDelta <= -CheckinFlow.TILT_DEG)
+                    : turnAction === 'turn_left' ? noseRelX > 0.62 : noseRelX < 0.38;
                 turnCount = turned ? turnCount + 1 : 0;
                 guide.classList.remove('fail');
                 guide.classList.add('ok');
@@ -305,7 +330,8 @@ class CheckinFlow {
                 return;
             }
             if (phase === 'return') {
-                backCount = yawOk ? backCount + 1 : 0;
+                const level = !isTilt || Math.abs(rollDelta) < CheckinFlow.LEVEL_DEG;
+                backCount = yawOk && level ? backCount + 1 : 0;
                 if (backCount < 5) {
                     status.textContent = 'มองตรงเข้ากล้องอีกครั้ง';
                     return;
@@ -332,6 +358,7 @@ class CheckinFlow {
                     // The frontal frame the server matches; the turn follows.
                     this._debug?.event('25 ready frames; head turn requested');
                     beforeFrame = snapFrame();
+                    baselineRoll = CheckinFlow.eyeRollDeg(lm, video.videoWidth, video.videoHeight);
                     phase = 'turn';
                     status.textContent = `${turnLabel} แล้วค้างไว้สักครู่`;
                 } else if (faceReadyFrames >= 25) {

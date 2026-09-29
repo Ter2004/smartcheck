@@ -54,7 +54,9 @@ class LivenessRouteTests(unittest.TestCase):
             s.update(liveness_embeddings=[[1.0]], liveness_verified_at=time.time())
         r = self.post('liveness/challenge')
         self.assertEqual(r.status_code, 200)
-        self.assertCountEqual(r.json['actions'], ['turn_left', 'turn_right'])
+        self.assertEqual(len(r.json['actions']), 2)                      # two distinct gestures
+        self.assertEqual(len(set(r.json['actions'])), 2)
+        self.assertTrue(set(r.json['actions']) <= {'turn_left', 'turn_right', 'tilt_left', 'tilt_right'})
         stored = self.session()
         self.assertEqual(stored['liveness_challenge']['nonce'], r.json['nonce'])
         self.assertNotIn('liveness_embeddings', stored)
@@ -63,7 +65,7 @@ class LivenessRouteTests(unittest.TestCase):
     def test_verify_pass_sets_continuity_reference(self):
         self.post('liveness/challenge')
         with patch.object(liveness_challenge, 'verify',
-                          return_value={'passed': True, 'reason': 'passed', 'yaws': [], 'scores': {}}), \
+                          return_value={'passed': True, 'reason': 'passed', 'yaws': [], 'rolls': [], 'scores': {}}), \
                 patch.object(face_service, 'extract_embedding', return_value=[0.5] * 512):
             r = self.post('liveness/verify', VERIFY_BODY)
         self.assertEqual(r.status_code, 200)
@@ -79,7 +81,7 @@ class LivenessRouteTests(unittest.TestCase):
 
         def fake_verify(challenge, *args):
             seen.append(challenge)
-            return {'passed': False, 'reason': 'wrong_direction:action_1:frontal', 'yaws': [], 'scores': {}}
+            return {'passed': False, 'reason': 'wrong_direction:action_1:frontal', 'yaws': [], 'rolls': [], 'scores': {}}
         with patch.object(liveness_challenge, 'verify', side_effect=fake_verify):
             first = self.post('liveness/verify', VERIFY_BODY)
             second = self.post('liveness/verify', VERIFY_BODY)

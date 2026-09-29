@@ -57,7 +57,7 @@ The core AI pipeline runs entirely server-side:
 3. `extract_embedding()` — CLAHE normalization → FaceNet512 (512-D vector) via DeepFace
 4. `verify_face_multi()` — cosine similarity against all stored embeddings; decision on best (not average)
 
-Liveness is decided server-side by a head-turn challenge (`app/services/liveness_challenge.py`): the server picks the turn order, RetinaFace landmarks confirm each turn and FaceNet confirms the same face. Enrollment uses two turns (`/student/api/liveness/*`; `/api/enroll` requires a pass within 15 min). Check-in uses one turn (`/api/checkin/liveness/challenge`) verified inside `/api/checkin` against the submitted frame. `CHECKIN_LIVENESS=passive` reverts check-in to hands-free capture.
+Liveness is decided server-side by a head-gesture challenge (`app/services/liveness_challenge.py`): the server picks random distinct gestures from turn left/right and tilt left/right, RetinaFace landmarks confirm each one (yaw along the eye line; tilt as roll change from the frontal frame, thresholds from `scripts/calibrate_tilt.py`) and FaceNet on a level-rotated crop confirms the same face. Enrollment uses two gestures (`/student/api/liveness/*`; `/api/enroll` requires a pass within 15 min). Check-in uses one (`/api/checkin/liveness/challenge`) verified inside `/api/checkin` against the submitted frame. `CHECKIN_LIVENESS=passive` reverts check-in to hands-free capture.
 
 Key thresholds (edit in `face_service.py` top section):
 - `SAME_DEVICE_THRESHOLD = 0.70`, `NEW_DEVICE_THRESHOLD = 0.80`

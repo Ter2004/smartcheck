@@ -25,7 +25,7 @@ from app.services.esp32_totp import verify_code
 from app.services import ble_challenge, proximity_receipt
 from app.services.liveness_challenge import (
     new_challenge as new_liveness_challenge, verify as verify_liveness,
-    CHALLENGE_TTL_S as LIVENESS_CHALLENGE_TTL_S,
+    CHALLENGE_TTL_S as LIVENESS_CHALLENGE_TTL_S, CHECKIN_ACTIONS,
 )
 from app import limiter as _limiter
 
@@ -290,9 +290,9 @@ def checkin():
             return jsonify({"ok": False, "retry_face": True,
                             "error": "ระบบตรวจสอบใบหน้าขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง"}), 503
         if not live["passed"]:
-            reject("liveness_challenge_failed", failure=live["reason"], yaws=live["yaws"])
+            reject("liveness_challenge_failed", failure=live["reason"], yaws=live["yaws"], rolls=live["rolls"])
             return jsonify({"ok": False, "error": retry_turn, "retry_face": True}), 400
-        event("liveness_challenge", "pass", yaws=live["yaws"], scores=live["scores"])
+        event("liveness_challenge", "pass", yaws=live["yaws"], rolls=live["rolls"], scores=live["scores"])
     _t8 = time.perf_counter()
 
     # ─── 5. Device binding (determines threshold) ─────────────────────────────
@@ -464,8 +464,8 @@ def checkin():
 @_limiter.limit("10 per minute")
 @csrf_protect
 def checkin_liveness_challenge():
-    """Issue the single random head turn the next /api/checkin must show."""
-    challenge = new_liveness_challenge(count=1)
+    """Issue the single random gesture (turn or tilt) the next /api/checkin must show."""
+    challenge = new_liveness_challenge(count=CHECKIN_ACTIONS)
     session["checkin_liveness_challenge"] = challenge
     return jsonify({"nonce": challenge["nonce"], "actions": challenge["actions"],
                     "expires_in": LIVENESS_CHALLENGE_TTL_S})

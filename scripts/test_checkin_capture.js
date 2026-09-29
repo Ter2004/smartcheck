@@ -141,5 +141,37 @@ function landmarks(ear = .28) {
     await offline.flow._startVerify();
     assert.equal(offline.flow.result.kind, 'error');
     assert.equal(offline.streams(), 0, 'no camera without a challenge');
-    console.log('PASS: capture without eye calibration, one stream/close, timeout, expiry, stale callbacks, promise failures and head turn');
+    // Tilt: roll every landmark about the frame centre in pixels (video is 480x640).
+    // +deg lowers the image-right eye = tilt_left in the server's terms.
+    const tilted = (deg, base = landmarks()) => base.map(p => {
+        const t = deg * Math.PI / 180, x = (p.x - .5) * 480, y = (p.y - .5) * 640;
+        return {x: .5 + (x * Math.cos(t) - y * Math.sin(t)) / 480, y: .5 + (x * Math.sin(t) + y * Math.cos(t)) / 640};
+    });
+    const tilt = harness(false, {livenessMode: 'head_turn', turn: 'tilt_left'});
+    await tilt.flow._startVerify();
+    for (let i = 0; i < 25; i++) await tilt.frame(landmarks());
+    assert.match(tilt.elements.get('verifyStatus').textContent, /เอียงศีรษะไปทางซ้าย/);
+    for (let i = 0; i < 3; i++) await tilt.frame(tilted(10));    // too small
+    for (let i = 0; i < 3; i++) await tilt.frame(tilted(-25));   // wrong way
+    for (let i = 0; i < 5; i++) await tilt.frame(landmarks());
+    assert.equal(tilt.submits(), 0, 'a small or opposite tilt does not complete the challenge');
+    for (let i = 0; i < 3; i++) await tilt.frame(tilted(25));
+    for (let i = 0; i < 5; i++) await tilt.frame(tilted(20));    // still tilted: not back yet
+    assert.equal(tilt.submits(), 0, 'waits for the head to come back level');
+    for (let i = 0; i < 5; i++) await tilt.frame(landmarks());
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(tilt.submits(), 1);
+    assert.equal(tilt.flow._liveness.turnFrames.length, 1);
+    // Phone held at -12 degrees: the tilt counts from there, not from level.
+    const held = harness(false, {livenessMode: 'head_turn', turn: 'tilt_left'});
+    await held.flow._startVerify();
+    for (let i = 0; i < 25; i++) await held.frame(tilted(-12));
+    for (let i = 0; i < 3; i++) await held.frame(tilted(0));      // +12 from the start: not enough
+    for (let i = 0; i < 5; i++) await held.frame(tilted(-12));
+    assert.equal(held.submits(), 0);
+    for (let i = 0; i < 3; i++) await held.frame(tilted(8));      // +20 from the start
+    for (let i = 0; i < 5; i++) await held.frame(tilted(-12));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(held.submits(), 1, 'tilt measured from the frontal frame');
+    console.log('PASS: capture without eye calibration, one stream/close, timeout, expiry, stale callbacks, promise failures, head turn and tilt');
 })().catch(error => {console.error(error); process.exitCode = 1;});

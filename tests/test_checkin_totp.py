@@ -67,7 +67,8 @@ class IntegratedTOTPTests(unittest.TestCase):
         # Head-turn verification (RetinaFace/FaceNet) is covered by
         # test_liveness_challenge; here it passes unless a test says otherwise.
         self.verify_liveness = self.stack.enter_context(patch.object(route, 'verify_liveness',
-            return_value={'passed': True, 'reason': 'passed', 'yaws': [0., .3, 0.], 'scores': {}}))
+            return_value={'passed': True, 'reason': 'passed', 'yaws': [0., .3, 0.], 'rolls': [0., 0., 0.],
+                          'scores': {}}))
         self.web = Flask(__name__)
         self.web.config.update(SECRET_KEY='test', ESP32_TOTP_SECRET=SECRET,
                                PROXIMITY_RECEIPT_SECRET='r' * 64,
@@ -125,7 +126,7 @@ class IntegratedTOTPTests(unittest.TestCase):
 
     def test_failed_head_turn_does_not_check_in(self):
         self.verify_liveness.return_value = {'passed': False, 'reason': 'wrong_direction:action_1:frontal',
-                                             'yaws': [0., 0., 0.], 'scores': {}}
+                                             'yaws': [0., 0., 0.], 'rolls': [0., 0., 0.], 'scores': {}}
         response = self.post()
         self.assertEqual(response.status_code, 400)
         self.assertTrue(response.json['retry_face'])

@@ -351,10 +351,10 @@ def api_enroll():
       12. Embedding consistency check (B1: handles multi-outlier)
       13. Face continuity vs session["liveness_embeddings"] (CONTINUITY_THRESHOLD)
       14. Duplicate face check (A6: gray-zone logging)
-      15. Save pending to DB + profile image upload
+      15. Save to DB (enrollment final) + profile image upload
 
     Response statuses:
-      pending_verify   : all 5 consistent, saved as pending (consent_given=False)
+      enrolled         : all 5 consistent, saved and final (consent_given=True)
       need_more        : single outlier or detect failure — frontend re-shoots that frame
       restart_capture  : ≥2 outliers — frontend resets Step 4 entirely
       error            : validation failure, max retries, duplicate
@@ -862,7 +862,7 @@ def api_enroll():
     session.pop("enroll_retry", None)
     _log(user_id, "enroll_save", "success")
 
-    return jsonify({"status": "pending_verify", "message": "ลงทะเบียนใบหน้าสำเร็จ!"})
+    return jsonify({"status": "enrolled", "message": "ลงทะเบียนใบหน้าสำเร็จ!"})
 
 
 # ─────────────────────────────────────────────────────────────────────────────

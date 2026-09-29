@@ -237,7 +237,7 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
         with stack:
             response = self._enroll()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["status"], "pending_verify")
+        self.assertEqual(response.get_json()["status"], "enrolled")
         self.assertEqual(combined.call_count, 5)
         temporal_log = next(call for call in audit_log.call_args_list if call.args[1] == "temporal_var")
         self.assertEqual(temporal_log.args[2], "static_log_only")
@@ -262,7 +262,7 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
                 with stack:
                     response = self._enroll()
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.get_json()["status"], "pending_verify")
+                self.assertEqual(response.get_json()["status"], "enrolled")
                 self.assertEqual(combined.call_count, 5)
                 step = {"moire": "moire_fft", "texture": "screen_texture", "temporal": "temporal_var"}[layer]
                 error_log = next(call for call in audit_log.call_args_list if call.args[1] == step)
@@ -276,7 +276,7 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
                 with stack:
                     response = self._enroll(value)
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.get_json()["status"], "pending_verify")
+                self.assertEqual(response.get_json()["status"], "enrolled")
                 ear_log = next(call for call in audit_log.call_args_list if call.args[1] == "ear_std")
                 self.assertEqual(ear_log.args[2], "absent")
 

@@ -1366,8 +1366,7 @@ async function _sendToEnroll() {
             document.getElementById('captureStatus').textContent = json.message;
             setTimeout(() => restartCapture(), 2500);
 
-        } else if (json.status === 'pending_verify') {
-            // Self-verify step removed — show success directly
+        } else if (json.status === 'enrolled') {
             _showResult('success', json.message || 'ลงทะเบียนสำเร็จ!');
 
         } else if (json.status === 'spoof_detected') {

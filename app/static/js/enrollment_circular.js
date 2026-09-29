@@ -466,7 +466,7 @@ async function _circHandleAllComplete() {
         document.getElementById('circularCheckingOverlay').style.display = 'none';
 
         // ── 4. Handle all response statuses ──────────────────────────────────
-        if (json.status === 'pending_verify') {
+        if (json.status === 'enrolled') {
             _circShowEnrollSuccess(json.message || 'ลงทะเบียนใบหน้าสำเร็จ!');
 
         } else if (json.status === 'need_more') {

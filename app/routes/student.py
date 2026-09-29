@@ -8,11 +8,10 @@ from app.services.request_performance import execute_status_query
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
 from app.services.security_service import (
-    create_device_token, csrf_protect,
+    csrf_protect,
     compute_embedding_integrity_hash,
 )
 from app.services.face_service import (
-    SELF_VERIFY_THRESHOLD,
     DUPLICATE_THRESHOLD,
     DUPLICATE_GRAY_ZONE,
     CONTINUITY_THRESHOLD,
@@ -81,7 +80,7 @@ def prevent_completed_enrollment():
     """Do not allow completed students to restart or overwrite enrollment."""
     if request.endpoint not in {
         "student.enroll_face", "student.record_consent", "student.api_enroll",
-        "student.api_self_verify", "student.api_spoof_check", "student.api_reset_liveness",
+        "student.api_spoof_check", "student.api_reset_liveness",
         "student.api_liveness_challenge", "student.api_liveness_verify",
     } or session.get("user_role") != "student" or not session.get("user_id"):
         return None
@@ -860,230 +859,10 @@ def api_enroll():
     except Exception as upload_err:
         _log(user_id, "image_upload", "warning", str(upload_err)[:80])
 
-    session["enroll_baseline_ear"] = baseline_ear
     session.pop("enroll_retry", None)
     _log(user_id, "enroll_save", "success")
 
     return jsonify({"status": "pending_verify", "message": "ลงทะเบียนใบหน้าสำเร็จ!"})
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Self-Verify API (B2: retry up to 2 times before wiping)
-# ─────────────────────────────────────────────────────────────────────────────
-
-@student_bp.route("/api/self_verify", methods=["POST"])
-@login_required
-@role_required("student")
-@_limiter.limit("10 per minute")
-@csrf_protect
-def api_self_verify():
-    """
-    Verify one live shot against the 5 pending embeddings stored in DB.
-    B2: user gets up to 2 attempts before pending embeddings are wiped.
-    A7: threshold raised to 0.80 (from 0.75).
-    On success: set consent_given=True and upload profile image.
-
-    Pipeline: validate_frame → spoof_check → extract_embedding →
-              continuity_check → verify_face_multi → finalize
-    """
-    from app.services.face_service import (
-        extract_embedding, verify_face_multi,
-        server_validate_frame, check_anti_spoof,
-    )
-
-    user_id = session["user_id"]
-
-    data       = request.get_json()
-    verify_img = (data or {}).get("face_image")
-    if not verify_img:
-        return jsonify({"status": "error", "message": "ไม่พบรูปภาพ"}), 400
-
-    if not _liveness_verified():
-        _log(user_id, "self_verify_liveness", "blocked", "no recent server-verified challenge")
-        return jsonify({"status": "continuity_fail",
-                        "message": "กรุณาทำ Liveness Check ก่อน — กรุณาเริ่มใหม่"}), 400
-
-    # ── Zero-trust frame validation ───────────────────────────────────────────
-    v = server_validate_frame(verify_img)
-    if not v["valid"]:
-        _log(user_id, "self_verify_validate", "fail",
-             f"reason={v['reason']} meta={v['metadata']}")
-        return jsonify({
-            "status":  "error",
-            "reason":  v["reason"],
-            "message": f"รูปภาพไม่ถูกต้อง ({v['reason']}) — กรุณาถ่ายใหม่",
-        }), 400
-
-    # ── Server-side spoof check (MiniFASNet) ──────────────────────────────────
-    try:
-        is_real = check_anti_spoof(verify_img)
-        _log(user_id, "self_verify_spoof", "pass" if is_real else "spoof")
-        if not is_real:
-            return jsonify({
-                "status":  "spoof_detected",
-                "message": "ตรวจพบภาพปลอม — กรุณาใช้ใบหน้าจริงเท่านั้น",
-            }), 400
-    except Exception as e:
-        _log(user_id, "self_verify_spoof", "exception", str(e)[:80])
-        return jsonify({
-            "status":  "error",
-            "message": "ไม่สามารถตรวจสอบใบหน้าได้ — กรุณาลองใหม่",
-        }), 400
-
-    # B2 / H2: track verify attempts in DB (not session) to prevent concurrent-tab bypass
-    MAX_VERIFY_ATTEMPTS = 2
-
-    # ── Load pending embeddings + current attempt count ───────────────────────
-    bio_res = (
-        supabase_admin.table("student_biometrics")
-        .select("face_embeddings, baseline_ear, verify_attempts")
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    if not bio_res or not bio_res.data:
-        return jsonify({"status": "error", "message": "ไม่พบข้อมูล enrollment — กรุณาเริ่มใหม่"}), 400
-
-    try:
-        verify_attempts = int(bio_res.data.get("verify_attempts") or 0)
-    except (ValueError, TypeError):
-        verify_attempts = 0
-
-    # ── Check attempt limit BEFORE expensive DeepFace call ───────────────────
-    if verify_attempts >= MAX_VERIFY_ATTEMPTS:
-        return jsonify({
-            "status":  "error",
-            "message": "ยืนยันตัวตนเกินจำนวนครั้งที่กำหนด — กรุณาเริ่มลงทะเบียนใหม่",
-        }), 400
-    stored_embeddings = bio_res.data.get("face_embeddings") or []
-    if not stored_embeddings:
-        return jsonify({"status": "error", "message": "ไม่พบ embedding — กรุณาเริ่มใหม่"}), 400
-
-    # ── Extract verify shot ───────────────────────────────────────────────────
-    try:
-        live_emb = extract_embedding(verify_img)
-    except Exception:
-        return jsonify({"status": "error", "message": "ตรวจจับใบหน้าไม่สำเร็จ — กรุณาจัดหน้าให้อยู่ในกรอบ"}), 400
-
-    # ── Server-side Face Continuity Check (self-verify) ───────────────────────
-    liveness_embeddings = session.get("liveness_embeddings", [])
-    if not liveness_embeddings:
-        _log(user_id, "self_verify_continuity", "blocked", "no liveness embeddings in session")
-        return jsonify({
-            "status":  "continuity_fail",
-            "message": "กรุณาทำ Liveness Check ก่อน — กรุณาเริ่มใหม่",
-        }), 400
-
-    max_sim = max(cosine_similarity(live_emb, ref) for ref in liveness_embeddings)
-    if max_sim < CONTINUITY_THRESHOLD:
-        _log(user_id, "self_verify_continuity", "fail", f"max_sim={max_sim:.4f} threshold={CONTINUITY_THRESHOLD}")
-        return jsonify({
-            "status":  "continuity_fail",
-            "message": "ตรวจพบใบหน้าไม่ตรงกับ Liveness Check — กรุณาเริ่มใหม่",
-        }), 400
-
-    _log(user_id, "self_verify_continuity", "pass", f"max_sim={max_sim:.4f}")
-
-    # ── Compare against stored embeddings ─────────────────────────────────────
-    verify_result = verify_face_multi(live_emb, stored_embeddings, SELF_VERIFY_THRESHOLD)
-    best_sim = verify_result["best_similarity"]
-    _log(user_id, "self_verify",
-         "pass" if verify_result["verified"] else "fail",
-         f"best_sim={best_sim:.4f} avg={verify_result['avg_similarity']:.4f} "
-         f"threshold={SELF_VERIFY_THRESHOLD} attempt={verify_attempts+1}/{MAX_VERIFY_ATTEMPTS}")
-
-    if not verify_result["verified"]:
-        new_attempts = verify_attempts + 1
-        if new_attempts >= MAX_VERIFY_ATTEMPTS:
-            # Wipe pending embeddings + reset counter — must re-enroll from scratch
-            supabase_admin.table("student_biometrics") \
-                .update({"face_embeddings": None, "verify_attempts": 0}) \
-                .eq("user_id", user_id).execute()
-            session.pop("enroll_baseline_ear", None)
-            _log(user_id, "self_verify", "wiped", "max_attempts_reached")
-            return jsonify({
-                "status":  "failed",
-                "message": "ยืนยันตัวตนไม่สำเร็จ — กรุณาลงทะเบียนใบหน้าใหม่ตั้งแต่ต้น",
-            })
-        # Still have attempts left — increment DB counter then let user retry
-        supabase_admin.table("student_biometrics") \
-            .update({"verify_attempts": new_attempts}) \
-            .eq("user_id", user_id).execute()
-        remaining = MAX_VERIFY_ATTEMPTS - new_attempts
-        return jsonify({
-            "status":             "retry",
-            "message":            f"ยืนยันไม่ผ่าน — กรุณาลองอีกครั้ง (เหลืออีก {remaining} ครั้ง)",
-            "remaining_attempts": remaining,
-        })
-
-    # ── Finalize: set consent_given=True ──────────────────────────────────────
-    from datetime import datetime, timezone
-    baseline_ear = session.get("enroll_baseline_ear") or bio_res.data.get("baseline_ear")
-    now_iso = datetime.now(timezone.utc).isoformat()
-
-    try:
-        # Sprint 2B: compute integrity hash before writing
-        integrity_hash = compute_embedding_integrity_hash(
-            user_id,
-            stored_embeddings,
-            current_app.config["EMBEDDING_INTEGRITY_SALT"],
-        )
-
-        supabase_admin.table("student_biometrics").update({
-            "consent_given":   True,
-            "consent_at":      session.get("consent_given_at") or now_iso,
-            "enrolled_at":     now_iso,
-            "baseline_ear":    baseline_ear,
-            "baseline_ear_metric": None,  # obsolete flow has no metric provenance
-            "integrity_hash":  integrity_hash,
-            "verify_attempts": 0,   # H2: reset counter on successful enrollment
-        }).eq("user_id", user_id).execute()
-
-        # Upload self-verify shot as profile image (non-fatal)
-        # PDPA: bucket must be set to PRIVATE in Supabase Dashboard → Storage → face-images
-        # Access is via signed URL generated at render time (1-hour expiry)
-        try:
-            import base64 as _b64
-            raw = verify_img.split(",")[1] if "," in verify_img else verify_img
-            face_path = f"{user_id}.jpg"
-            supabase_admin.storage.from_("face-images").upload(
-                face_path, _b64.b64decode(raw),
-                file_options={"content-type": "image/jpeg", "upsert": "true"},
-            )
-            # Store path only (not a public URL) — signed URL generated on demand
-            supabase_admin.table("student_biometrics") \
-                .update({"face_image_url": face_path}).eq("user_id", user_id).execute()
-        except Exception as upload_err:
-            _log(user_id, "image_upload", "warning", str(upload_err)[:80])
-
-        # Sprint 1B: generate HMAC device token bound to this device fingerprint
-        device_fingerprint = (data or {}).get("device_fingerprint", "")
-        device_token = None
-        if device_fingerprint:
-            device_token = create_device_token(
-                user_id,
-                device_fingerprint,
-                current_app.config["SECRET_KEY"],
-            )
-
-        # Clean up session (รวม liveness embeddings)
-        session.pop("enroll_baseline_ear", None)
-        session.pop("consent_given_at", None)
-        session.pop("liveness_embeddings", None)
-        session.pop("liveness_verified_at", None)
-
-        _log(user_id, "enroll_finalize", "success",
-             f"best_sim={best_sim:.4f} device_bound={bool(device_fingerprint)}")
-        return jsonify({
-            "status":       "success",
-            "similarity":   best_sim,
-            "message":      "ลงทะเบียนใบหน้าสำเร็จ!",
-            "device_token": device_token,   # None if no fingerprint sent
-        })
-
-    except Exception as e:
-        _log(user_id, "enroll_finalize", "error", str(e)[:80])
-        return jsonify({"status": "error", "message": "บันทึกข้อมูลไม่สำเร็จ — กรุณาลองใหม่"}), 500
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1292,7 +1071,7 @@ def api_liveness_verify():
 
     Body: {nonce, before, action_frames: [one per action], after} (JPEG data URLs).
     On success the before/after embeddings become the continuity reference used
-    by /api/enroll and /api/self_verify.
+    by /api/enroll.
     """
     from app.services.face_service import server_validate_frame, extract_embedding
     from app.services.liveness_challenge import verify, decode_frame
@@ -1407,7 +1186,6 @@ def api_withdraw_consent():
     session.pop("consent_given_at",    None)
     session.pop("consent_ip",          None)
     session.pop("liveness_embeddings", None)
-    session.pop("enroll_baseline_ear", None)
     session.pop("enroll_retry", None)
     session.pop("spoof_check_acc", None)
     _log(user_id, "withdraw_consent", "biometrics_deleted")

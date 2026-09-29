@@ -276,7 +276,7 @@ function _showSpoofWarn() {
     _spoofWarnTimer = setTimeout(() => { toast.style.display = 'none'; }, 4000);
 }
 
-// ─── Face Continuity ทำที่ server แล้ว (/api/enroll + /api/self_verify) ───────
+// ─── Face Continuity ทำที่ server แล้ว (/api/enroll) ───────────────────────
 // Client ไม่เก็บหรือตรวจ embedding อีกต่อไป
 
 async function goToLiveness() {

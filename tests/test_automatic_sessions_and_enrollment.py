@@ -34,7 +34,7 @@ class EnrollmentTests(unittest.TestCase):
         self.assertTrue(r.location.endswith('/student/dashboard'))
 
     def test_completed_apis_cannot_mutate(self):
-        for endpoint in ['enroll', 'self_verify', 'consent', 'spoof_check', 'reset-liveness']:
+        for endpoint in ['enroll', 'consent', 'spoof_check', 'reset-liveness']:
             with self.subTest(endpoint=endpoint):
                 r = self.client.post('/student/api/' + endpoint, json={})
                 self.assertEqual(r.status_code, 409)

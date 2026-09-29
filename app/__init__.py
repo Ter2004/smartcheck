@@ -136,9 +136,6 @@ def create_app():
 
     # --- Auto-reconnect เมื่อ httpx connection ตาย ---
     import httpx
-    @app.before_request
-    def reconnect_if_needed():
-        pass  # placeholder — reconnect จะเกิดใน error handler
 
     @app.errorhandler(httpx.RemoteProtocolError)
     @app.errorhandler(httpx.ReadTimeout)

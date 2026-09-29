@@ -107,11 +107,6 @@ class LivenessRouteTests(unittest.TestCase):
                 self.assertIn('Liveness', r.json['message'])
         self.db.rpc.assert_not_called()
 
-    def test_self_verify_requires_verified_challenge(self):
-        r = self.post('self_verify', {'face_image': FRAME})
-        self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.json['status'], 'continuity_fail')
-
     def test_spoof_check_only_extends_reference_with_the_verified_face(self):
         same, other = [1.0] + [0.0] * 511, [0.0, 1.0] + [0.0] * 510
         real = {'is_real': True, 'confidence': 0.9, 'message': '', 'layers': {}}

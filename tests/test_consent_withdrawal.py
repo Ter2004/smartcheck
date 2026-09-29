@@ -33,7 +33,7 @@ class WithdrawalTests(unittest.TestCase):
         self.audit = self.audit_patch.start()
         self.addCleanup(self.audit_patch.stop)
         self.sensitive_keys = ('consent_given_at', 'consent_ip', 'liveness_embeddings',
-                               'enroll_baseline_ear', 'enroll_retry', 'spoof_check_acc')
+                               'enroll_retry', 'spoof_check_acc')
         with self.client.session_transaction() as sess:
             sess.update(user_id='student', user_role='student', csrf_token='csrf')
             for key in self.sensitive_keys:

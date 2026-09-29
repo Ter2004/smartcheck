@@ -9,7 +9,7 @@ import cv2
 import json
 
 # ─── Thresholds (edit here to tune) ──────────────────────────────────────────
-SELF_VERIFY_THRESHOLD    = 0.80   # enrollment self-verify
+SELF_VERIFY_THRESHOLD    = 0.80   # no route uses it (self-verify step removed); calibration script reports it
 SAME_DEVICE_THRESHOLD    = 0.70   # check-in, trusted device
 NEW_DEVICE_THRESHOLD     = 0.80   # check-in, new / unbound device
 CONSISTENCY_THRESHOLD    = 0.80   # pairwise consistency during enrollment

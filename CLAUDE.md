@@ -57,11 +57,11 @@ The core AI pipeline runs entirely server-side:
 3. `extract_embedding()` — CLAHE normalization → FaceNet512 (512-D vector) via DeepFace
 4. `verify_face_multi()` — cosine similarity against all stored embeddings; decision on best (not average)
 
-Liveness is decided server-side by a head-turn challenge (`app/services/liveness_challenge.py`): the server picks the turn order, RetinaFace landmarks confirm each turn and FaceNet confirms the same face. Enrollment uses two turns (`/student/api/liveness/*`; `/api/enroll` and `/api/self_verify` require a pass within 15 min). Check-in uses one turn (`/api/checkin/liveness/challenge`) verified inside `/api/checkin` against the submitted frame. `CHECKIN_LIVENESS=passive` reverts check-in to hands-free capture.
+Liveness is decided server-side by a head-turn challenge (`app/services/liveness_challenge.py`): the server picks the turn order, RetinaFace landmarks confirm each turn and FaceNet confirms the same face. Enrollment uses two turns (`/student/api/liveness/*`; `/api/enroll` requires a pass within 15 min). Check-in uses one turn (`/api/checkin/liveness/challenge`) verified inside `/api/checkin` against the submitted frame. `CHECKIN_LIVENESS=passive` reverts check-in to hands-free capture.
 
 Key thresholds (edit in `face_service.py` top section):
 - `SAME_DEVICE_THRESHOLD = 0.70`, `NEW_DEVICE_THRESHOLD = 0.80`
-- `SELF_VERIFY_THRESHOLD = 0.80`, `DUPLICATE_THRESHOLD = 0.65`
+- `DUPLICATE_THRESHOLD = 0.65` (`SELF_VERIFY_THRESHOLD = 0.80` is no longer used by any route; `scripts/calibrate_thresholds.py` still reports it)
 - `SPOOF_DECISION_THRESHOLD = 0.50`
 
 ### Security layer (`app/services/security_service.py`)

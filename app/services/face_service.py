@@ -848,8 +848,8 @@ def server_validate_frame(frame_b64: str) -> dict:
       2. JPEG magic bytes: FF D8 FF … FF D9
       3. Decodable to BGR image via OpenCV
       4. Resolution: 160×120 – 1920×1080
-      5. Laplacian blur variance ≥ 20
-      6. All color channel std-dev ≥ 5 (rejects solid-color / synthetic images)
+      5. Laplacian blur variance ≥ 8
+      6. All color channel std-dev ≥ 2.0 (rejects solid-color / synthetic images)
 
     Returns {"valid": bool, "reason": str, "metadata": dict}
     """

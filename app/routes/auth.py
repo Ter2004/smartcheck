@@ -39,6 +39,22 @@ def role_required(*roles):
     return decorator
 
 
+def _regenerate_session():
+    """Give the login a fresh session id (session fixation).
+
+    Flask-Session's regenerate() deletes the old row from flask_sessions and
+    picks a new sid, but skips an empty session. An empty one has no stored row,
+    yet its cookie sid must not become the logged-in id either, so it gets a new
+    sid directly.
+    """
+    interface = current_app.session_interface
+    if session and hasattr(interface, "regenerate"):
+        interface.regenerate(session)
+    elif hasattr(session, "sid"):
+        session.sid = secrets.token_hex(32)
+    session.clear()
+
+
 # ============================================================
 # ROUTES
 # ============================================================
@@ -80,24 +96,7 @@ def login():
 
         # 3) Session regeneration — ป้องกัน Session Fixation Attack
         # ต้องทำก่อน set ข้อมูล user ใด ๆ ลง session
-        #
-        # flask-session filesystem backend: session.clear() เพียงอย่างเดียว
-        # ไม่เปลี่ยน session ID — มันแค่ overwrite ไฟล์เดิมด้วย dict ว่าง
-        # ต้อง assign session.sid ใหม่เพื่อบังคับให้สร้างไฟล์ใหม่ + cookie ใหม่
-        _old_sid = getattr(session, "sid", None)
-        session.clear()
-
-        # เปลี่ยน sid → flask-session จะ save ลงไฟล์ใหม่และ set cookie ใหม่
-        if hasattr(session, "sid"):
-            session.sid = secrets.token_hex(32)
-
-        # ลบ session file เก่าออกจาก filesystem (best-effort)
-        if _old_sid and hasattr(current_app.session_interface, "cache"):
-            try:
-                _prefix = getattr(current_app.session_interface, "key_prefix", "session:")
-                current_app.session_interface.cache.delete(_prefix + _old_sid)
-            except Exception:
-                pass
+        _regenerate_session()
 
         # 4) เก็บ session ใหม่หลัง regenerate แล้ว
         session["user_id"]      = str(sb_user.id)

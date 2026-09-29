@@ -1,9 +1,9 @@
 """Server-verified head-turn challenge for enrollment and check-in liveness.
 
 The browser performs the gestures, but the server decides whether they happened.
-A challenge is a random pick of distinct gestures from turn_left / turn_right /
-tilt_left / tilt_right (two for enrollment, one for check-in) bound to a
-one-time nonce. The client returns one frame taken
+A challenge is a random pick of distinct gestures from ACTIONS (currently
+turn_left / turn_right; tilt_left / tilt_right are supported but off) — two for
+enrollment, one for check-in — bound to a one-time nonce. The client returns one frame taken
 before the gestures, one frame per
 gesture (captured when the browser detector reports it done) and one after.
 The server then checks from RetinaFace landmarks that each gesture frame shows
@@ -28,7 +28,10 @@ import numpy as np
 
 from app.services import face_service
 
-ACTIONS = ("turn_left", "turn_right", "tilt_left", "tilt_right")
+# Tilt gestures are implemented and calibrated (scripts/calibrate_tilt.py) but not
+# issued for now (owner's decision, 2026-09-29): add TILT_ACTIONS to ACTIONS to enable.
+TILT_ACTIONS = ("tilt_left", "tilt_right")
+ACTIONS = ("turn_left", "turn_right")
 ENROLL_ACTIONS = 2
 CHECKIN_ACTIONS = 1
 CHALLENGE_TTL_S = 120

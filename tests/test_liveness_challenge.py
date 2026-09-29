@@ -55,11 +55,13 @@ class ChallengeTests(unittest.TestCase):
         after = after or FakeFrame(-0.03, near(PERSON, 0.95))
         return lc.verify(ch, nonce, before, actions, after, now=now, analyze=fake_analyze)
 
-    def test_new_challenge_picks_distinct_gestures_from_all_four(self):
+    def test_new_challenge_picks_distinct_gestures_from_actions(self):
+        self.assertEqual(lc.ACTIONS, ("turn_left", "turn_right"))      # tilts are off for now
         picks = [lc.new_challenge(now=NOW, rng=random.Random(s))["actions"] for s in range(200)]
         self.assertTrue(all(len(p) == lc.ENROLL_ACTIONS == 2 and len(set(p)) == 2 for p in picks))
         self.assertEqual({a for p in picks for a in p}, set(lc.ACTIONS))
-        self.assertEqual(len({tuple(p) for p in picks}), 12)          # every ordered pair
+        n = len(lc.ACTIONS)
+        self.assertEqual(len({tuple(p) for p in picks}), n * (n - 1))  # every ordered pair
         single = {lc.new_challenge(now=NOW, rng=random.Random(s), count=lc.CHECKIN_ACTIONS)["actions"][0]
                   for s in range(200)}
         self.assertEqual(single, set(lc.ACTIONS))
@@ -96,8 +98,9 @@ class ChallengeTests(unittest.TestCase):
         self.assertEqual(lc.direction(-0.20), "turn_right")
 
     def test_passes_for_every_requested_pair(self):
-        for first in lc.ACTIONS:
-            for second in lc.ACTIONS:
+        gestures = lc.ACTIONS + lc.TILT_ACTIONS   # tilts stay verified while not issued
+        for first in gestures:
+            for second in gestures:
                 if first != second:
                     result = self.check(ch=challenge((first, second)))
                     self.assertTrue(result["passed"], (first, second, result))

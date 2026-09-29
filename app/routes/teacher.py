@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import datetime, timezone, date, timedelta
+from datetime import datetime, timezone, timedelta
 from flask import (Blueprint, render_template, request, redirect,
                    url_for, flash, session, jsonify, Response)
 from app.routes.auth import login_required, role_required
@@ -150,7 +150,7 @@ def dashboard():
         courses=courses,
         recent_sessions=recent_sessions,
         beacons=beacons,
-        today_str=date.today().isoformat(),
+        today_str=_today_th.isoformat(),   # Bangkok date, same as today_sessions
         today_sessions=today_sessions,
     )
 

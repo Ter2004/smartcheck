@@ -29,10 +29,10 @@
 
         <!-- Actions -->
         <div class="flex items-center gap-2 flex-shrink-0">
-            <a href="{{ url_for('teacher.export_csv', session_id=sess.id) }}"
+            <a href="{{ url_for('teacher.export_course', course_id=sess.course_id) }}"
                class="inline-flex items-center gap-1.5 text-xs font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-3 py-2 rounded-lg transition-colors">
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Export CSV
+                Export ทั้งเทอม (Excel)
             </a>
             <button onclick="location.reload()"
                     class="inline-flex items-center gap-1.5 text-xs font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-3 py-2 rounded-lg transition-colors">

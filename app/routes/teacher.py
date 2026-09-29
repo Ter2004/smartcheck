@@ -1,10 +1,10 @@
-import csv
-import io
+import re
 from datetime import datetime, timezone, timedelta
 from flask import (Blueprint, render_template, request, redirect,
                    url_for, flash, session, jsonify, Response)
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
+from app.services import attendance_export
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
 
 teacher_bp = Blueprint("teacher", __name__)
@@ -285,80 +285,50 @@ def override_attendance(session_id):
     return redirect(url_for("teacher.session_view", session_id=session_id))
 
 
-# ─── Export CSV ───────────────────────────────────────────────
+# ─── Whole-term Excel export ──────────────────────────────────
 
-_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
-
-
-def _csv_safe(value):
-    """Stop Excel from running a text cell as a formula (CSV injection).
-
-    Names and override reasons are typed by users, so a text cell starting
-    with a formula character gets a leading apostrophe. Numbers such as a
-    negative ble_rssi are left as numbers.
-    """
-    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
-        return "'" + value
-    return value
-
-
-@teacher_bp.route("/session/<session_id>/export")
+@teacher_bp.route("/course/<course_id>/export")
 @login_required
 @role_required("teacher")
-def export_csv(session_id):
-    teacher_id = session["user_id"]
-
-    sess = (
-        supabase_admin.table("sessions")
-        .select("title, start_time, courses(code, name, teacher_id)")
-        .eq("id", session_id)
+def export_course(course_id):
+    """Every scheduled date of the current term for one of the teacher's courses."""
+    course = (
+        supabase_admin.table("courses")
+        .select("id, code, name, section, teacher_id")
+        .eq("id", course_id)
         .maybe_single()
         .execute()
-        .data
     )
-    if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
+    course = course.data if course else None
+    if not course or course.get("teacher_id") != session["user_id"]:
         flash("ไม่มีสิทธิ์", "danger")
         return redirect(url_for("teacher.dashboard"))
 
-    attendance = (
-        supabase_admin.table("attendance")
-        .select("*, users!attendance_student_id_fkey(full_name, student_id, email)")
-        .eq("session_id", session_id)
-        .order("check_in_at")
+    terms = (
+        supabase_admin.table("terms")
+        .select("name, start_date, weeks")
+        .order("start_date", desc=True)
+        .limit(1)
         .execute()
         .data or []
     )
+    if not terms:
+        flash("ยังไม่ได้ตั้งวันเปิดเทอม กรุณาแจ้งแอดมิน", "warning")
+        return redirect(url_for("teacher.history", course_id=course_id))
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "student_id", "full_name", "email",
-        "status", "check_in_at",
-        "face_score", "ble_rssi",
-        "liveness_action", "override_reason",
-    ])
-    for a in attendance:
-        u = a.get("users") or {}
-        writer.writerow([_csv_safe(value) for value in (
-            u.get("student_id", ""),
-            u.get("full_name", ""),
-            u.get("email", ""),
-            a.get("status", ""),
-            (a.get("check_in_at") or "")[:19],
-            a.get("face_score", ""),
-            a.get("ble_rssi", ""),
-            a.get("liveness_action", ""),
-            a.get("override_reason", ""),
-        )])
+    today = datetime.now(attendance_export.TZ).date()
+    dates, students = attendance_export.collect(supabase_admin, course_id, terms[0], today)
+    content = attendance_export.build_workbook(course, terms[0], dates, students)
 
-    course_code = (sess.get("courses") or {}).get("code", "unknown").replace("/", "-")
-    date_str = (sess.get("start_time") or "")[:10]
-    filename = f"attendance_{course_code}_{date_str}.csv"
-
+    safe = lambda text: re.sub(r"[^A-Za-z0-9_-]+", "-", str(text or "")).strip("-") or "x"
+    filename = (f"attendance_{safe(course.get('code'))}"
+                f"{'_sec' + safe(course['section']) if course.get('section') else ''}"
+                f"_{safe(terms[0]['name'])}.xlsx")
     return Response(
-        "\ufeff" + output.getvalue(),  # BOM สำหรับ Excel ภาษาไทย
-        mimetype="text/csv; charset=utf-8-sig",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        content,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}",
+                 "Cache-Control": "no-store"},
     )
 
 

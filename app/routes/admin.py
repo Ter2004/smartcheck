@@ -677,6 +677,45 @@ def schedule_delete(course_id, schedule_id):
     return redirect(url_for("admin.course_detail", course_id=course_id))
 
 
+# ─── Term (whole-term Excel export) ───────────────────────────
+
+@admin_bp.route("/term", methods=["GET", "POST"])
+@login_required
+@role_required("admin")
+@csrf_protect_form
+def term():
+    """One term for all courses; the latest start_date is the current term."""
+    if request.method == "POST":
+        from datetime import date
+        name = request.form.get("name", "").strip()
+        try:
+            start = date.fromisoformat(request.form.get("start_date", ""))
+            weeks = int(request.form.get("weeks", "16"))
+        except ValueError:
+            start, weeks = None, 0
+        if not name or start is None or not 1 <= weeks <= 30:
+            flash("กรุณากรอกชื่อภาคเรียน วันเปิดเทอม และจำนวนสัปดาห์ (1–30)", "danger")
+            return redirect(url_for("admin.term"))
+        try:
+            supabase_admin.table("terms").insert({
+                "name": name, "start_date": start.isoformat(), "weeks": weeks,
+            }).execute()
+        except Exception as e:
+            flash(f"บันทึกไม่สำเร็จ: {_friendly_error(e)}", "danger")
+            return redirect(url_for("admin.term"))
+        log_audit_event(supabase_admin, actor_id=session["user_id"], actor_role="admin",
+                        event_type="term_set", new_value=f"{name} {start.isoformat()} {weeks}w")
+        flash(f"ตั้งภาคเรียน {name} สำเร็จ", "success")
+        return redirect(url_for("admin.term"))
+
+    try:
+        terms = (supabase_admin.table("terms").select("name, start_date, weeks, created_at")
+                 .order("start_date", desc=True).limit(5).execute().data or [])
+    except Exception:
+        terms = None  # migration 20260929_terms.sql not applied yet
+    return render_template("admin/term.html", terms=terms)
+
+
 # ─── Biometrics ───────────────────────────────────────────────
 
 @admin_bp.route("/biometrics")

@@ -64,6 +64,10 @@ def _refresh_clients():
 
 
 def create_app():
+    # Runs for both `python run.py` and gunicorn "app:create_app()".
+    from app.runtime_check import check_face_runtime
+    check_face_runtime()
+
     app = Flask(__name__)
     app.config.from_object(Config)
     if app.config["PERFORMANCE_LOG_ENABLED"]:

@@ -74,12 +74,12 @@
                     </td>
                     <td class="px-4 py-3.5">
                         <div class="flex items-center gap-2">
-                            <button onclick="openEditModal({{ b | tojson }})"
+                            <button data-beacon='{{ b | tojson }}' onclick="openEditModal(JSON.parse(this.dataset.beacon))"
                                     class="text-xs text-slate-500 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition-colors">
                                 แก้ไข
                             </button>
                             <form method="POST" action="{{ url_for('admin.beacon_delete', beacon_id=b.id) }}"
-                                  onsubmit="return confirm('ยืนยันการลบ Beacon ห้อง {{ b.room_name }}?')">
+                                  data-room="{{ b.room_name }}" onsubmit="return confirm('ยืนยันการลบ Beacon ห้อง ' + this.dataset.room + '?')">
                                 <button type="submit"
                                         class="text-xs text-rose-500 hover:text-rose-700 border border-rose-200 hover:border-rose-300 px-2.5 py-1 rounded-lg transition-colors">
                                     ลบ

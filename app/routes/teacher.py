@@ -202,7 +202,33 @@ def session_view(session_id):
         attendance=attendance,
         all_students=all_students,
         att_map=att_map,
+        photos=_enrollment_photos([s["student_id"] for s in all_students]),
     )
+
+
+PHOTO_URL_TTL_S = 600
+
+
+def _enrollment_photos(student_ids):
+    """student_id -> short-lived signed URL of the enrollment photo (private bucket).
+
+    Lets the teacher compare the enrolled face with who is in the room. Only
+    called after the course-ownership check; failures just hide the photos.
+    """
+    if not student_ids:
+        return {}
+    try:
+        rows = (supabase_admin.table("student_biometrics").select("user_id, face_image_url")
+                .in_("user_id", student_ids).execute().data or [])
+        owners = {r["face_image_url"]: r["user_id"] for r in rows if r.get("face_image_url")}
+        if not owners:
+            return {}
+        signed = supabase_admin.storage.from_("face-images").create_signed_urls(
+            list(owners), PHOTO_URL_TTL_S)
+        return {owners[item["path"]]: item["signedURL"]
+                for item in signed if not item.get("error") and item.get("path") in owners}
+    except Exception:
+        return {}
 
 
 # ─── Manual Override ──────────────────────────────────────────

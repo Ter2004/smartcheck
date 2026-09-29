@@ -24,6 +24,13 @@ class FrontendHardeningTests(unittest.TestCase):
         preview = detail[detail.index("function previewCSV"):]
         self.assertNotIn("innerHTML", preview)
 
+    def test_no_template_value_is_written_into_inline_javascript(self):
+        # Jinja's HTML escaping is undone by the browser before an on* handler
+        # runs, so values go through data-* attributes and this.dataset instead.
+        for page in TEMPLATES.rglob("*.html"):
+            with self.subTest(page=page.name):
+                self.assertIsNone(re.search(r'\son[a-z]+="[^"]*\{\{',page.read_text(encoding="utf-8")))
+
     def test_every_external_script_is_pinned_with_integrity(self):
         for page in TEMPLATES.rglob("*.html"):
             for tag in re.findall(r"<script[^>]+src=\"https?://[^>]+>", page.read_text(encoding="utf-8")):

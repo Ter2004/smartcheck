@@ -103,7 +103,7 @@
                 </td>
                 <td class="px-4 py-3.5 text-right">
                     <form method="POST" action="{{ url_for('admin.course_unenroll', course_id=course.id, student_id=e.student_id) }}"
-                          onsubmit="return confirm('ลบ {{ e.users.full_name }} ออกจากวิชานี้?')">
+                          data-name="{{ e.users.full_name }}" onsubmit="return confirm('ลบ ' + this.dataset.name + ' ออกจากวิชานี้?')">
                         <button type="submit"
                                 class="text-xs text-rose-500 hover:text-rose-700 border border-rose-200 hover:border-rose-300 px-2.5 py-1 rounded-lg transition-colors">
                             ลบออก

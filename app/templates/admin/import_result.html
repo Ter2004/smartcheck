@@ -58,7 +58,7 @@
                     <span class="font-mono text-sm font-medium text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg select-all">{{ u.temp_password }}</span>
                 </td>
                 <td class="px-4 py-3.5">
-                    <button onclick="copyText('{{ u.temp_password }}', this)"
+                    <button data-password="{{ u.temp_password }}" onclick="copyText(this.dataset.password, this)"
                             class="text-xs text-slate-400 hover:text-indigo-600 transition-colors">
                         คัดลอก
                     </button>

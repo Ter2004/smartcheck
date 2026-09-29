@@ -24,6 +24,7 @@
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">Major / Minor</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">RSSI</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">BLE Room Code</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">BLE Secret</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">สถานะ</th>
                     <th class="px-4 py-3"></th>
                 </tr>
@@ -45,6 +46,22 @@
                     </td>
                     <td class="px-4 py-3.5">
                         <span class="font-mono text-xs text-slate-500">{{ b.ble_room_code or '—' }}</span>
+                    </td>
+                    <td class="px-4 py-3.5">
+                        <div class="flex items-center gap-2">
+                            {% if b.has_ble_secret %}
+                            <span class="text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">ตั้งแล้ว</span>
+                            {% else %}
+                            <span class="text-xs font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">ยังไม่ตั้ง</span>
+                            {% endif %}
+                            <form method="POST" action="{{ url_for('admin.beacon_ble_secret', beacon_id=b.id) }}"
+                                  onsubmit="return confirm('บอร์ดของห้องนี้จะใช้เช็คชื่อไม่ได้จนกว่าจะแฟลช firmware ใหม่ ยืนยัน?')">
+                                <button type="submit"
+                                        class="text-xs text-slate-500 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 px-2.5 py-1 rounded-lg transition-colors">
+                                    {{ 'สร้างใหม่' if b.has_ble_secret else 'สร้าง secret' }}
+                                </button>
+                            </form>
+                        </div>
                     </td>
                     <td class="px-4 py-3.5">
                         {% if b.is_active %}
@@ -73,7 +90,7 @@
                 </tr>
             {% else %}
                 <tr>
-                    <td colspan="7" class="px-5 py-12 text-center text-sm text-slate-400">ยังไม่มี Beacon</td>
+                    <td colspan="8"class="px-5 py-12 text-center text-sm text-slate-400">ยังไม่มี Beacon</td>
                 </tr>
             {% endfor %}
             </tbody>

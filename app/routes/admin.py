@@ -1,7 +1,7 @@
 import csv
 import io
 import secrets
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, make_response
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
@@ -137,9 +137,45 @@ def import_csv():
 @role_required("admin")
 def beacons():
     beacons_data = (
-        supabase_admin.table("beacons").select("*").order("room_name").execute().data or []
+        supabase_admin.table("beacons")
+        .select("id, uuid, major, minor, room_name, rssi_threshold, "
+                "ble_room_code, is_active, ble_secret")
+        .order("room_name").execute().data or []
     )
+    # Rows are embedded as JSON for the edit modal: never send the key itself.
+    for b in beacons_data:
+        b["has_ble_secret"] = bool(b.pop("ble_secret", None))
     return render_template("admin/beacons.html", beacons=beacons_data)
+
+
+@admin_bp.route("/beacons/<beacon_id>/ble-secret", methods=["POST"])
+@login_required
+@role_required("admin")
+@csrf_protect_form
+def beacon_ble_secret(beacon_id):
+    """Generate a new BLE HMAC key and show it once for the room's firmware.
+
+    The previous key stops working at once: the board must be reflashed.
+    """
+    res = (supabase_admin.table("beacons").select("id, room_name, ble_room_code")
+           .eq("id", beacon_id).maybe_single().execute())
+    beacon = res.data if res else None
+    if not beacon:
+        flash("ไม่พบอุปกรณ์", "danger")
+        return redirect(url_for("admin.beacons"))
+    secret = secrets.token_hex(32)
+    try:
+        supabase_admin.table("beacons").update({"ble_secret": secret}) \
+            .eq("id", beacon_id).execute()
+    except Exception as e:
+        flash(f"สร้าง secret ไม่สำเร็จ: {_friendly_error(e)}", "danger")
+        return redirect(url_for("admin.beacons"))
+    log_audit_event(supabase_admin, actor_id=session["user_id"], actor_role="admin",
+                    event_type="beacon_secret_rotated", target_id=beacon_id)
+    response = make_response(render_template(
+        "admin/beacon_secret.html", beacon=beacon, secret=secret))
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @admin_bp.route("/beacons/add", methods=["POST"])

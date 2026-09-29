@@ -22,7 +22,7 @@ from app.services.security_service import (
     verify_device_token_details, verify_embedding_integrity, csrf_protect,
 )
 from app.services.esp32_totp import verify_code
-from app.services import proximity_receipt
+from app.services import ble_challenge, proximity_receipt
 from app.services.liveness_challenge import (
     new_challenge as new_liveness_challenge, verify as verify_liveness,
     CHALLENGE_TTL_S as LIVENESS_CHALLENGE_TTL_S,
@@ -610,8 +610,8 @@ def checkin_proximity():
         return jsonify(ok=False, error="ไม่พบข้อมูล"), 400
     proximity_method = current_app.config.get("CHECKIN_PROXIMITY_METHOD", "totp")
     # Room possession factor. TOTP: cheap, checked before any DB/costly work,
-    # exactly as before. BLE: needs the session's beacon, so it happens in
-    # §1c below, right after the session is loaded — see that block.
+    # exactly as before. BLE: needs the session's beacon, so the room code is
+    # compared in _eligible (§1c) and the board's signed nonce right after it.
     if proximity_method == "totp":
         # Configuration is validated at boot; unexpected verifier failures are F-16 503.
         try:
@@ -635,6 +635,10 @@ def checkin_proximity():
         sess, error = _eligible(data)
         if error is not None:
             return error
+        if proximity_method == "ble":
+            ble_error = _verify_ble_response(sess, data)
+            if ble_error is not None:
+                return ble_error
         token = proximity_receipt.issue(current_app.config["PROXIMITY_RECEIPT_SECRET"],
             session["user_id"], data.get("session_id"), proximity_method, data.get("room_code"))
     except Exception as error:
@@ -644,3 +648,70 @@ def checkin_proximity():
     response = jsonify(ok=True, proximity_receipt=token, expires_in=proximity_receipt.TTL_SECONDS)
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+# ─── BLE challenge: the room board signs a server nonce ──────────────────────
+
+@api_checkin_bp.route("/api/checkin/ble/challenge", methods=["POST"])
+@audited_checkin
+@login_required
+@role_required("student")
+@_limiter.limit("10 per minute")
+@csrf_protect
+def checkin_ble_challenge():
+    """Issue the nonce the room board must sign (BLE mode). One pending per student."""
+    if current_app.config.get("CHECKIN_PROXIMITY_METHOD", "totp") != "ble":
+        reject("ble_challenge_disabled")
+        return jsonify(ok=False, error="ไม่ได้เปิดใช้การยืนยันด้วย Bluetooth"), 404
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not data:
+        reject("payload_empty")
+        return jsonify(ok=False, error="ไม่พบข้อมูล"), 400
+    try:
+        sess, error = _eligible(data)          # session open, enrolled, right room code
+        if error is not None:
+            return error
+        if not _ble_secret(sess.get("beacon_id")):
+            return _ble_unconfigured()
+    except Exception as error:
+        reject("proximity_verifier_error", exception_type=type(error).__name__)
+        return jsonify(ok=False, error=_receipt_message("proximity_verifier_error")), 503
+    challenge = ble_challenge.new_challenge(data.get("session_id"), sess.get("beacon_id"))
+    session["ble_challenge"] = challenge
+    event("ble_challenge", "issued")
+    response = jsonify(ok=True, nonce=challenge["nonce"], expires_in=ble_challenge.TTL_SECONDS)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _ble_secret(beacon_id):
+    """The room key stays in this function's caller: never logged or returned."""
+    if not beacon_id:
+        return None
+    res = (supabase_admin.table("beacons").select("ble_secret")
+           .eq("id", beacon_id).maybe_single().execute())
+    return ((res.data if res else None) or {}).get("ble_secret")
+
+
+def _ble_unconfigured():
+    reject("ble_secret_unconfigured")
+    return jsonify(ok=False, error_code="room_code_unavailable", retry_room_code=True,
+                   error="อุปกรณ์ของห้องนี้ยังไม่ได้ตั้งค่า กรุณาแจ้งอาจารย์"), 503
+
+
+def _verify_ble_response(sess, data):
+    challenge = session.pop("ble_challenge", None)   # one answer per nonce
+    secret = _ble_secret(sess.get("beacon_id"))
+    if not secret:
+        return _ble_unconfigured()
+    reason = ble_challenge.verify(challenge, data.get("session_id"), sess.get("beacon_id"),
+                                  secret, data.get("ble_response"))
+    if reason:
+        reject(reason)
+        message = ("หมดเวลายืนยันกับอุปกรณ์ในห้อง กรุณากดหาอุปกรณ์ใหม่"
+                   if reason == "ble_challenge_expired" else
+                   "อุปกรณ์ในห้องยืนยันไม่ผ่าน กรุณากดหาอุปกรณ์ใหม่ หากยังไม่ได้ให้แจ้งอาจารย์")
+        return jsonify(ok=False, error_code="room_code_invalid", retry_room_code=True,
+                       error=message), 400
+    event("ble_challenge", "pass")
+    return None

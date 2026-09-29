@@ -279,13 +279,20 @@ class IntegratedTOTPTests(unittest.TestCase):
     def test_ble_room_bound_and_rechecked_without_totp(self):
         self.web.config['CHECKIN_PROXIMITY_METHOD'] = 'ble'
         self.payload['room_code'] = 'TEST-101'
+        key = bytes(range(32)).hex()
         original_table = self.db.table
         def table(name):
             query = original_table(name)
             if name == 'sessions':
-                query.execute.return_value.data['beacons'] = {'ble_room_code': 'TEST-101'}
+                query.execute.return_value.data.update(
+                    beacon_id='beacon', beacons={'ble_room_code': 'TEST-101'})
+            if name == 'beacons':
+                query.execute.return_value = SimpleNamespace(data={'ble_secret': key})
             return query
         with patch.object(self.db, 'table', side_effect=table), patch.object(route, 'verify_code') as totp_check:
+            nonce = self.client.post('/api/checkin/ble/challenge', json=self.payload,
+                                     headers={'X-CSRF-Token': 'csrf'}).json['nonce']
+            self.payload['ble_response'] = route.ble_challenge.expected_response(key, nonce)
             result = self.preflight()
             self.assertEqual(result.status_code, 200)
             self.payload['proximity_receipt'] = result.json['proximity_receipt']

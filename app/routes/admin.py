@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 import secrets
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, make_response
 from app.routes.auth import login_required, role_required
@@ -8,6 +9,7 @@ from app.services.security_service import log_audit_event, csrf_protect, csrf_pr
 from app.utils import friendly_error as _friendly_error
 
 admin_bp = Blueprint("admin", __name__)
+_log = logging.getLogger("smartcheck.admin")
 
 
 # ─── Dashboard ────────────────────────────────────────────────
@@ -787,4 +789,5 @@ def api_reset_enrollment(student_id):
         )
         return jsonify({"status": "ok", "message": "รีเซ็ตจำนวนครั้งลงทะเบียนสำเร็จ"})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        _log.error("reset_enrollment_attempts failed: %s", type(e).__name__)
+        return jsonify({"status": "error", "message": "รีเซ็ตไม่สำเร็จ กรุณาลองใหม่"}), 500

@@ -1,7 +1,8 @@
+import hmac
 import re
 import secrets
 from functools import wraps
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
+from flask import Blueprint, abort, render_template, request, redirect, url_for, session, flash, current_app
 from app import supabase, supabase_admin
 from app import limiter as _limiter
 from flask_limiter.util import get_remote_address
@@ -105,7 +106,6 @@ def login():
         session["user_id"]      = str(sb_user.id)
         session["user_role"]    = user["role"]
         session["user_name"]    = user["full_name"]
-        session["access_token"] = res.session.access_token
         # Sprint 1C: per-session CSRF token (สร้างใหม่พร้อม session ใหม่)
         session["csrf_token"]   = secrets.token_hex(32)
         session.modified        = True
@@ -179,12 +179,18 @@ def register():
     return redirect(url_for("auth.login"))
 
 
-@auth_bp.route("/logout")
+@auth_bp.route("/logout", methods=["GET", "POST"])
 def logout():
-    try:
-        supabase.auth.sign_out()
-    except Exception:
-        pass
+    # Only a POST with the session's CSRF token logs out: a GET let any page
+    # log users out (<img src=/logout>). A GET (old bookmark) just goes home.
+    # No supabase.auth.sign_out(): that shared client holds whoever signed in
+    # last, not this user; the app's login state is the Flask session.
+    if request.method == "GET":
+        return redirect(url_for("auth.index"))
+    if "user_id" in session:   # already expired: nothing to protect, just clear
+        token, expected = request.form.get("csrf_token", ""), session.get("csrf_token", "")
+        if not expected or not hmac.compare_digest(token, expected):
+            abort(403)
     session.clear()
     flash("ออกจากระบบแล้ว", "info")
     return redirect(url_for("auth.login"))

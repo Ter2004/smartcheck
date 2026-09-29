@@ -1,5 +1,6 @@
+import logging
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from flask import (Blueprint, render_template, request, redirect,
                    url_for, flash, session, jsonify, Response)
 from app.routes.auth import login_required, role_required
@@ -8,6 +9,7 @@ from app.services import attendance_export
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
 
 teacher_bp = Blueprint("teacher", __name__)
+_log = logging.getLogger("smartcheck.teacher")
 
 
 # ─── Session History ──────────────────────────────────────────
@@ -18,8 +20,8 @@ teacher_bp = Blueprint("teacher", __name__)
 def history():
     teacher_id  = session["user_id"]
     course_filter = request.args.get("course_id", "")
-    date_from     = request.args.get("date_from", "")
-    date_to       = request.args.get("date_to", "")
+    date_from     = _valid_date(request.args.get("date_from", ""))
+    date_to       = _valid_date(request.args.get("date_to", ""))
 
     courses = (
         supabase_admin.table("courses")
@@ -45,9 +47,9 @@ def history():
         .order("start_time", desc=True)
     )
     if date_from:
-        query = query.gte("start_time", date_from + "T00:00:00+00:00")
+        query = query.gte("start_time", date_from + "T00:00:00+07:00")   # Bangkok dates
     if date_to:
-        query = query.lte("start_time", date_to + "T23:59:59+00:00")
+        query = query.lte("start_time", date_to + "T23:59:59+07:00")
 
     sessions_data = query.limit(200).execute().data or []
 
@@ -76,6 +78,14 @@ def history():
         date_from=date_from,
         date_to=date_to,
     )
+
+
+def _valid_date(text):
+    """YYYY-MM-DD from a query string, or "" (a malformed value used to reach the DB)."""
+    try:
+        return date.fromisoformat(text).isoformat()
+    except ValueError:
+        return ""
 
 
 # ─── Dashboard ────────────────────────────────────────────────
@@ -250,7 +260,7 @@ def override_attendance(session_id):
     # ตรวจสอบสิทธิ์
     sess = (
         supabase_admin.table("sessions")
-        .select("courses(teacher_id)")
+        .select("course_id, courses(teacher_id)")
         .eq("id", session_id)
         .maybe_single()
         .execute()
@@ -259,6 +269,20 @@ def override_attendance(session_id):
     if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
         flash("ไม่มีสิทธิ์", "danger")
         return redirect(url_for("teacher.dashboard"))
+
+    # Owning the session is not enough: the student must belong to its course.
+    enrolled = (
+        supabase_admin.table("course_enrollments")
+        .select("id")
+        .eq("course_id", sess["course_id"])
+        .eq("student_id", student_id)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not enrolled:
+        flash("นักศึกษาคนนี้ไม่ได้ลงทะเบียนในวิชานี้", "danger")
+        return redirect(url_for("teacher.session_view", session_id=session_id))
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -405,4 +429,5 @@ def api_reset_enrollment(student_id):
         )
         return jsonify({"status": "ok", "message": "รีเซ็ตจำนวนครั้งลงทะเบียนสำเร็จ"})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        _log.error("reset_enrollment_attempts failed: %s", type(e).__name__)
+        return jsonify({"status": "error", "message": "รีเซ็ตไม่สำเร็จ กรุณาลองใหม่"}), 500

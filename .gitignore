@@ -15,3 +15,6 @@ flask_session/
 smartcheck_sessions/
 test_images/ 
 checkin-biometric-diagnostics.json
+
+# Internal security reviews: kept locally, not published
+docs/review/

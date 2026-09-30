@@ -27,7 +27,7 @@ assert.ok(Math.abs(eyeRollDeg(face(0), video)) < 1e-9);
 assert.ok(TILT_DEG >= 15, 'browser asks for more than the server minimum');
 assert.match(ACTION_LABELS.tilt_left, /เอียง/);
 
-const left = () => buildActionChecker('tilt_left', 0.3, video);
+const left = () => buildActionChecker('tilt_left', video);
 assert.equal(run(left(), [face(25), face(25), face(25)]), true, 'three tilted frames complete it');
 assert.equal(run(left(), [face(25), face(25), face(0), face(25)]), false, 'frames must be consecutive');
 assert.equal(run(left(), Array(5).fill(face(-25))), false, 'the other way never counts');
@@ -36,5 +36,5 @@ assert.equal(run(left(), Array(5).fill(face(25, 0.72))), false, 'tilted but turn
 // Phone held at -15 degrees: 25 absolute is +40 from there, 0 absolute only +15.
 assert.equal(run(left(), Array(5).fill(face(0)), -15), false);
 assert.equal(run(left(), Array(3).fill(face(10)), -15), true);
-assert.equal(run(buildActionChecker('tilt_right', 0.3, video), Array(3).fill(face(-25))), true);
+assert.equal(run(buildActionChecker('tilt_right', video), Array(3).fill(face(-25))), true);
 console.log('PASS: tilt checker direction, threshold, consecutive frames, turned faces and held-phone baseline');

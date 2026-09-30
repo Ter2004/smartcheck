@@ -1,7 +1,6 @@
 // Temporary, opt-in diagnostics. No network, persistence, images or credentials.
 class CheckinDebug {
-    constructor(baseline) {
-        this.baseline = baseline;
+    constructor() {
         this.started = performance.now();
         this.wallStarted = Date.now();
         this.attempts = 0;
@@ -98,7 +97,6 @@ class CheckinDebug {
         const timer = this.timerState === 'armed' ? `${((this.timerDue - now) / 1000).toFixed(1)}s left` : this.timerState;
         this.panel.textContent = [
             'CHECKIN DEBUG v2 — pixel-v1 EAR',
-            `legacy baseline (unused)=${String(this.baseline)}`,
             `calibration=${f.calibration || 'awaiting face'} baseline=${num(f.baseline)}`,
             `earL=${num(f.earL)} earR=${num(f.earR)}`,
             `earNow=${num(f.earNow)} earMin=${num(f.earMin)}`,

@@ -4,7 +4,6 @@
 // State
 // ─────────────────────────────────────────────
 let currentStep  = 1;
-let baselineEAR  = null;   // Unknown until the explicit eye calibration completes.
 let captureStream = null;
 let faceMeshCapture = null;
 let captureCamera   = null;
@@ -53,19 +52,6 @@ let challengeAttempts = 0;
 
 // ─── _rtAnalyzeFrame + helpers are defined in rt_analyze.js (H5 fix) ──────────
 // rt_analyze.js is loaded before this file in enroll_face.html
-
-// ─── EAR samples collected during Step 4 capture ─────────────────────────────
-let earSamplesDuringCapture = [];
-
-function _computeEAR(lm, video) {
-    return EARMetric.mean(lm, video);
-}
-
-function _stdDev(arr) {
-    if (arr.length < 2) return 0;
-    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
-    return Math.sqrt(arr.reduce((s, v) => s + (v - mean) ** 2, 0) / arr.length);
-}
 
 // ─── Step 4 spoof fail cap ────────────────────────────────────────────────────
 let step4SpoofFailConsecutive = 0;  // resets on pass
@@ -116,16 +102,6 @@ document.addEventListener('DOMContentLoaded', () => {
     StepGuide.show('👋', 'เตรียมลงทะเบียนใบหน้า',
         'อ่านรายละเอียดการใช้ข้อมูลใบหน้า แล้วติ๊กช่องยินยอมและกดยืนยันเพื่อดำเนินการต่อ');
 });
-
-const BLINK_DROP_RATIO    = 0.70;   // EAR must drop below openEAR × 0.70 to count as closing
-const BLINK_RECOVER_RATIO = 0.65;   // EAR must recover above openEAR × 0.65 to complete cycle
-const BLINK_TIMEOUT_MS    = 10000;  // 10 s to complete one blink
-const MAX_BLINK_ATTEMPTS  = 3;      // hard block after 3 timeouts
-const EAR_OPEN_THRESHOLD  = 0.15;   // below this = eyes not fully open (skip as baseline ref)
-let blinkAttempts = 0;
-// Eye landmark indices (MediaPipe Face Mesh)
-const LEFT_EYE  = [33, 160, 158, 133, 153, 144];
-const RIGHT_EYE = [362, 385, 387, 263, 373, 380];
 
 // ─── Gate check thresholds ────────────────────
 // CHECK 1: Face centering (normalized 0-1)
@@ -238,7 +214,6 @@ async function _callSpoofCheckSafe(imageB64) {
 // Stop every active stream + camera; safe to call multiple times
 function _stopAllStreams() {
     stopLightCheck();
-    stopEarCheck();
     [captureStream, livenessStream].forEach(s => {
         if (s) { try { s.getTracks().forEach(t => t.stop()); } catch(e) {} }
     });
@@ -300,10 +275,6 @@ async function goToLiveness() {
 function stopStream(stream) {
     if (stream) stream.getTracks().forEach(t => t.stop());
 }
-
-// ─────────────────────────────────────────────
-// Eye calibration runs after lighting and before the challenge.
-// ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
 // Step 2 — Lighting Check + Anti-Spoof (Moiré/edge)
@@ -434,175 +405,18 @@ async function proceedFromLightCheck() {
     stopLightCheck();
     _stopStepCamera();
     await _showStepModal('✓', 'แสงผ่าน — ตรวจพบใบหน้าจริง',
-        'ต่อไปให้มองตรงและลืมตาตามปกติ กดเริ่มตรวจ EAR แล้วอยู่นิ่งประมาณ 3 วินาที');
+        'มองตรงและอยู่นิ่งเพื่อให้ระบบตรวจภาพก่อน จากนั้นทำตามคำสั่งทีละท่าจนครบ 2 ท่า');
     goToStep(3);
-    startEarCheck();
+    startLivenessChallenge();
 }
 
 // ─────────────────────────────────────────────
-// Step 3 — EAR Baseline Calibration
-// ─────────────────────────────────────────────
-let _earCheckStream = null;
-
-function stopEarCheck() {
-    if (_earCheckStream) {
-        _earCheckStream.getTracks().forEach(t => t.stop());
-        _earCheckStream = null;
-    }
-    _stopStepCamera();
-}
-
-async function startEarCheck() {
-    const status = document.getElementById('earCheckStatus');
-    const btn    = document.getElementById('btnEarCheckStart');
-    const bar    = document.getElementById('earProgressBar');
-    const val    = document.getElementById('earValDisplay');
-
-    if (status) status.textContent = 'กำลังเปิดกล้อง...';
-    if (btn)    btn.disabled = true;
-    if (bar)    bar.style.width = '0%';
-    if (val)    val.textContent = '—';
-
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: 640, height: 480 }
-        });
-        const vcCheck = await detectVirtualCamera(stream);
-        if (vcCheck.blocked) {
-            stream.getTracks().forEach(t => t.stop());
-            alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
-            return;
-        }
-        _earCheckStream = stream;
-        const video = document.getElementById('videoEarCheck');
-        video.srcObject = stream;
-        if (status) status.textContent = 'กรุณาทำหน้าปกติ ลืมตาตามปกติ แล้วกดปุ่ม';
-        if (btn)    btn.disabled = false;
-    } catch (e) {
-        if (status) status.textContent = 'ไม่สามารถเปิดกล้องได้: ' + e.message;
-    }
-}
-
-async function runEarCheck() {
-    const DURATION_MS = 3000;
-    const status = document.getElementById('earCheckStatus');
-    const btn    = document.getElementById('btnEarCheckStart');
-    const bar    = document.getElementById('earProgressBar');
-    const val    = document.getElementById('earValDisplay');
-    const video  = document.getElementById('videoEarCheck');
-
-    // Guard: bail early if stream/frame not ready (avoids silent 3s wait)
-    if (!_earCheckStream || !video?.videoWidth) {
-        if (status) status.textContent = 'กล้องยังไม่พร้อม — กรุณารอสักครู่แล้วลองใหม่';
-        return;
-    }
-
-    // iOS Safari: video may be paused even though srcObject is set — force play()
-    if (video.paused) {
-        try { await video.play(); } catch (e) { console.warn('[EAR] play:', e); }
-    }
-
-    if (btn)    btn.disabled = true;
-    if (status) status.textContent = 'กำลังวัด EAR — ทำหน้าปกติ อยู่นิ่งๆ...';
-    if (bar)    bar.style.width = '0%';
-
-    // Debug counters — TODO: remove after demo
-    let _dbgPumpCount = 0, _dbgResultsCount = 0, _dbgLandmarkCount = 0, _dbgSendErrors = 0;
-
-    const earSamples = [];
-    const startTime  = Date.now();
-    let   earDone    = false;
-    let   pumpInterval = null;
-
-    // Create a FRESH FaceMesh instance for this step.
-    // Root cause of pumps=26/results=0 on iOS Safari: reusing _sharedFM across steps
-    // leaves the WASM graph in a stale state where send() succeeds but onResults never fires.
-    // A new instance + explicit initialize() guarantees a clean pipeline.
-    const fm = new FaceMesh({ locateFile: f =>
-        `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}` });
-    fm.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: false,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence:  0.5,
-    });
-
-    fm.onResults(results => {
-        _dbgResultsCount++;
-        if (earDone) return;
-        if (!results.multiFaceLandmarks?.length) return;
-        _dbgLandmarkCount++;
-        const lm  = results.multiFaceLandmarks[0];
-        const ear = _computeEAR(lm, video);
-        // Retain the calibration plausibility range; measurements now use pixels.
-        if (ear > 0.10 && ear < 0.45) earSamples.push(ear);
-        if (val) val.textContent = ear.toFixed(3);
-    });
-
-    // Explicit initialize — required for older iOS WebKit to wire up the WASM graph
-    try { await fm.initialize(); } catch (e) { console.warn('[EAR] init:', e); }
-
-    // setInterval at 100ms (10 fps) instead of rAF — rAF can be throttled
-    // by iOS Safari when not fully in foreground
-    pumpInterval = setInterval(async () => {
-        if (earDone) return;
-        _dbgPumpCount++;
-        try { await fm.send({ image: video }); }
-        catch (e) { _dbgSendErrors++; console.warn('[EAR] send:', e); }
-        const elapsed = Date.now() - startTime;
-        const pct = Math.min(100, (elapsed / DURATION_MS) * 100);
-        if (bar) bar.style.width = pct.toFixed(1) + '%';
-        if (elapsed >= DURATION_MS) finish();
-    }, 100);
-
-    const finish = () => {
-        if (earDone) return;              // guard: concurrent setInterval callbacks can reach here
-        earDone = true;
-        if (pumpInterval) clearInterval(pumpInterval);
-        try { fm.close(); } catch(e) {}   // release WASM resources immediately
-
-        console.log('[EAR] debug:', {
-            pumps: _dbgPumpCount, results: _dbgResultsCount,
-            landmarks: _dbgLandmarkCount, sendErrors: _dbgSendErrors,
-            samples: earSamples.length,
-            videoSize: (video.videoWidth || 0) + 'x' + (video.videoHeight || 0),
-            videoPaused: video.paused, readyState: video.readyState,
-        });
-
-        if (earSamples.length < 10) {
-            if (status) status.textContent =
-                `วัดไม่ได้ผล (pumps=${_dbgPumpCount} results=${_dbgResultsCount}) — กรุณาลองใหม่`;
-            if (btn) btn.disabled = false;
-            if (bar) bar.style.width = '0%';
-            return;
-        }
-
-        const sorted = [...earSamples].sort((a, b) => a - b);
-        const median = sorted[Math.floor(sorted.length / 2)];
-        baselineEAR  = median;
-        if (val)    val.textContent = median.toFixed(3);
-        if (status) status.textContent = `✓ EAR baseline = ${median.toFixed(3)}`;
-
-        _showStepModal('✓', 'วัด EAR สำเร็จ',
-            document.getElementById('stepCircular')
-                ? 'หมุนหน้าช้า ๆ เพื่อเก็บหน้าตรง ซ้าย ขวา เงยและก้ม เมื่อมีคำสั่งให้กะพริบตา 1 ครั้ง'
-                : 'มองตรงและอยู่นิ่งเพื่อให้ระบบตรวจภาพก่อน จากนั้นทำตามคำสั่งทีละท่าจนครบ 2 ท่า'
-        ).then(() => {
-            stopEarCheck();
-            goToStep(4);
-            startLivenessChallenge();
-        });
-    };
-}
-
-// ─────────────────────────────────────────────
-// Step 4 — Interactive Challenge (2 actions)
+// Step 3 — Interactive Challenge (2 actions)
 // ─────────────────────────────────────────────
 let livenessStream = null;
 let _livenessRetryTimer = null;
 
 const CHALLENGE_ACTION_LABELS = {
-    blink:          'กะพริบตา',
     smile:          'ยิ้มให้กว้าง',
     turn_left:      'หันหน้าไปทางซ้าย',
     turn_right:     'หันหน้าไปทางขวา',
@@ -807,7 +621,6 @@ async function startLivenessChallenge() {
     const detector = new InteractiveChallengeDetector(
         document.getElementById('videoLiveness'),
         document.getElementById('canvasLiveness'),
-        baselineEAR,
         (actionIdx, _total, statusText) => {
             _buildChallengePills(actions, actionIdx);
             document.getElementById('challengeActionLabel').textContent =
@@ -891,7 +704,7 @@ async function startLivenessChallenge() {
         'กดเริ่มถ่ายรูป มองตรงและอยู่นิ่ง ระบบจะถ่ายอัตโนมัติจนครบ 5 รูป จากนั้นรอผลการลงทะเบียน'
     );
 
-    goToStep(5);
+    goToStep(4);
     prepareCaptureStep();
 }
 
@@ -1097,9 +910,6 @@ function startCaptureWithDetection() {
 
         const lm = results.multiFaceLandmarks[0];
         drawFaceFeatures(ctx2, lm, canvas.width, canvas.height, 'rgba(255,255,255,0.7)');
-
-        // Collect EAR sample for temporal anti-spoof check
-        earSamplesDuringCapture.push(_computeEAR(lm, video));
 
         // ── Real-time Moiré + edge analysis ───────────────────────────────
         const rtResult = _rtAnalyzeFrame(video, lm);
@@ -1341,9 +1151,6 @@ async function _sendToEnroll() {
             },
             body: JSON.stringify({
                 face_images:  capturedImages,
-                baseline_ear: baselineEAR,
-                baseline_ear_metric: EARMetric.version,
-                ear_std:      _stdDev(earSamplesDuringCapture),
             }),
         });
         _finishProgress();
@@ -1466,7 +1273,7 @@ function _hideChecking() {
 function _showResult(type, msg) {
     // B6: always stop camera streams when reaching terminal state
     _stopAllStreams();
-    goToStep(5);
+    goToStep(4);
     document.getElementById('autoCaptureSection').style.display = 'none';
     document.getElementById('checkingSection').style.display    = 'none';
     document.getElementById('resultSection').style.display      = 'block';
@@ -1490,14 +1297,12 @@ async function fullRestart() {
     lastCaptureTime     = 0;
     capturePaused       = false;
     challengeAttempts   = 0;
-    baselineEAR         = null;
     step4SpoofFailConsecutive = 0;
     step4SpoofFailTotal       = 0;
     step4FailureTracker.resetWindow();
     step4NetworkErrorConsec   = 0;
     step4AnyServerResponse    = false;
     _enrollSubmitting        = false;   // B5: release double-submit lock on full restart
-    earSamplesDuringCapture  = [];
     _rtResetCounters();
 
     // ล้าง liveness embeddings ที่ server (session["liveness_embeddings"])
@@ -1515,16 +1320,6 @@ async function fullRestart() {
 
     _clearSpoofLabel('spoofLabelLiveness');
     _clearSpoofLabel('spoofLabelCapture');
-
-    // Reset EAR display for fresh calibration in step 3
-    const earStatus = document.getElementById('earCheckStatus');
-    const earBar    = document.getElementById('earProgressBar');
-    const earVal    = document.getElementById('earValDisplay');
-    const earBtn    = document.getElementById('btnEarCheckStart');
-    if (earStatus) earStatus.textContent = 'กำลังเปิดกล้อง...';
-    if (earBar)    earBar.style.width = '0%';
-    if (earVal)    earVal.textContent = '—';
-    if (earBtn)    earBtn.disabled = true;
 
     _updateCaptureDots();
     goToStep(2);
@@ -1544,7 +1339,6 @@ function restartCapture() {
     step4NetworkErrorConsec   = 0;
     step4AnyServerResponse    = false;
     _enrollSubmitting        = false;   // B5: release double-submit lock on capture restart
-    earSamplesDuringCapture  = [];
     _rtResetCounters();
 
     stopStream(captureStream);
@@ -1558,6 +1352,6 @@ function restartCapture() {
     _clearSpoofLabel('spoofLabelCapture');
 
     _updateCaptureDots();
-    goToStep(5);
+    goToStep(4);
     prepareCaptureStep();
 }

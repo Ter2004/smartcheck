@@ -6,7 +6,6 @@
  *   InteractiveChallengeDetector — 2-action sequential challenge (enrollment step 3)
  *
  * Supported actions:
- *   'blink'         — กระพริบตา (EAR detection)
  *   'smile'         — ยิ้ม (mouth-width ratio)
  *   'turn_left'     — หันซ้าย (nose yaw < 0.38)
  *   'turn_right'    — หันขวา (nose yaw > 0.62)
@@ -14,17 +13,9 @@
  *   'raise_eyebrows'— ยกคิ้ว (brow-to-eye distance +20%)
  */
 
-// ─── Shared landmark indices ──────────────────────────────────────────────────
-const LEFT_EYE_IDX  = [33, 160, 158, 133, 153, 144];
-const RIGHT_EYE_IDX = [362, 385, 387, 263, 373, 380];
-
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 function dist2D(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function calcEARFromLM(lm, indices, video) {
-    return EARMetric.eye(lm, indices, video?.videoWidth, video?.videoHeight);
 }
 
 /** Yaw: nose x position relative to face width (0=hard left, 0.5=centre, 1=hard right) */
@@ -55,7 +46,6 @@ function nosePitch(lm) {
 
 // ─── Action labels (Thai) ─────────────────────────────────────────────────────
 const ACTION_LABELS = {
-    blink:          'กะพริบตา',
     smile:          'ยิ้มให้กว้าง',
     turn_left:      'หันหน้าไปทางซ้าย',
     turn_right:     'หันหน้าไปทางขวา',
@@ -67,28 +57,7 @@ const ACTION_LABELS = {
 
 /** Build a stateful checker for one action. Returns { check(lm, baselineRoll) → { done, statusText } }
  *  baselineRoll: eye-line angle when the challenge started (tilts are measured from it). */
-function buildActionChecker(action, baselineEAR, video) {
-    const EAR_THRESHOLD = Number.isFinite(baselineEAR) && baselineEAR > 0 ? baselineEAR * 0.70 : NaN;
-
-    if (action === 'blink') {
-        let blinkDown = false;
-        return {
-            check(lm) {
-                if (!Number.isFinite(EAR_THRESHOLD)) return {done: false, statusText: 'กรุณาวัดค่าดวงตาก่อน'};
-                const ear = (calcEARFromLM(lm, LEFT_EYE_IDX, video) + calcEARFromLM(lm, RIGHT_EYE_IDX, video)) / 2;
-                if (!Number.isFinite(ear)) { blinkDown = false; return {done: false, statusText: 'จัดใบหน้าให้อยู่ในกรอบ'}; }
-                if (!blinkDown && ear < EAR_THRESHOLD) {
-                    blinkDown = true;
-                    return { done: false, statusText: 'กะพริบตา...' };
-                }
-                if (blinkDown && ear >= EAR_THRESHOLD) {
-                    return { done: true, statusText: '✓ กะพริบตาสำเร็จ!' };
-                }
-                return { done: false, statusText: `กรุณากะพริบตา (EAR: ${ear.toFixed(3)})` };
-            }
-        };
-    }
-
+function buildActionChecker(action, video) {
     if (action === 'smile') {
         // Detect sustained smile (no neutral-return requirement — too hard in practice)
         const SMILE_ON    = 0.40;   // ratio above this = smiling
@@ -274,10 +243,9 @@ class RigidBodyGuard {
 
 // ─── LivenessDetector (single action — backward compat, used in check-in) ────
 class LivenessDetector {
-    constructor(video, canvas, baselineEAR) {
+    constructor(video, canvas) {
         this.video       = video;
         this.canvas      = canvas;
-        this.baselineEAR = baselineEAR;
         this._camera     = null;
         this._faceMesh   = null;
     }
@@ -300,7 +268,7 @@ class LivenessDetector {
             });
             this._faceMesh = faceMesh;
 
-            const checker = buildActionChecker(action, this.baselineEAR, this.video);
+            const checker = buildActionChecker(action, this.video);
             const guard   = new RigidBodyGuard();
             const ctx     = this.canvas.getContext('2d');
 
@@ -386,14 +354,12 @@ class InteractiveChallengeDetector {
     /**
      * @param {HTMLVideoElement} video
      * @param {HTMLCanvasElement} canvas
-     * @param {number} baselineEAR
      * @param {Function} onProgress  — callback(actionIndex, totalActions, statusText)
      * @param {Object}   options     — { faceMesh?: FaceMesh }
      */
-    constructor(video, canvas, baselineEAR, onProgress = () => {}, options = {}) {
+    constructor(video, canvas, onProgress = () => {}, options = {}) {
         this.video       = video;
         this.canvas      = canvas;
-        this.baselineEAR = baselineEAR;
         this.onProgress  = onProgress;
         this._sharedFM   = options.faceMesh || null;  // external shared instance (not owned)
         this._camera     = null;
@@ -416,7 +382,7 @@ class InteractiveChallengeDetector {
         return new Promise((resolve) => {
             let currentIdx = 0;
             let resolved   = false;
-            let checker    = buildActionChecker(actions[0], this.baselineEAR, this.video);
+            let checker    = buildActionChecker(actions[0], this.video);
             let baselineRoll = null;   // eye-line angle on the first face frame (still frontal)
             const guard    = new RigidBodyGuard();
             let actionTimer = null;
@@ -509,7 +475,7 @@ class InteractiveChallengeDetector {
                     resolve({ pass: true, sequence: actions, failedAt: null, error: null, actionFrames });
                 } else {
                     // Start next action
-                    checker = buildActionChecker(actions[currentIdx], this.baselineEAR, this.video);
+                    checker = buildActionChecker(actions[currentIdx], this.video);
                     startActionTimer();
                     this.onProgress(currentIdx, actions.length, ACTION_LABELS[actions[currentIdx]] || actions[currentIdx]);
                 }
@@ -529,7 +495,7 @@ class InteractiveChallengeDetector {
 
 // ─── Random challenge helpers ─────────────────────────────────────────────────
 
-const CHALLENGE_POOL = ['blink', 'smile', 'turn_left', 'turn_right', 'nod'];
+const CHALLENGE_POOL = ['smile', 'turn_left', 'turn_right', 'nod'];
 
 /** Pick N unique actions at random from the full pool */
 function randomChallengeActions(count = 2) {

@@ -57,9 +57,6 @@ class Config:
     # X-Forwarded-* header: the client address is the TCP peer.
     TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
 
-    # Enrollment flow variant: "classic" | "circular"
-    ENROLL_FLOW_MODE = os.getenv("ENROLL_FLOW_MODE", "classic")
-
     # Check-in proximity method: "ble" (default: signed nonce challenge against the
     # room's ESP32 over Web Bluetooth) or "totp" (6-digit code from a room screen).
     CHECKIN_PROXIMITY_METHOD = os.getenv("CHECKIN_PROXIMITY_METHOD", "ble").lower()

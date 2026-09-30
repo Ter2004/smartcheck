@@ -27,7 +27,6 @@ class CheckinFlow {
         this.sessionId     = opts.sessionId;
         this.beaconUUID    = opts.beaconUUID;
         this.rssiThreshold = opts.rssiThreshold;
-        this.baselineEAR   = opts.baselineEAR;
         this.apiUrl        = opts.apiUrl || '/api/checkin';
         this.proximityMethod = opts.proximityMethod || 'ble';
         // 'head_turn': one server-chosen turn, re-checked by the server; 'passive': legacy.
@@ -36,9 +35,8 @@ class CheckinFlow {
         this._liveness     = null;
 
         this._camStream  = null;
-        this._earSamples = [];
         this._proximity = null;
-        this._debug = opts.debug === true ? new CheckinDebug(this.baselineEAR) : null;
+        this._debug = opts.debug === true ? new CheckinDebug() : null;
     }
 
     async start() {
@@ -102,8 +100,6 @@ class CheckinFlow {
         this._stopStream(this._camStream);
         const generation = this._captureGeneration;
         const active = () => generation === this._captureGeneration && !!this._proximity;
-        this.baselineEAR = null;
-        this._earSamples = [];
         let faceReadyFrames = 0, countingDown = false, verified = false;
         // head_turn phases: 'frontal' → 'turn' → 'return' → submit
         let phase = 'frontal', turnCount = 0, backCount = 0, beforeFrame = null, turnFrame = null;

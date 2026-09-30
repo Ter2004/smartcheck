@@ -88,7 +88,6 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
         self.app.add_url_rule(
             "/probe", "probe", _undecorated(student.api_spoof_check), methods=["POST"]
         )
-        self.app.config["ENROLL_FLOW_MODE"] = "classic"
         self.app.config["EMBEDDING_INTEGRITY_SALT"] = "test-salt"
         self.app.add_url_rule(
             "/enroll-probe", "enroll_probe", _undecorated(student.api_enroll), methods=["POST"]
@@ -263,7 +262,7 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
             self.assertIn(expected, face_source)
         for expected in (
             "MIN_SPOOF_PASS = 4", "if spoof_pass_count < MIN_SPOOF_PASS:",
-            "_consistency_threshold = 0.75 if _flow_mode == \"circular\" else 0.80",
+            "_consistency_threshold = 0.80",
             "if max_sim < CONTINUITY_THRESHOLD:", "if _sim >= DUPLICATE_THRESHOLD:",
         ):
             self.assertIn(expected, enroll_source)

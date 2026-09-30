@@ -52,18 +52,6 @@ class CheckinSelectionTests(unittest.TestCase):
         self.assertEqual(context['session_data']['id'], 'second')
         self.assertEqual(context['week_schedules'], [])
 
-    def test_capture_receives_enrolled_baseline_ear(self):
-        template, context = self.invoke('?session_id=second', baseline_ear=0.31)
-        self.assertEqual(template, 'student/checkin.html')
-        self.assertEqual(context['session_data']['id'], 'second')
-        self.assertEqual(context['baseline_ear'], 0.31)
-        self.assertFalse(context['already_checked'])
-
-    def test_capture_uses_default_when_ear_was_not_measured(self):
-        template, context = self.invoke('?session_id=first')
-        self.assertEqual(template, 'student/checkin.html')
-        self.assertEqual(context['baseline_ear'], 0.25)
-
     def test_capture_receives_attendance_and_iphone_state(self):
         _, context = self.invoke('?session_id=first',
                                  attendance=[{'id': 'attendance', 'session_id': 'first'}],

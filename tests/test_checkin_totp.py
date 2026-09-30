@@ -80,7 +80,7 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.payload = dict(session_id='session', liveness_action='head_turn',
                             face_image='20', face_images=['20', '80', '140'],
                             liveness_nonce='n-1', liveness_turn_frames=['60'], liveness_after='100',
-                            ear_samples=[.25, .26], room_code=totp.generate_code(SECRET, NOW))
+                            room_code=totp.generate_code(SECRET, NOW))
 
     def post(self):
         preflight = self.client.post('/api/checkin/proximity', json=self.payload,

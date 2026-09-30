@@ -51,14 +51,13 @@ def checkin():
     ble_rssi        = data.get("ble_rssi")
     liveness_action = data.get("liveness_action", "") or ""
     face_image      = data.get("face_image")
-    ear_samples     = data.get("ear_samples") or []
 
     receipt_error = _verify_receipt(data)
     if receipt_error is not None:
         return receipt_error
 
     # M7: whitelist liveness_action — reject arbitrary strings
-    _ALLOWED_LIVENESS_ACTIONS = {"passive", "blink", "turn_left", "head_turn"}
+    _ALLOWED_LIVENESS_ACTIONS = {"passive", "turn_left", "head_turn"}
     if not isinstance(liveness_action, str) or liveness_action not in _ALLOWED_LIVENESS_ACTIONS:
         reject("liveness_action_invalid", received=data.get("liveness_action"))
         return jsonify({"ok": False, "error": "ข้อมูลไม่ถูกต้อง"}), 400
@@ -131,37 +130,9 @@ def checkin():
             "retry_face": True,
         }), 400
 
-    _perf["session"] = round((time.perf_counter() - _t1) * 1000, 2); _t3 = time.perf_counter()
+    _perf["session"] = round((time.perf_counter() - _t1) * 1000, 2)
 
-    # ─── 3. Server-side EAR liveness check ──────────────────────────────────
     antispoof_pass = False
-    try:
-        # Passive check-in uses temporal and anti-spoof checks, without eye samples.
-        if liveness_action == "blink":
-            ear_arr = np.asarray(ear_samples, dtype=float)
-            if ear_arr.ndim != 1 or len(ear_arr) < 2 or not np.all(np.isfinite(ear_arr)):
-                raise ValueError("invalid EAR samples")
-            if np.any((ear_arr < 0.0) | (ear_arr > 1.0)):
-                raise ValueError("EAR samples out of range")
-            ear_std = float(np.std(ear_arr))
-            ear_min = float(np.min(ear_arr))
-            _log.info(f"[LIVENESS] ear std={ear_std:.4f} min={ear_min:.4f} n={len(ear_arr)}")
-            if ear_std < 0.03 or ear_min >= 0.18:
-                reject("blink_failed")
-                return jsonify({
-                    "ok":        False,
-                    "error":     "ไม่ผ่านการตรวจสอบความมีชีวิต — กรุณากะพริบตาตามธรรมชาติขณะเช็คชื่อ",
-                    "retry_face": True,
-                }), 400
-    except (ValueError, TypeError) as ear_err:
-        _log.warning(f"[LIVENESS] EAR validation failed: {type(ear_err).__name__}")
-        reject("ear_invalid")
-        return jsonify({
-            "ok": False,
-            "error": "ข้อมูลตรวจสอบความมีชีวิตไม่ถูกต้อง กรุณาลองใหม่",
-            "retry_face": True,
-        }), 400
-    _perf["ear"] = round((time.perf_counter() - _t3) * 1000, 2)
 
     # ─── 4a. Decode the frame ─────────────────────────────────────────────────
     try:
@@ -445,7 +416,7 @@ def checkin():
     _perf["total"] = round((time.perf_counter() - _t0) * 1000, 2)
     _log.info(
         "[PERF] total={total}ms validate={validate}ms session={session}ms "
-        "ear={ear}ms temporal={temporal}ms "
+        "temporal={temporal}ms "
         "fasnet={fasnet}ms onnx={onnx}ms embed={embed}ms verify={verify}ms db={db}ms".format(**_perf)
     )
 

@@ -89,7 +89,7 @@ Migrations live in `database/migrations/`. Apply via Supabase SQL Editor or psql
 ### Session & config
 Flask-Session uses SQLAlchemy backend (`flask_sessions` table on `DATABASE_URL`). Sessions expire after 1 hour. In production: `SESSION_COOKIE_SECURE=True`, requires HTTPS.
 
-`ENROLL_FLOW_MODE` env var controls the enrollment UI variant: `"classic"` (default) or `"circular"`.
+Enrollment is one flow: consent → lighting → server-verified head turn → 5 frontal photos. The EAR calibration step and the circular variant (`ENROLL_FLOW_MODE`) were removed 2026-09-30.
 
 ## Conventions
 - All templates extend `base.html`; flash categories: `success`, `danger`, `warning`, `info`

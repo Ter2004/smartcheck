@@ -36,7 +36,7 @@ function harness(debug, options = {}) {
         },
     });
     vm.runInContext((debug ? read('checkin_debug.js') : '') + read('checkin_flow.js') +
-        `\nglobalThis.flow = new CheckinFlow({baselineEAR: 0.392436, debug: ${debug}, proximityMethod: 'ble',
+        `\nglobalThis.flow = new CheckinFlow({debug: ${debug}, proximityMethod: 'ble',
             livenessMode: '${options.livenessMode || 'passive'}'});`, context);
     const flow = context.flow;
     flow._sleep = async () => {};
@@ -70,7 +70,6 @@ function landmarks(ear = .28) {
     await h.flow._startVerify();
     const d = h.flow._debug;
     assert.match(d.panel.textContent, /v2 — pixel-v1/);
-    assert.match(d.panel.textContent, /legacy baseline \(unused\)=0.392436/);
     await h.frame(landmarks(.12));
     assert.doesNotMatch(d.panel.textContent, /failed=eyesOk/);
     assert.match(d.panel.textContent, /ready=1/);

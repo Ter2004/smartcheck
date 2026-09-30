@@ -6,7 +6,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" integrity="sha384-q1KhAZhJcJXr3zfC3Tz07pBqQSabwFIZhXlmlUAB8s0zk4ETWERkIKGBCFQ5Jc3e" crossorigin="anonymous"></script>
 <script src="{{ url_for('static', filename='js/camera_guard.js') }}"></script>
 <script src="{{ url_for('static', filename='js/rt_analyze.js') }}"></script>
-<script src="{{ url_for('static', filename='js/ear_metric.js') }}"></script>
 <script src="{{ url_for('static', filename='js/mediapipe_liveness.js') }}"></script>
 <style>
     /* ── Step show/hide (toggled by JS) ─── */
@@ -118,8 +117,6 @@
         <div class="step-dot" id="dot3">3</div>
         <div class="flex-1 h-0.5 bg-slate-200" id="line3"></div>
         <div class="step-dot" id="dot4">4</div>
-        <div class="flex-1 h-0.5 bg-slate-200" id="line4"></div>
-        <div class="step-dot" id="dot5">5</div>
     </div>
 
     <!-- ─── Step 1: PDPA Consent ─── -->
@@ -180,32 +177,7 @@
         </button>
     </div>
 
-    <!-- ─── Step 3: EAR Baseline ─── -->
-    <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="stepEarCheck">
-        <h3 class="text-sm font-semibold text-slate-800 mb-1">👁 ตรวจ EAR (Eye Aspect Ratio)</h3>
-        <p class="text-sm text-slate-500 mb-3">มองกล้องและลืมตาตามปกติ 3 วินาที</p>
-        <div class="camera-box">
-            <video id="videoEarCheck" autoplay playsinline muted></video>
-            <div class="face-guide" id="faceGuideEarCheck"></div>
-        </div>
-        <!-- EAR measurement progress bar -->
-        <div class="flex items-center gap-2 mt-2 mb-1">
-            <span class="text-xs text-slate-400 w-12">EAR</span>
-            <div class="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                <div id="earProgressBar" class="h-2 bg-indigo-500 rounded-full transition-all duration-300" style="width:0%"></div>
-            </div>
-            <span id="earValDisplay" class="text-xs text-slate-400 w-12 text-right">—</span>
-        </div>
-        <p class="text-sm text-center min-h-[1.4em] mb-3" id="earCheckStatus">กำลังเปิดกล้อง...</p>
-        <button id="btnEarCheckStart"
-                class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-medium py-2.5 rounded-xl transition-colors"
-                disabled onclick="runEarCheck()">
-            เริ่มตรวจ EAR
-        </button>
-    </div>
-
-    {% if flow_mode == "classic" %}
-    <!-- ─── Step 4: Interactive Challenge ─── -->
+    <!-- ─── Step 3: Interactive Challenge ─── -->
     <div class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="step4">
         <h3 class="text-sm font-semibold text-slate-800 mb-1">ยืนยันตัวตน (Interactive Challenge)</h3>
         <p id="livenessPhaseInstruction" class="text-base font-semibold text-indigo-700 bg-indigo-50 rounded-lg p-3 mb-3" role="status" aria-live="polite">มองตรงเข้ากล้องและอยู่นิ่งก่อน — รอคำสั่งเริ่มทำท่าทาง</p>
@@ -283,122 +255,6 @@
             </div>
         </div>
     </div>
-    {% endif %}
-
-    {% if flow_mode == "circular" %}
-    <!-- ─── Step 4: Circular Face Scan ─── -->
-    <div id="stepCircular" class="step bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        <h3 class="text-sm font-semibold text-slate-800 mb-1 text-center">สแกนใบหน้า (360°)</h3>
-        <p class="text-sm text-center text-slate-500 mb-2" id="circularInstruction">หมุนหน้าช้าๆ เป็นวงกลม</p>
-        <p class="text-sm text-center min-h-[1.25em] mb-2" id="circularStatus" style="color:#64748b"></p>
-
-        <!-- Circular camera arena: video clipped to circle + SVG tick ring overlay -->
-        <div style="display:flex;justify-content:center;margin-bottom:0.75rem">
-            <div id="circularArena" style="position:relative;
-                 width:min(260px,80vw);height:min(260px,80vw)">
-                <video id="videoCircular" autoplay playsinline muted
-                       style="position:absolute;inset:0;width:100%;height:100%;
-                              object-fit:cover;border-radius:50%;background:#0f172a;display:block"></video>
-                <svg id="circularTickSvg" viewBox="0 0 260 260"
-                     style="position:absolute;inset:0;width:100%;height:100%;
-                            overflow:visible;pointer-events:none"></svg>
-                <!-- Blink challenge overlay — semi-transparent, video still visible beneath -->
-                <div id="circBlinkOverlay"
-                     style="display:none;position:absolute;inset:0;border-radius:50%;
-                            background:rgba(15,23,42,0.72);z-index:10;
-                            flex-direction:column;align-items:center;justify-content:center;gap:0.25rem">
-                    <span style="font-size:2.2rem">👁</span>
-                    <p style="color:#fff;font-size:0.9rem;font-weight:700;text-align:center;
-                              line-height:1.35">กะพริบตา 1 ครั้ง</p>
-                    <p id="circBlinkCountdown"
-                       style="color:#94a3b8;font-size:2rem;font-weight:700;
-                              font-variant-numeric:tabular-nums">3</p>
-                </div>
-            </div>
-        </div>
-
-        <p class="text-sm text-center font-medium mb-3" id="circularProgress"
-           style="color:#64748b">0/5 มุมเก็บแล้ว</p>
-
-        <!-- Restart button (shown by JS once camera is active) -->
-        <button id="btnCircularRestart" onclick="circularRestart()"
-                class="w-full text-xs py-2 mb-3 rounded-lg border border-slate-200
-                       hover:bg-slate-50 text-slate-400 transition-colors"
-                style="display:none">
-            ↺ เริ่มใหม่
-        </button>
-
-        <!-- Checking overlay (shown after all zones captured) -->
-        <div id="circularCheckingOverlay" style="display:none;text-align:center;padding:0.5rem 0 1rem">
-            <div class="spinner" style="margin:0 auto 0.5rem"></div>
-            <p class="text-sm text-slate-500">กำลังประมวลผล...</p>
-        </div>
-
-        <!-- Enrollment result (shown after POST to /api/enroll) -->
-        <div id="circResultSection" style="display:none;text-align:center;padding:1rem 0">
-            <div id="circSuccessView" style="display:none">
-                <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-8 h-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-                </div>
-                <h3 class="text-base font-semibold text-slate-800 mb-1">ลงทะเบียนสำเร็จ!</h3>
-                <p id="circSuccessMsg" class="text-sm text-slate-500 mb-5">บันทึกใบหน้าเรียบร้อยแล้ว</p>
-                <a href="{{ url_for('student.dashboard') }}"
-                   class="inline-flex items-center justify-center w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
-                    กลับหน้าหลัก
-                </a>
-            </div>
-            <div id="circErrorView" style="display:none">
-                <div class="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-8 h-8 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </div>
-                <h3 class="text-base font-semibold text-slate-800 mb-1">เกิดข้อผิดพลาด</h3>
-                <p id="circErrorMsg" class="text-sm text-rose-500 mb-5"></p>
-            </div>
-        </div>
-
-        <!-- Phase 2 test buttons: hidden but kept for debugging (display:none) -->
-        <div id="circularTestBtns" style="display:none">
-            <p class="text-xs text-center mb-2" style="color:#cbd5e1">— ทดสอบ UI —</p>
-            <div class="grid grid-cols-2 gap-2 mb-2">
-                <button onclick="circularMarkZone('FRONT')"
-                        class="text-xs py-2 px-3 rounded-lg border border-slate-200
-                               bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200
-                               hover:text-indigo-700 text-slate-600 transition-colors">
-                    Mark FRONT done
-                </button>
-                <button onclick="circularMarkZone('UP')"
-                        class="text-xs py-2 px-3 rounded-lg border border-slate-200
-                               bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200
-                               hover:text-indigo-700 text-slate-600 transition-colors">
-                    Mark UP done
-                </button>
-                <button onclick="circularMarkZone('RIGHT')"
-                        class="text-xs py-2 px-3 rounded-lg border border-slate-200
-                               bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200
-                               hover:text-indigo-700 text-slate-600 transition-colors">
-                    Mark RIGHT done
-                </button>
-                <button onclick="circularMarkZone('DOWN')"
-                        class="text-xs py-2 px-3 rounded-lg border border-slate-200
-                               bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200
-                               hover:text-indigo-700 text-slate-600 transition-colors">
-                    Mark DOWN done
-                </button>
-                <button onclick="circularMarkZone('LEFT')"
-                        class="text-xs py-2 px-3 rounded-lg border border-slate-200
-                               bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200
-                               hover:text-indigo-700 text-slate-600 col-span-2 transition-colors">
-                    Mark LEFT done
-                </button>
-            </div>
-            <button onclick="circularReset()"
-                    class="w-full text-xs py-2 rounded-lg border border-slate-200
-                           hover:bg-slate-50 text-slate-400 transition-colors">
-                ↺ Reset
-            </button>
-        </div>
-    </div>
-    {% endif %}
 
 </div>
 
@@ -421,9 +277,6 @@ const ENROLL_CONFIG = {
 </script>
 <script src="{{ url_for('static', filename='js/step4_failure_tracker.js') }}"></script>
 <script src="{{ url_for('static', filename='js/enrollment_flow.js') }}"></script>
-{% if flow_mode == "circular" %}
-<script src="{{ url_for('static', filename='js/enrollment_circular.js') }}"></script>
-{% endif %}
 <!-- enrollment_flow.js loaded above (T15: JS extracted from template) -->
 {% endblock %}
 

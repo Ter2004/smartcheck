@@ -158,8 +158,7 @@ def enroll_face():
     session.pop("enroll_retry", None)
     session.pop("consent_given_at", None)
     return render_template("student/enroll_face.html",
-                           already_enrolled=already_enrolled,
-                           flow_mode=current_app.config["ENROLL_FLOW_MODE"])
+                           already_enrolled=already_enrolled)
 
 
 @student_bp.route("/checkin")
@@ -173,8 +172,6 @@ def checkin():
     if not status["is_enrolled"]:
         flash("กรุณาลงทะเบียนใบหน้าก่อน", "warning")
         return redirect(url_for("student.enroll_face"))
-
-    baseline_ear = status.get("baseline_ear") or 0.25
 
     import datetime as _dt_mod
     _TH_S = _dt_mod.timezone(_dt_mod.timedelta(hours=7))
@@ -272,7 +269,6 @@ def checkin():
     return render_template(
         "student/checkin.html",
         session_data=session_data,
-        baseline_ear=baseline_ear,
         ios_warning=ios_warning,
         already_checked=already_checked,
         week_schedules=[],
@@ -655,13 +651,11 @@ def api_enroll():
         })
 
     # ── 8. Embedding consistency check (B1: multi-outlier aware) ─────────────
-    # Circular mode sends varied poses (front/right/left/up/down); cross-pose
-    # cosine similarity with FaceNet512 can be 0.75–0.85, so use a slightly
-    # lower threshold. Classic mode keeps the stricter 0.80 (all frontal frames).
-    _flow_mode = current_app.config["ENROLL_FLOW_MODE"]
-    _consistency_threshold = 0.75 if _flow_mode == "circular" else 0.80
+    # All five frames are frontal, so the strict 0.80 applies (the 0.75
+    # cross-pose variant went with the circular flow, removed 2026-09-30).
+    _consistency_threshold = 0.80
     _log(user_id, "consistency_threshold", "set",
-         f"flow_mode={_flow_mode} threshold={_consistency_threshold}")
+         f"threshold={_consistency_threshold}")
     consistency = check_embedding_consistency(embeddings, threshold=_consistency_threshold)
     averages_by_index = {
         item["frame"] - 1: item["average"]

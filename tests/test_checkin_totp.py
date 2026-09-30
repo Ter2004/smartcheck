@@ -194,6 +194,17 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.assertTrue(response.json['spoof'])
         self.assertEqual(self.db.records, [])
 
+    def test_no_face_is_a_retry_not_a_spoof_verdict(self):
+        with patch.object(route, 'combined_spoof_score',
+                          return_value={'is_real': False, 'retry_capture': True}), \
+             patch.object(route, 'is_system_failure', return_value=False):
+            response = self.post()
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn('spoof', response.json)
+        self.assertTrue(response.json['retry_face'])
+        self.assertIn('ไม่พบใบหน้า', response.json['error'])
+        self.assertEqual(self.db.records, [])
+
     def test_supplied_temporal_frames_cannot_enable_voting(self):
         from app.services import face_service as fs
         with patch.object(fs, 'detect_screen_moire', return_value={'avg_score': 0., 'is_screen': False}), \

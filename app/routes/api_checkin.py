@@ -241,6 +241,15 @@ def checkin():
                     "error": "ระบบตรวจสอบใบหน้าขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง หรือแจ้งเจ้าหน้าที่หากยังพบปัญหา",
                     "retry_face": True,
                 }), 503
+            if spoof_result.get("retry_capture"):
+                # FRR-2: Fasnet found no face (dim light, face off-centre). Not a
+                # spoof verdict, so do not tell the student a photo was detected.
+                reject("face_not_detected")
+                return jsonify({
+                    "ok": False,
+                    "error": "ไม่พบใบหน้าชัดเจน กรุณามองตรง จัดหน้าให้อยู่กลางกรอบ และเพิ่มแสงด้านหน้า",
+                    "retry_face": True,
+                }), 400
             reject("spoof_detected")
             return jsonify({
                 "ok": False,

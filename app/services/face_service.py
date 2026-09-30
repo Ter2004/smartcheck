@@ -15,27 +15,20 @@ NEW_DEVICE_THRESHOLD     = 0.80   # check-in, new / unbound device
 CONSISTENCY_THRESHOLD    = 0.80   # pairwise consistency during enrollment
 DUPLICATE_THRESHOLD      = 0.65   # reject if another student matches this closely
 CONTINUITY_THRESHOLD     = 0.80   # liveness -> capture identity continuity
-MOIRE_THRESHOLD          = 0.60   # high-freq energy ratio; above = likely screen replay (multi-frame /api/enroll)  # TODO: If False Rejections occur in low light due to camera noise, consider increasing this to 0.65 - 0.70.
-MOIRE_THRESHOLD_SINGLE   = 0.70   # middle ground — real faces 0.40-0.55, phone screens 0.55-0.75.
-                                  # With Fasnet as primary detector (35% weight), Moiré only needs to catch obvious cases.
 TEMPORAL_VAR_THRESHOLD   = 4.0   # historical, uncalibrated face-ROI reference
 # No calibrated face-crop separation range is retained. The former claim that
 # cropped real faces score ~15-25 is contradicted by a cooperative real session
 # measured at 3.609. Callers decide whether this reference is audit or enforcement.
 DUPLICATE_GRAY_ZONE      = (0.60, 0.70)  # log matches in this range for future tuning
-MOIRE_LOG_RANGE          = (0.45, 0.75)  # log FFT scores near the threshold
 
 # ─── Weighted spoof detection config ─────────────────────────────────────────
 # Each layer outputs spoof_score in [0.0, 1.0] where 0=real, 1=spoof.
 # Final decision: weighted sum > SPOOF_DECISION_THRESHOLD → reject.
 #
-# moire/texture excluded from the vote (FRR-1/F-15/Q-15 — see
-# docs/review/10-moire-frr-investigation.md §11-13): measured against 16
-# real+spoof samples, neither layer's best achievable threshold beats the
-# trivial "always real" baseline in either polarity. Still computed and
-# logged (layers["moire"]/["texture"] below, and the standalone gates in
-# api_checkin.py/student.py) for future recalibration — a layer that can't
-# separate the two classes on measured data shouldn't get a vote.
+# The Moiré and screen-texture FFT layers were removed on 2026-09-30. They
+# never beat the trivial "always real" baseline (16 samples, FRR-1/F-15/Q-15 in
+# docs/review/10-moire-frr-investigation.md), and on 2,000 CelebA-Spoof crops
+# their AUC was 0.50 and 0.53 (docs/evidence/eval-2026-09-30).
 SPOOF_WEIGHTS = {
     # 2026-08-26 rebalance (docs/review/10-moire-frr-investigation.md §13).
     # The prior comment here ("FFT layers more reliable than Fasnet") was
@@ -178,8 +171,7 @@ def _run_antispoof(img_bgr: np.ndarray) -> tuple:
     is_real    = (label == 1)
 
     # Confidence-margin guard: if argmax picks spoof but class 1 is a
-    # close runner-up, be lenient. Upstream Moiré + Screen Texture +
-    # Temporal Variance already catch obvious spoofs.
+    # close runner-up, be lenient.
     CONFIDENCE_MARGIN = 0.10
     sorted_probs = sorted(probs, reverse=True)
     margin = float(sorted_probs[0] - sorted_probs[1])
@@ -234,9 +226,8 @@ def combined_spoof_score(
     frames_for_temporal: list = None,
 ) -> dict:
     """
-    Run 5 anti-spoof layers; combine 3 of them (fasnet, temporal, onnx) into
-    a weighted score. Moiré and Texture are computed and logged but do NOT
-    vote — see FRR-1/F-15/Q-15 (docs/review/10-moire-frr-investigation.md).
+    Run the anti-spoof layers (fasnet, temporal, onnx) and combine them into a
+    weighted score. Temporal is audit-only (weight 0, TV-01).
 
     Args:
         img_bgr: single frame (primary input for single-frame checks)
@@ -246,44 +237,11 @@ def combined_spoof_score(
     Returns dict with keys: is_real, combined_score, threshold, layers,
     weights_used, disagreements.
 
-    Fail behavior: Moiré and Texture still fail-close in `layers` (score=1.0
-    on error) for audit consistency, but this has no decision effect since
-    neither votes. Fasnet, ONNX, Temporal fail-open (None → weight
+    Fail behavior: Fasnet, ONNX, Temporal fail-open (None → weight
     redistributed to 0). If ALL voting layers fail → fail-close (is_real=False).
     """
     layers = {}
     active_weights = dict(SPOOF_WEIGHTS)
-
-    # ── Layer 1: Moiré FFT (fail-close) ───────────────────────────────────
-    try:
-        moire = detect_screen_moire([img_bgr], threshold=MOIRE_THRESHOLD_SINGLE)
-        moire_avg = moire["avg_score"]
-        # Tightened gradient: real faces 0.35-0.45 → low spoof_score; phone screens ≥0.55 → 1.0
-        if moire_avg <= 0.35:
-            moire_spoof = 0.0
-        elif moire_avg >= MOIRE_THRESHOLD_SINGLE:
-            moire_spoof = 1.0
-        else:
-            moire_spoof = (moire_avg - 0.35) / (MOIRE_THRESHOLD_SINGLE - 0.35)
-        layers["moire"] = {
-            "spoof_score": round(moire_spoof, 4),
-            "avg_score": moire_avg,
-            "is_screen": moire["is_screen"],
-        }
-    except Exception as e:
-        _audit.error(f"[COMBINED_SPOOF] moire error fail-close: {type(e).__name__}")
-        layers["moire"] = {"spoof_score": 1.0, "avg_score": -1, "is_screen": True, "error": str(e)[:80]}
-
-    # ── Layer 2: Screen Texture FFT (fail-close) ───────────────────────────
-    try:
-        is_screen_tex = detect_screen_texture(img_bgr, min_peaks=30)
-        layers["texture"] = {
-            "spoof_score": 1.0 if is_screen_tex else 0.0,
-            "is_screen": is_screen_tex,
-        }
-    except Exception as e:
-        _audit.error(f"[COMBINED_SPOOF] texture error fail-close: {type(e).__name__}")
-        layers["texture"] = {"spoof_score": 1.0, "is_screen": True, "error": str(e)[:80]}
 
     # ── Layer 3: Temporal Variance (fail-open if no frames) ────────────────
     if frames_for_temporal is not None:
@@ -379,12 +337,6 @@ def combined_spoof_score(
     # Weighted scoring can be dominated by Fasnet when it's wrong.
     # If BOTH remaining voting layers independently flag suspicious, reject
     # immediately — real faces rarely trigger 2 layers at once.
-    #
-    # moire/texture excluded (FRR-1/F-15/Q-15): neither one's best achievable
-    # threshold beats "always real" on measured data, so they no longer vote
-    # here — still computed/logged above for future recalibration. The old
-    # "moire alone >=0.85" gate is removed for the same reason (it was a
-    # near-duplicate of the raw single-layer check at MOIRE_THRESHOLD_SINGLE).
 
     def _layer_suspicious(layer_data, threshold):
         score = layer_data.get("spoof_score")
@@ -409,9 +361,7 @@ def combined_spoof_score(
         _audit.warning(
             f"[COMBINED_SPOOF] PRE-HARDREJECT "
             f"all=[fasnet={layers['fasnet'].get('spoof_score')} "
-            f"moire={layers['moire'].get('spoof_score')} "
             f"temporal={layers['temporal'].get('spoof_score')} "
-            f"texture={layers['texture'].get('spoof_score')} "
             f"onnx={layers['onnx'].get('spoof_score')}] "
             f"suspicious={_pre_susp or ['none']} "
             f"count={suspicious_count} "
@@ -480,9 +430,7 @@ def combined_spoof_score(
         f"decision={'real' if is_real else 'spoof'} "
         f"layers=["
         f"fasnet={layers['fasnet'].get('spoof_score')}, "
-        f"moire={layers['moire'].get('spoof_score')}, "
         f"temporal={layers['temporal'].get('spoof_score')}, "
-        f"texture={layers['texture'].get('spoof_score')}, "
         f"onnx={layers['onnx'].get('spoof_score')}] "
         f"disagreements={disagreements or 'none'}"
     )
@@ -566,21 +514,6 @@ def extract_embedding(base64_image: str, include_metadata: bool = False):
         }
         return embedding, {"detector_crop": crop_box or None}
     return embedding
-
-
-def check_anti_spoof(base64_image: str) -> bool:
-    """
-    Real anti-spoof check using combined weighted score (5 layers).
-    Returns True if real face, False if spoof detected.
-    Fails-close on error (treats errors as spoof).
-    """
-    try:
-        img = _decode_image(base64_image)
-        result = combined_spoof_score(img)
-        return result["is_real"]
-    except Exception as e:
-        _audit.error(f"[ANTISPOOF] check_anti_spoof fail-close: {type(e).__name__}")
-        return False
 
 
 def spoof_check_with_embedding(base64_image: str) -> dict:
@@ -706,136 +639,6 @@ def max_similarity_multi(live_emb: list, stored_embeddings: list) -> float:
     if not stored_embeddings:
         return 0.0
     return max(cosine_similarity(live_emb, emb) for emb in stored_embeddings)
-
-
-def _adaptive_moire_threshold(frames: list, base: float = MOIRE_THRESHOLD) -> float:
-    """
-    B8: Adjust Moiré threshold based on average frame brightness.
-
-    Dark frames (<60 mean) → raise threshold by up to +0.05 to avoid false positives
-    from JPEG compression noise amplified in low light.
-    Bright frames (>180 mean) → lower threshold by up to -0.03 (screens glow brighter).
-    """
-    if not frames:
-        return base
-    brightness_vals = []
-    for frame in frames:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        brightness_vals.append(float(np.mean(gray)))
-    avg_brightness = sum(brightness_vals) / len(brightness_vals)
-
-    if avg_brightness < 60:
-        # Very dark — loosen threshold proportionally (max +0.05)
-        adjust = 0.05 * (1.0 - avg_brightness / 60.0)
-    elif avg_brightness > 180:
-        # Very bright / screen-like — tighten threshold proportionally (max -0.03)
-        adjust = -0.03 * ((avg_brightness - 180.0) / 75.0)
-    else:
-        adjust = 0.0
-
-    result = round(max(0.50, min(0.75, base + adjust)), 4)
-    if adjust != 0.0:
-        _audit.debug(f"[MOIRE] adaptive threshold: brightness={avg_brightness:.1f} adjust={adjust:+.4f} threshold={result}")
-    return result
-
-
-def detect_screen_moire(frames: list, threshold: float | None = None) -> dict:
-    """
-    Detect screen replay attacks via FFT-based moiré analysis.
-    Real faces have smooth frequency spectra; screens have periodic peaks from pixel grids.
-
-    Args:
-        frames: list of BGR numpy arrays (3-5 frames from enrollment or 1 from check-in)
-        threshold: override threshold (None → use adaptive threshold based on brightness)
-    Returns:
-        { is_screen: bool, avg_score: float, per_frame: list[float] }
-    """
-    effective_threshold = threshold if threshold is not None else _adaptive_moire_threshold(frames)
-
-    scores = []
-    for frame in frames:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        # Resize to fixed size for consistent FFT results
-        gray = cv2.resize(gray, (256, 256))
-
-        f_transform = np.fft.fft2(gray.astype(np.float32))
-        f_shift     = np.fft.fftshift(f_transform)
-        magnitude   = np.abs(f_shift)
-
-        h, w   = magnitude.shape
-        cy, cx = h // 2, w // 2
-        low_r  = int(min(h, w) * 0.10)  # centre 20% of spectrum = low-frequency
-
-        low_mask = np.zeros_like(magnitude, dtype=bool)
-        low_mask[cy - low_r:cy + low_r, cx - low_r:cx + low_r] = True
-
-        total_energy = float(np.sum(magnitude))
-        low_energy   = float(np.sum(magnitude[low_mask]))
-        high_energy  = total_energy - low_energy
-
-        ratio = high_energy / (total_energy + 1e-8)
-        scores.append(ratio)
-
-    avg_score = sum(scores) / len(scores)
-    if MOIRE_LOG_RANGE[0] <= avg_score <= MOIRE_LOG_RANGE[1]:
-        _audit.info(f"[MOIRE] near-threshold avg_score={avg_score:.4f} threshold={effective_threshold}")
-    return {
-        "is_screen":  avg_score > effective_threshold,
-        "avg_score":  round(avg_score, 4),
-        "per_frame":  [round(s, 4) for s in scores],
-        "threshold":  effective_threshold,
-    }
-
-
-def detect_screen_texture(
-    img_bgr: np.ndarray,
-    peak_threshold_multiplier: float = 3.0,
-    min_peaks: int = 50,
-) -> bool:
-    """
-    Detect periodic pixel-grid pattern of phone/monitor screens via FFT peak counting.
-    Complements Moiré FFT — catches high-res OLED screens that have low overall
-    high-freq energy but still show periodic spikes.
-    Returns True if a screen is detected.
-
-    Tune min_peaks (default 50) by testing against real faces vs phone screens;
-    OLED screens typically score 80-200+, real faces 5-30.
-    """
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    # Resize to fixed 256×256 so peak count is resolution-independent
-    gray = cv2.resize(gray, (256, 256))
-    f = np.fft.fft2(gray.astype(np.float32))
-    fshift = np.fft.fftshift(f)
-    magnitude = np.log(np.abs(fshift) + 1)
-
-    h, w = magnitude.shape
-    center_y, center_x = h // 2, w // 2
-    mask_radius = min(h, w) // 4
-
-    # Zero out low-frequency centre, keep only high-frequency ring
-    high_freq = magnitude.copy()
-    high_freq[
-        center_y - mask_radius: center_y + mask_radius,
-        center_x - mask_radius: center_x + mask_radius,
-    ] = 0
-
-    # F-15 fix: mean/std for the outlier threshold must come from the
-    # high-frequency ring only. Computing them over the full array (as
-    # before) mixes the masked-out centre — 25% of the array forced to
-    # exactly 0 — into the statistics, which inflates threshold past
-    # anything the ring can reach regardless of input.
-    ring_mask = np.ones_like(high_freq, dtype=bool)
-    ring_mask[
-        center_y - mask_radius: center_y + mask_radius,
-        center_x - mask_radius: center_x + mask_radius,
-    ] = False
-    ring_values = high_freq[ring_mask]
-
-    threshold = np.mean(ring_values) + peak_threshold_multiplier * np.std(ring_values)
-    num_peaks = int(np.sum(high_freq > threshold))
-    _audit.debug(f"[SCREEN_TEXTURE] num_peaks={num_peaks} threshold_multiplier={peak_threshold_multiplier}")
-    return num_peaks > min_peaks
 
 
 def server_validate_frame(frame_b64: str) -> dict:

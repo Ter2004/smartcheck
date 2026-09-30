@@ -339,16 +339,16 @@ def api_enroll():
       3.  Zero-trust frame validation: server_validate_frame x5
       4.  Pre-duplicate check (vs session["liveness_embeddings"])
       5.  Decode all 5 frames (_decode_image)
-      6.  Moiré FFT: detect_screen_moire, all 5 frames
-      7.  Screen Texture Detection: detect_screen_texture, all 5 frames (>=2/5)
-      8.  Temporal variance: detect_static_image
-      9.  EAR std (client-reported, logged only — not blocking)
-      10. MiniFASNet Anti-Spoof: combined_spoof_score x5 (>=4/5 must pass)
-      11. Extract FaceNet512 embeddings (all 5 frames, face detection happens here)
-      12. Embedding consistency check (B1: handles multi-outlier)
-      13. Face continuity vs session["liveness_embeddings"] (CONTINUITY_THRESHOLD)
-      14. Duplicate face check (A6: gray-zone logging)
-      15. Save to DB (enrollment final) + profile image upload
+      6.  Temporal variance: detect_static_image (logged only)
+      7.  EAR std (client-reported, logged only — not blocking)
+      8.  MiniFASNet Anti-Spoof: combined_spoof_score x5 (>=4/5 must pass)
+      9.  Extract FaceNet512 embeddings (all 5 frames, face detection happens here)
+      10. Embedding consistency check (B1: handles multi-outlier)
+      11. Face continuity vs session["liveness_embeddings"] (CONTINUITY_THRESHOLD)
+      12. Duplicate face check (A6: gray-zone logging)
+      13. Save to DB (enrollment final) + profile image upload
+    (Moiré / screen-texture FFT removed 2026-09-30: no separation on CelebA-Spoof,
+    docs/evidence/eval-2026-09-30.)
 
     Response statuses:
       enrolled         : all 5 consistent, saved and final (consent_given=True)
@@ -359,7 +359,7 @@ def api_enroll():
     """
     from app.services.face_service import (
         extract_embedding, check_embedding_consistency,
-        max_similarity_multi, detect_screen_moire, detect_screen_texture,
+        max_similarity_multi,
         detect_static_image, combined_spoof_score, is_system_failure,
         _decode_image, server_validate_frame,
     )
@@ -534,26 +534,6 @@ def api_enroll():
     except Exception as e:
         return jsonify({"status": "error", "message": "ไม่สามารถอ่านรูปภาพได้"}), 400
 
-    # ── 4. Moiré FFT (all 5 frames) — computed + logged only, does not reject (FRR-1/F-15/Q-15) ──
-    moire_checked = False
-    try:
-        moire = detect_screen_moire(raw_frames)
-        moire_checked = True
-        _log(user_id, "moire_fft", "screen" if moire["is_screen"] else "pass",
-             f"avg_score={moire['avg_score']}")
-    except Exception as e:
-        _log(user_id, "moire_fft", "error_log_only",
-             f"error={str(e)[:80]} decision=log_only")
-
-    # ── 5. Screen Texture Detection (A3, all 5 frames) — computed + logged only, does not reject ──
-    try:
-        screen_count = sum(1 for f in raw_frames if detect_screen_texture(f, min_peaks=30))
-        _log(user_id, "screen_texture", "screen" if screen_count >= 2 else "pass",
-             f"screen_frames={screen_count}/5")
-    except Exception as e:
-        _log(user_id, "screen_texture", "error_log_only",
-             f"error={str(e)[:80]} decision=log_only")
-
     # ── 5b. Temporal variance — detect static photo / phone screen ───────────
     try:
         temporal = detect_static_image(raw_frames)
@@ -584,8 +564,7 @@ def api_enroll():
 
     # ── 6. MiniFASNet Anti-Spoof (A2: all 5 frames) — fail-close ─────────────
     # Require MIN_SPOOF_PASS frames to pass; exception = fail, not skip
-    # Calls combined_spoof_score() directly (not the check_anti_spoof() bool wrapper)
-    # so is_system_failure() can tell "Fasnet crashed" apart from "Fasnet said spoof"
+    # Uses the full combined_spoof_score() result so is_system_failure() can tell "Fasnet crashed" apart from "Fasnet said spoof"
     # — F-16, docs/review/10-moire-frr-investigation.md §16. raw_frames[idx] is
     # already-decoded (step 3 above) — no need to re-decode face_images[idx].
     MIN_SPOOF_PASS = 4   # at least 4/5 frames must clear MiniFASNet
@@ -881,9 +860,7 @@ def api_spoof_check():
     """
     import base64 as _b64
     from app.services.face_service import (
-        spoof_check_with_embedding, server_validate_frame,
-        detect_screen_moire, detect_screen_texture, _decode_image,
-        MOIRE_THRESHOLD_SINGLE,
+        spoof_check_with_embedding, server_validate_frame, _decode_image,
     )
 
     user_id = session["user_id"]
@@ -912,23 +889,6 @@ def api_spoof_check():
     except Exception as e:
         return jsonify({"is_real": False,
                         "message": "อ่านรูปภาพไม่ได้"}), 400
-
-    # ── 3. Single-frame Moiré FFT — audit-only; verdict/error never rejects ──
-    try:
-        moire = detect_screen_moire([raw], threshold=MOIRE_THRESHOLD_SINGLE)
-        _log(user_id, "liveness_moire", "screen" if moire["is_screen"] else "pass",
-             f"score={moire['avg_score']} threshold={MOIRE_THRESHOLD_SINGLE}")
-    except Exception as e:
-        _log(user_id, "liveness_moire", "error_log_only",
-             f"error={str(e)[:80]} decision=log_only")
-
-    # ── 4. Single-frame screen texture — audit-only; verdict/error never rejects ──
-    try:
-        is_screen_tex = detect_screen_texture(raw, min_peaks=30)
-        _log(user_id, "liveness_texture", "screen" if is_screen_tex else "pass", "")
-    except Exception as e:
-        _log(user_id, "liveness_texture", "error_log_only",
-             f"error={str(e)[:80]} decision=log_only")
 
     # ── 5. Accumulated temporal variance (สะสม thumbnail ใน session) ─────────
     # เก็บ 64×64 grayscale PNG (~1-2 KB ต่อเฟรม) เพื่อเช็ค inter-frame variance

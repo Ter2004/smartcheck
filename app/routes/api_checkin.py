@@ -12,10 +12,8 @@ from app.services.request_audit import RequestLogger, audited_checkin, event, re
 _log = RequestLogger(logging.getLogger("smartcheck.checkin"), {})
 from app.services.face_service import (
     extract_embedding, verify_face_multi,
-    check_anti_spoof, combined_spoof_score,
-    is_system_failure,
-    detect_screen_moire, detect_screen_texture,
-    MOIRE_THRESHOLD_SINGLE, _decode_image, server_validate_frame,
+    combined_spoof_score, is_system_failure,
+    _decode_image, server_validate_frame,
     SAME_DEVICE_THRESHOLD, NEW_DEVICE_THRESHOLD,
 )
 from app.services.security_service import (
@@ -163,28 +161,18 @@ def checkin():
             "error": "ข้อมูลตรวจสอบความมีชีวิตไม่ถูกต้อง กรุณาลองใหม่",
             "retry_face": True,
         }), 400
-    _perf["ear"] = round((time.perf_counter() - _t3) * 1000, 2); _t4 = time.perf_counter()
+    _perf["ear"] = round((time.perf_counter() - _t3) * 1000, 2)
 
-    # ─── 4a. Moiré (computed + logged only — FRR-1/F-15/Q-15, does not reject) ───
+    # ─── 4a. Decode the frame ─────────────────────────────────────────────────
     try:
         raw_frame = _decode_image(face_image)
     except Exception as error:
         reject("frame_decode_error", exception_type=type(error).__name__)
         return jsonify(ok=False, error="\u0e44\u0e21\u0e48\u0e2a\u0e32\u0e21\u0e32\u0e23\u0e16\u0e2d\u0e48\u0e32\u0e19\u0e20\u0e32\u0e1e\u0e44\u0e14\u0e49 \u0e01\u0e23\u0e38\u0e13\u0e32\u0e16\u0e48\u0e32\u0e22\u0e43\u0e2b\u0e21\u0e48", retry_face=True), 400
-    try:
-        moire       = detect_screen_moire([raw_frame], threshold=MOIRE_THRESHOLD_SINGLE)
-        _log.info(f"[MOIRE] avg_score={moire['avg_score']} is_screen={moire['is_screen']} threshold={MOIRE_THRESHOLD_SINGLE}")
-    except Exception as moire_err:
-        event("moire", "error_log_only", exception_type=type(moire_err).__name__, decision="log_only")
-    _perf["moire"] = round((time.perf_counter() - _t4) * 1000, 2); _t5 = time.perf_counter()
-
-    # ─── 4a-2. Screen Texture (computed + logged only — FRR-1/F-15/Q-15, does not reject) ───
-    try:
-        is_screen_tex = detect_screen_texture(raw_frame, min_peaks=30)
-        _log.info(f"[SCREEN_TEXTURE] is_screen={is_screen_tex}")
-    except Exception as tex_err:
-        event("texture", "error_log_only", exception_type=type(tex_err).__name__, decision="log_only")
-    _perf["texture"] = round((time.perf_counter() - _t5) * 1000, 2); _t6 = time.perf_counter()
+    # Moiré and screen-texture FFT layers were removed: they separated live from
+    # spoof no better than chance (AUC 0.50/0.53 on 2,000 CelebA-Spoof crops,
+    # docs/evidence/eval-2026-09-30; FRR-1/F-15 in docs/review/10-moire-frr-investigation.md).
+    _t6 = time.perf_counter()
 
     # ─── 4a-3. Temporal variance (uncalibrated audit only) ─
     face_images_list = data.get("face_images")
@@ -457,7 +445,7 @@ def checkin():
     _perf["total"] = round((time.perf_counter() - _t0) * 1000, 2)
     _log.info(
         "[PERF] total={total}ms validate={validate}ms session={session}ms "
-        "ear={ear}ms moire={moire}ms texture={texture}ms temporal={temporal}ms "
+        "ear={ear}ms temporal={temporal}ms "
         "fasnet={fasnet}ms onnx={onnx}ms embed={embed}ms verify={verify}ms db={db}ms".format(**_perf)
     )
 

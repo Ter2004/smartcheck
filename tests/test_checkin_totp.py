@@ -55,8 +55,6 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.stack.enter_context(patch.object(totp.time, 'time', return_value=NOW))
         for name, result in {
             'server_validate_frame': {'valid': True},
-            'detect_screen_moire': {'avg_score': 0., 'is_screen': False},
-            'detect_screen_texture': False,
             'combined_spoof_score': {'is_real': True},
             'extract_embedding': [1., 0.],
             'verify_face_multi': {'verified': True, 'best_similarity': 1., 'avg_similarity': 1.},
@@ -179,11 +177,6 @@ class IntegratedTOTPTests(unittest.TestCase):
             with self.subTest(frames=frames), self.assertLogs('smartcheck', level='INFO') as logs:
                 self.assertEqual(self.post().status_code, 200)
             self.assertIn('log_only', '\n'.join(logs.output))
-        for name in ['detect_screen_moire', 'detect_screen_texture']:
-            with patch.object(route, name, side_effect=RuntimeError('audit failure')):
-                with self.assertLogs('smartcheck', level='INFO') as logs:
-                    self.assertEqual(self.post().status_code, 200)
-            self.assertIn('error_log_only', '\n'.join(logs.output))
 
     def test_model_rejection_still_blocks_with_low_temporal_variance(self):
         self.payload['face_images'] = ['20', '20']
@@ -207,9 +200,7 @@ class IntegratedTOTPTests(unittest.TestCase):
 
     def test_supplied_temporal_frames_cannot_enable_voting(self):
         from app.services import face_service as fs
-        with patch.object(fs, 'detect_screen_moire', return_value={'avg_score': 0., 'is_screen': False}), \
-             patch.object(fs, 'detect_screen_texture', return_value=False), \
-             patch.object(fs, '_run_fasnet_antispoof', return_value=(True, .01)), \
+        with patch.object(fs, '_run_fasnet_antispoof', return_value=(True, .01)), \
              patch.object(fs, '_run_antispoof', return_value=(True, .99)), \
              patch.object(fs, 'detect_static_image', return_value={'is_static': True, 'temporal_variance': 0.}):
             baseline = fs.combined_spoof_score(np.zeros((64, 64, 3), dtype=np.uint8))

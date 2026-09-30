@@ -9,9 +9,7 @@ from app.services import face_service as service
 class FaceDetectionRetryTests(unittest.TestCase):
     def test_missing_face_requests_new_frame_without_system_failure(self):
         with patch.object(service, '_decode_image', return_value=np.zeros((80, 80, 3), dtype=np.uint8)), \
-             patch.object(service, '_run_fasnet_antispoof', side_effect=service.FaceNotDetectedError()), \
-             patch.object(service, 'detect_screen_moire', return_value={'avg_score': 0, 'is_screen': False}), \
-             patch.object(service, 'detect_screen_texture', return_value=False):
+             patch.object(service, '_run_fasnet_antispoof', side_effect=service.FaceNotDetectedError()):
             result = service.spoof_check_with_embedding('test')
         self.assertTrue(result['retry_capture'])
         self.assertFalse(result['system_failure'])

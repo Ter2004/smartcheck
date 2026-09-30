@@ -53,8 +53,8 @@ All application data access uses `supabase_admin`. `supabase` (anon) is used onl
 ### Face pipeline (`app/services/face_service.py`)
 The core AI pipeline runs entirely server-side:
 1. `server_validate_frame()` — zero-trust JPEG validation (size, magic bytes, blur, color variance)
-2. `combined_spoof_score()` — only Fasnet (0.70) and ONNX (0.10) vote; Moiré, screen texture and temporal variance are computed and logged only. Fasnet unavailable → fail-close.
-3. `extract_embedding()` — CLAHE normalization → FaceNet512 (512-D vector) via DeepFace
+2. `combined_spoof_score()` — only Fasnet (0.70) and ONNX (0.10) vote; temporal variance is computed and logged only. Fasnet unavailable → fail-close. (Moiré and screen-texture FFT layers were removed 2026-09-30 — no separation on CelebA-Spoof, see `docs/evidence/eval-2026-09-30/`.)
+3. `extract_embedding()` — CLAHE normalization → FaceNet512 (512-D vector) via DeepFace, on the largest detected face
 4. `verify_face_multi()` — cosine similarity against all stored embeddings; decision on best (not average)
 
 Liveness is decided server-side by a head-gesture challenge (`app/services/liveness_challenge.py`): the server picks random distinct gestures from `ACTIONS` (turn left/right; tilt left/right is implemented and calibrated via `scripts/calibrate_tilt.py` but switched off), RetinaFace landmarks confirm each one (yaw along the eye line; tilt as roll change from the frontal frame) and FaceNet on a level-rotated crop confirms the same face. Enrollment uses two gestures (`/student/api/liveness/*`; `/api/enroll` requires a pass within 15 min). Check-in uses one (`/api/checkin/liveness/challenge`) verified inside `/api/checkin` against the submitted frame. `CHECKIN_LIVENESS=passive` reverts check-in to hands-free capture.

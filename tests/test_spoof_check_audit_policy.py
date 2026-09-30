@@ -106,7 +106,7 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
         self.image = np.zeros((480, 640, 3), dtype=np.uint8)
         self.payload = {"image": _jpeg_data_url(self.image)}
 
-    def _enroll_patches(self, *, moire=None, texture=None, temporal=None):
+    def _enroll_patches(self, *, temporal=None):
         from app.services import face_service
 
         stack = ExitStack()
@@ -121,16 +121,6 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
             "valid": True, "reason": "passed", "metadata": {}
         }))
         stack.enter_context(patch.object(face_service, "_decode_image", return_value=self.image))
-        stack.enter_context(patch.object(
-            face_service, "detect_screen_moire",
-            side_effect=moire if isinstance(moire, Exception) else None,
-            return_value={"is_screen": False, "avg_score": 0.1},
-        ))
-        stack.enter_context(patch.object(
-            face_service, "detect_screen_texture",
-            side_effect=texture if isinstance(texture, Exception) else None,
-            return_value=False,
-        ))
         stack.enter_context(patch.object(
             face_service, "detect_static_image",
             side_effect=temporal if isinstance(temporal, Exception) else None,
@@ -165,7 +155,7 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
             "ear_std": ear_std,
         })
 
-    def _route_patches(self, *, moire=None, texture=None, validation=None):
+    def _route_patches(self, *, validation=None):
         from app.services import face_service
 
         stack = ExitStack()
@@ -181,16 +171,6 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
             return_value=validation or {"valid": True, "reason": "passed", "metadata": {}},
         ))
         stack.enter_context(patch.object(face_service, "_decode_image", return_value=self.image))
-        stack.enter_context(patch.object(
-            face_service, "detect_screen_moire",
-            side_effect=moire if isinstance(moire, Exception) else None,
-            return_value=moire if isinstance(moire, dict) else {"is_screen": False, "avg_score": 0.1},
-        ))
-        stack.enter_context(patch.object(
-            face_service, "detect_screen_texture",
-            side_effect=texture if isinstance(texture, Exception) else None,
-            return_value=False if texture is None else texture,
-        ))
         stack.enter_context(patch.object(face_service, "spoof_check_with_embedding", downstream))
         stack.enter_context(patch.object(student, "_log", audit_log))
         return stack, downstream, audit_log
@@ -210,22 +190,6 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
         self.assertIn("frames=3", details)
         self.assertIn("reference_threshold=6.0", details)
         self.assertIn("decision=log_only", details)
-
-    def test_audit_only_moire_and_texture_exceptions_do_not_terminate(self):
-        for failing_layer in ("moire", "texture"):
-            with self.subTest(layer=failing_layer):
-                kwargs = {failing_layer: RuntimeError(f"{failing_layer} audit failed")}
-                stack, downstream, audit_log = self._route_patches(**kwargs)
-                with stack:
-                    response = self.client.post("/probe", json=self.payload)
-                self.assertEqual(response.status_code, 200)
-                downstream.assert_called_once()
-                error_logs = [
-                    call for call in audit_log.call_args_list
-                    if call.args[1] == f"liveness_{failing_layer}"
-                ]
-                self.assertEqual(error_logs[0].args[2], "error_log_only")
-                self.assertIn("decision=log_only", error_logs[0].args[3])
 
     def test_final_and_checkin_temporal_are_log_only(self):
         checkin_source = (ROOT / "app/routes/api_checkin.py").read_text(encoding="utf-8")
@@ -254,7 +218,7 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
                     self.assertLessEqual(len(node.args), 1)
 
     def test_final_audit_exceptions_do_not_terminate(self):
-        for layer in ("moire", "texture", "temporal"):
+        for layer in ("temporal",):
             with self.subTest(layer=layer):
                 stack, combined, audit_log = self._enroll_patches(**{
                     layer: RuntimeError(f"{layer} failed")
@@ -264,7 +228,7 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.get_json()["status"], "enrolled")
                 self.assertEqual(combined.call_count, 5)
-                step = {"moire": "moire_fft", "texture": "screen_texture", "temporal": "temporal_var"}[layer]
+                step = "temporal_var"
                 error_log = next(call for call in audit_log.call_args_list if call.args[1] == step)
                 self.assertEqual(error_log.args[2], "error_log_only")
                 self.assertIn("decision=log_only", error_log.args[3])

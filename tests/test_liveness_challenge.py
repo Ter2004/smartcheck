@@ -56,7 +56,7 @@ class ChallengeTests(unittest.TestCase):
         return lc.verify(ch, nonce, before, actions, after, now=now, analyze=fake_analyze)
 
     def test_new_challenge_picks_distinct_gestures_from_actions(self):
-        self.assertEqual(lc.ACTIONS, ("turn_left", "turn_right"))      # tilts are off for now
+        self.assertEqual(lc.ACTIONS, ("turn_left", "turn_right", "tilt_left", "tilt_right"))
         picks = [lc.new_challenge(now=NOW, rng=random.Random(s))["actions"] for s in range(200)]
         self.assertTrue(all(len(p) == lc.ENROLL_ACTIONS == 2 and len(set(p)) == 2 for p in picks))
         self.assertEqual({a for p in picks for a in p}, set(lc.ACTIONS))

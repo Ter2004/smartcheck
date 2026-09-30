@@ -56,7 +56,7 @@ class LivenessRouteTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.json['actions']), 2)                      # two distinct gestures
         self.assertEqual(len(set(r.json['actions'])), 2)
-        self.assertEqual(set(r.json['actions']), {'turn_left', 'turn_right'})
+        self.assertTrue(set(r.json['actions']) <= {'turn_left', 'turn_right', 'tilt_left', 'tilt_right'})
         stored = self.session()
         self.assertEqual(stored['liveness_challenge']['nonce'], r.json['nonce'])
         self.assertNotIn('liveness_embeddings', stored)

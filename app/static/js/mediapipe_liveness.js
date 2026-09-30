@@ -7,8 +7,8 @@
  *
  * Supported actions:
  *   'smile'         — ยิ้ม (mouth-width ratio)
- *   'turn_left'     — หันซ้าย (nose yaw < 0.38)
- *   'turn_right'    — หันขวา (nose yaw > 0.62)
+ *   'turn_left'     — หันซ้าย (noseRelX > 0.65)
+ *   'turn_right'    — หันขวา (noseRelX < 0.35)
  *   'nod'           — พยักหน้า (pitch swing ≥15°)
  *   'raise_eyebrows'— ยกคิ้ว (brow-to-eye distance +20%)
  */
@@ -81,7 +81,9 @@ function buildActionChecker(action, video) {
 
     if (action === 'turn_left') {
         // In mirrored selfie view: user turns left → nose moves to screen-right → relX increases
-        const TURN_THRESHOLD = 0.62;
+        // 0.65/0.35, not 0.62/0.38: at 0.38 the server once measured yaw -0.184, short of
+        // its 0.20 (2026-09-30 webcam log), so frames the browser accepts must turn further.
+        const TURN_THRESHOLD = 0.65;
         const TURN_FRAMES    = 3;   // 3 frames (was 5 — reduced for faster response)
         let turnFrames = 0;
         return {
@@ -100,7 +102,7 @@ function buildActionChecker(action, video) {
 
     if (action === 'turn_right') {
         // user turns right → nose moves to screen-left → relX decreases
-        const TURN_THRESHOLD = 0.38;
+        const TURN_THRESHOLD = 0.35;
         const TURN_FRAMES    = 3;   // 3 frames (was 5 — reduced for faster response)
         let turnFrames = 0;
         return {

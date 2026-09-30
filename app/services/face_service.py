@@ -76,6 +76,71 @@ def _largest_face(faces):
     return max(faces, key=area)
 
 
+# ─── Face detection for embeddings and Fasnet ─────────────────────────────────
+# RetinaFace, as in the head-turn check, on a copy no larger than DETECT_MAX_SIDE
+# and without upscaling: DeepFace's own "retinaface" backend upscales every frame
+# to 1024 px (~750 ms on CPU). OpenCV's Haar cascade, used until 2026-09-30,
+# missed or misplaced the face in 9+ frames of one webcam enrollment in which
+# RetinaFace found it every time (docs/evidence/eval-2026-09-30).
+DETECT_MAX_SIDE = 480
+MIN_FACE_SCORE  = 0.9
+# Same text as DeepFace, which _log_face_exception and callers match on.
+_NO_FACE_MSG = "Face could not be detected in numpy array."
+
+
+def _detect_main_face(img_bgr: np.ndarray):
+    """(x, y, w, h), left_eye, right_eye of the largest face, in img_bgr pixels.
+
+    Eyes follow DeepFace's convention (the person's own left/right).
+    Raises ValueError(_NO_FACE_MSG) when there is no face.
+    """
+    from retinaface import RetinaFace
+
+    h, w = img_bgr.shape[:2]
+    scale = min(1.0, DETECT_MAX_SIDE / max(h, w))
+    small = img_bgr if scale == 1.0 else cv2.resize(
+        img_bgr, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+    with _deepface_lock:
+        faces = RetinaFace.detect_faces(small, threshold=MIN_FACE_SCORE, allow_upscaling=False)
+    if not isinstance(faces, dict) or not faces:
+        raise ValueError(_NO_FACE_MSG)
+    face = max(faces.values(), key=lambda f: (f["facial_area"][2] - f["facial_area"][0])
+                                             * (f["facial_area"][3] - f["facial_area"][1]))
+    x1, y1, x2, y2 = (v / scale for v in face["facial_area"])
+    x, y = max(0, int(x1)), max(0, int(y1))
+    box = (x, y, min(w - x - 1, int(x2 - x1)), min(h - y - 1, int(y2 - y1)))
+    eyes = [tuple(int(v / scale) for v in face["landmarks"][k][:2]) for k in ("left_eye", "right_eye")]
+    return box, eyes[0], eyes[1]
+
+
+def _aligned_face(img_bgr: np.ndarray, box, left_eye, right_eye) -> np.ndarray:
+    """The face rotated level and cropped exactly as DeepFace's detect-and-align does."""
+    from deepface.modules.detection import align_img_wrt_eyes, project_facial_area
+
+    h, w = img_bgr.shape[:2]
+    bh, bw = int(0.5 * h), int(0.5 * w)
+    padded = cv2.copyMakeBorder(img_bgr, bh, bh, bw, bw, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+    x, y, fw, fh = box
+    aligned, angle = align_img_wrt_eyes(img=padded, left_eye=(left_eye[0] + bw, left_eye[1] + bh),
+                                        right_eye=(right_eye[0] + bw, right_eye[1] + bh))
+    x1, y1, x2, y2 = project_facial_area(facial_area=(x + bw, y + bh, x + bw + fw, y + bh + fh),
+                                         angle=angle, size=(padded.shape[0], padded.shape[1]))
+    return aligned[int(y1):int(y2), int(x1):int(x2)]
+
+
+def _face_embedding(img_bgr: np.ndarray):
+    """(FaceNet512 embedding, box) of the largest face. Raises ValueError without a face."""
+    box, left_eye, right_eye = _detect_main_face(img_bgr)
+    crop = _aligned_face(img_bgr, box, left_eye, right_eye)
+    if crop.size == 0:
+        raise ValueError(_NO_FACE_MSG)
+    # With detector_backend="skip" DeepFace flips channels once (it expects the RGB
+    # face its detectors return), so pass RGB to feed FaceNet what it always got.
+    rep = _call_deepface("represent", img_path=np.ascontiguousarray(crop[:, :, ::-1]),
+                         model_name="Facenet512", enforce_detection=False, detector_backend="skip")
+    return rep[0]["embedding"], box
+
+
 def _log_face_exception(stage, error):
     # Do not log exception messages: upstream errors can include image inputs.
     # A stable reason and stack locations still identify detector/model failures.
@@ -201,17 +266,13 @@ def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
     On exception returns (None, None) — caller redistributes weight.
     """
     try:
-        faces = _call_deepface("extract_faces",
-            img_path=img_bgr,
-            detector_backend="opencv",
-            anti_spoofing=True,
-            enforce_detection=True,
-        )
-        if not faces:
-            return None, None
-        face = _largest_face(faces)
-        is_real   = bool(face.get("is_real", False))
-        raw_score = float(face.get("antispoof_score", 0.5))
+        box, _, _ = _detect_main_face(img_bgr)
+        with _deepface_lock:
+            from deepface.modules import modeling
+            fasnet = modeling.build_model(task="spoofing", model_name="Fasnet")
+            is_real, raw_score = fasnet.analyze(img=img_bgr, facial_area=box)
+        is_real   = bool(is_real)
+        raw_score = float(raw_score)
         spoof_score = (1.0 - raw_score) if is_real else raw_score
         spoof_score = max(0.0, min(1.0, spoof_score))
         return is_real, spoof_score
@@ -493,26 +554,9 @@ def extract_embedding(base64_image: str, include_metadata: bool = False):
     img = _decode_image(base64_image)
     img = normalize_illumination(img)
 
-    result = _call_deepface("represent",
-        img_path=img,
-        model_name="Facenet512",
-        enforce_detection=True,
-        detector_backend="opencv",
-    )
-
-    if not result:
-        raise ValueError("ตรวจไม่เจอใบหน้าในรูป")
-
-    face = _largest_face(result)
-    embedding = face["embedding"]
+    embedding, (x, y, w, h) = _face_embedding(img)
     if include_metadata:
-        facial_area = face.get("facial_area") or {}
-        crop_box = {
-            key: facial_area.get(key)
-            for key in ("x", "y", "w", "h")
-            if facial_area.get(key) is not None
-        }
-        return embedding, {"detector_crop": crop_box or None}
+        return embedding, {"detector_crop": {"x": x, "y": y, "w": w, "h": h}}
     return embedding
 
 
@@ -548,19 +592,10 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
     embedding = None
     error_msg = ""
     try:
-        img_clahe = normalize_illumination(img)
-        rep = _call_deepface("represent",
-            img_path=img_clahe,
-            model_name="Facenet512",
-            enforce_detection=True,
-            detector_backend="opencv",
-        )
-        embedding = _largest_face(rep)["embedding"] if rep else None
-        if embedding is None:
-            error_msg = "ไม่พบใบหน้าในภาพ"
+        embedding, _ = _face_embedding(normalize_illumination(img))
     except Exception as e:
-        error_msg = f"face_detection_failed: {str(e)[:60]}"
-        _log_face_exception("SPOOF_CHECK_EMBED", e)
+        no_face = _log_face_exception("SPOOF_CHECK_EMBED", e) == "face_not_detected"
+        error_msg = "" if no_face else "ไม่สามารถอ่านใบหน้าได้"
 
     confidence = 1.0 - spoof_result["combined_score"]
 
@@ -578,12 +613,20 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
         }
 
     if embedding is None:
+        if not error_msg:
+            # No face for the embedding: a retake, not a spoof verdict (as FRR-2 at check-in).
+            return {
+                "is_real": False, "confidence": 0.0, "combined_score": spoof_result["combined_score"],
+                "embedding": None, "layers": spoof_result["layers"],
+                "system_failure": False, "retry_capture": True,
+                "message": "ไม่พบใบหน้าชัดเจน กรุณามองตรง จัดหน้าให้อยู่กลางกรอบ และเพิ่มแสงด้านหน้า",
+            }
         return {
             "is_real": False,
             "confidence": round(confidence, 4),
             "combined_score": spoof_result["combined_score"],
             "embedding": None,
-            "message": error_msg or "ไม่สามารถอ่านใบหน้าได้",
+            "message": error_msg,
             "layers": spoof_result["layers"],
         }
 

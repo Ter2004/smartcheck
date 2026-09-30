@@ -313,7 +313,7 @@ class CheckinFlow {
                 const turned = isTilt
                     ? noseRelX > 0.35 && noseRelX < 0.65 &&
                       (turnAction === 'tilt_left' ? rollDelta >= CheckinFlow.TILT_DEG : rollDelta <= -CheckinFlow.TILT_DEG)
-                    : turnAction === 'turn_left' ? noseRelX > 0.62 : noseRelX < 0.38;
+                    : turnAction === 'turn_left' ? noseRelX > 0.65 : noseRelX < 0.35;
                 turnCount = turned ? turnCount + 1 : 0;
                 guide.classList.remove('fail');
                 guide.classList.add('ok');

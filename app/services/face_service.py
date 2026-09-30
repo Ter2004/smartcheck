@@ -69,6 +69,20 @@ class FaceNotDetectedError(ValueError):
     """The frame cannot be evaluated; this is not a spoof verdict."""
 
 
+def _largest_face(faces):
+    """The biggest detection, from DeepFace dicts or OpenCV (x, y, w, h) boxes.
+
+    Neither returns faces in a fixed order, and the smaller boxes are often a
+    person in the background or a false detection at the image edge: taking
+    the first one matched the wrong face in 16 of 18 LFW impostor matches
+    (docs/evidence/eval-2026-09-30/README.md).
+    """
+    def area(face):
+        box = (face.get("facial_area") or {}) if isinstance(face, dict) else {"w": face[2], "h": face[3]}
+        return box.get("w", 0) * box.get("h", 0)
+    return max(faces, key=area)
+
+
 def _log_face_exception(stage, error):
     # Do not log exception messages: upstream errors can include image inputs.
     # A stable reason and stack locations still identify detector/model failures.
@@ -127,7 +141,7 @@ def _crop_face_for_antispoof(img_bgr: np.ndarray, scale: float = 2.7, size: int 
         faces = _face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40))
     h_img, w_img = img_bgr.shape[:2]
     if len(faces) > 0:
-        x, y, w, h = faces[0]
+        x, y, w, h = _largest_face(faces)
         cx, cy = x + w // 2, y + h // 2
         nw, nh = int(w * scale), int(h * scale)
         x1 = max(0, cx - nw // 2);    y1 = max(0, cy - nh // 2)
@@ -203,7 +217,7 @@ def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
         )
         if not faces:
             return None, None
-        face = faces[0]
+        face = _largest_face(faces)
         is_real   = bool(face.get("is_real", False))
         raw_score = float(face.get("antispoof_score", 0.5))
         spoof_score = (1.0 - raw_score) if is_real else raw_score
@@ -541,9 +555,10 @@ def extract_embedding(base64_image: str, include_metadata: bool = False):
     if not result:
         raise ValueError("ตรวจไม่เจอใบหน้าในรูป")
 
-    embedding = result[0]["embedding"]
+    face = _largest_face(result)
+    embedding = face["embedding"]
     if include_metadata:
-        facial_area = result[0].get("facial_area") or {}
+        facial_area = face.get("facial_area") or {}
         crop_box = {
             key: facial_area.get(key)
             for key in ("x", "y", "w", "h")
@@ -607,7 +622,7 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
             enforce_detection=True,
             detector_backend="opencv",
         )
-        embedding = rep[0]["embedding"] if rep else None
+        embedding = _largest_face(rep)["embedding"] if rep else None
         if embedding is None:
             error_msg = "ไม่พบใบหน้าในภาพ"
     except Exception as e:

@@ -239,7 +239,6 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/step_guide.js') }}"></script>
 {% if session_data and not already_checked %}
-<script src="{{ url_for('static', filename='js/ble_scanner.js') }}"></script>
 <script src="{{ url_for('static', filename='js/ble_room_scanner.js') }}"></script>
 <script src="{{ url_for('static', filename='js/camera_guard.js') }}"></script>
 <script src="{{ url_for('static', filename='js/rt_analyze.js') }}"></script>

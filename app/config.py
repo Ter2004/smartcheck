@@ -60,15 +60,15 @@ class Config:
     # Enrollment flow variant: "classic" | "circular"
     ENROLL_FLOW_MODE = os.getenv("ENROLL_FLOW_MODE", "classic")
 
-    # Check-in proximity method: "totp" (6-digit code from a room screen, default)
-    # or "ble" (Web Bluetooth GATT connect+read against the room's beacon).
-    CHECKIN_PROXIMITY_METHOD = os.getenv("CHECKIN_PROXIMITY_METHOD", "totp").lower()
+    # Check-in proximity method: "ble" (default: signed nonce challenge against the
+    # room's ESP32 over Web Bluetooth) or "totp" (6-digit code from a room screen).
+    CHECKIN_PROXIMITY_METHOD = os.getenv("CHECKIN_PROXIMITY_METHOD", "ble").lower()
     if CHECKIN_PROXIMITY_METHOD not in ("totp", "ble"):
         _log.warning(
             f"[SmartCheck] CHECKIN_PROXIMITY_METHOD={CHECKIN_PROXIMITY_METHOD!r} is invalid "
-            f"(expected 'totp' or 'ble') — falling back to 'totp'."
+            f"(expected 'totp' or 'ble') — falling back to 'ble'."
         )
-        CHECKIN_PROXIMITY_METHOD = "totp"
+        CHECKIN_PROXIMITY_METHOD = "ble"
 
     # Check-in liveness: "head_turn" (server-verified random turn, default) or
     # "passive" (legacy hands-free capture; anti-spoof only). Rollback switch only.

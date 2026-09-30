@@ -72,7 +72,8 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.web = Flask(__name__)
         self.web.config.update(SECRET_KEY='test', ESP32_TOTP_SECRET=SECRET,
                                PROXIMITY_RECEIPT_SECRET='r' * 64,
-                               EMBEDDING_INTEGRITY_SALT='salt', RATELIMIT_ENABLED=False)
+                               EMBEDDING_INTEGRITY_SALT='salt', RATELIMIT_ENABLED=False,
+                               CHECKIN_PROXIMITY_METHOD='totp')  # default is 'ble'
         app.limiter.init_app(self.web)
         self.web.register_blueprint(route.api_checkin_bp)
         self.client = self.web.test_client()

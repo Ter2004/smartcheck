@@ -29,7 +29,7 @@ class CheckinFlow {
         this.rssiThreshold = opts.rssiThreshold;
         this.baselineEAR   = opts.baselineEAR;
         this.apiUrl        = opts.apiUrl || '/api/checkin';
-        this.proximityMethod = opts.proximityMethod || 'totp';
+        this.proximityMethod = opts.proximityMethod || 'ble';
         // 'head_turn': one server-chosen turn, re-checked by the server; 'passive': legacy.
         this.livenessMode  = opts.livenessMode === 'passive' ? 'passive' : 'head_turn';
         this.livenessChallengeUrl = opts.livenessChallengeUrl || '/api/checkin/liveness/challenge';

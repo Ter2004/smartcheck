@@ -474,7 +474,7 @@ def checkin_liveness_challenge():
 def _eligible(data):
     student_id = session["user_id"]
     session_id = data.get("session_id")
-    proximity_method = current_app.config.get("CHECKIN_PROXIMITY_METHOD", "totp")
+    proximity_method = current_app.config.get("CHECKIN_PROXIMITY_METHOD", "ble")
     # ─── 1. Verify session is still open ─────────────────────────────────────
     with stage("session_lookup"):
         sess_res = (
@@ -559,7 +559,7 @@ def _verify_receipt(data):
     try:
         reason = proximity_receipt.verify(data.get("proximity_receipt"),
             current_app.config["PROXIMITY_RECEIPT_SECRET"], session["user_id"],
-            data.get("session_id"), current_app.config.get("CHECKIN_PROXIMITY_METHOD", "totp"),
+            data.get("session_id"), current_app.config.get("CHECKIN_PROXIMITY_METHOD", "ble"),
             data.get("room_code"))
     except Exception:
         reason = "proximity_verifier_error"
@@ -581,7 +581,7 @@ def checkin_proximity():
     if not isinstance(data, dict) or not data:
         reject("payload_empty")
         return jsonify(ok=False, error="ไม่พบข้อมูล"), 400
-    proximity_method = current_app.config.get("CHECKIN_PROXIMITY_METHOD", "totp")
+    proximity_method = current_app.config.get("CHECKIN_PROXIMITY_METHOD", "ble")
     # Room possession factor. TOTP: cheap, checked before any DB/costly work,
     # exactly as before. BLE: needs the session's beacon, so the room code is
     # compared in _eligible (§1c) and the board's signed nonce right after it.
@@ -633,7 +633,7 @@ def checkin_proximity():
 @csrf_protect
 def checkin_ble_challenge():
     """Issue the nonce the room board must sign (BLE mode). One pending per student."""
-    if current_app.config.get("CHECKIN_PROXIMITY_METHOD", "totp") != "ble":
+    if current_app.config.get("CHECKIN_PROXIMITY_METHOD", "ble") != "ble":
         reject("ble_challenge_disabled")
         return jsonify(ok=False, error="ไม่ได้เปิดใช้การยืนยันด้วย Bluetooth"), 404
     data = request.get_json(silent=True)

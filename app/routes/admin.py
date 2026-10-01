@@ -272,8 +272,15 @@ def sessions():
         .execute()
         .data or []
     )
+    # Group by course for the collapsible view. sessions_data is newest-first,
+    # so the course with the latest session lands on top, and each group's
+    # sessions stay newest-first.
+    session_groups = {}
+    for s in sessions_data:
+        group = session_groups.setdefault(s["course_id"], {"course": s.get("courses"), "sessions": []})
+        group["sessions"].append(s)
     return render_template("admin/sessions.html",
-                           sessions=sessions_data, courses=courses,
+                           session_groups=list(session_groups.values()), courses=courses,
                            beacons=beacons, teachers=teachers)
 
 

@@ -22,7 +22,6 @@
                     <th class="text-left text-xs font-medium text-slate-500 px-5 py-3">ห้อง</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">UUID</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">Major / Minor</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">RSSI</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">BLE Room Code</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">BLE Secret</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">สถานะ</th>
@@ -40,9 +39,6 @@
                     </td>
                     <td class="px-4 py-3.5">
                         <span class="font-mono text-sm text-slate-700">{{ b.major }} / {{ b.minor }}</span>
-                    </td>
-                    <td class="px-4 py-3.5">
-                        <span class="font-mono text-sm text-slate-700">{{ b.rssi_threshold }} dBm</span>
                     </td>
                     <td class="px-4 py-3.5">
                         <span class="font-mono text-xs text-slate-500">{{ b.ble_room_code or '—' }}</span>
@@ -90,7 +86,7 @@
                 </tr>
             {% else %}
                 <tr>
-                    <td colspan="8"class="px-5 py-12 text-center text-sm text-slate-400">ยังไม่มี Beacon</td>
+                    <td colspan="7" class="px-5 py-12 text-center text-sm text-slate-400">ยังไม่มี Beacon</td>
                 </tr>
             {% endfor %}
             </tbody>
@@ -117,7 +113,7 @@
                        class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                        placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" required>
             </div>
-            <div class="grid grid-cols-3 gap-3">
+            <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs font-medium text-slate-600 mb-1.5">Major</label>
                     <input type="number" name="major" value="1" min="0" max="65535"
@@ -126,11 +122,6 @@
                 <div>
                     <label class="block text-xs font-medium text-slate-600 mb-1.5">Minor</label>
                     <input type="number" name="minor" value="1" min="0" max="65535"
-                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-slate-600 mb-1.5">RSSI</label>
-                    <input type="number" name="rssi_threshold" value="-75" min="-100" max="0"
                            class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
                 </div>
             </div>
@@ -171,7 +162,7 @@
                 <input type="text" name="uuid" id="edit_uuid"
                        class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
             </div>
-            <div class="grid grid-cols-3 gap-3">
+            <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs font-medium text-slate-600 mb-1.5">Major</label>
                     <input type="number" name="major" id="edit_major" min="0" max="65535"
@@ -180,11 +171,6 @@
                 <div>
                     <label class="block text-xs font-medium text-slate-600 mb-1.5">Minor</label>
                     <input type="number" name="minor" id="edit_minor" min="0" max="65535"
-                           class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-slate-600 mb-1.5">RSSI</label>
-                    <input type="number" name="rssi_threshold" id="edit_rssi" min="-100" max="0"
                            class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
                 </div>
             </div>
@@ -230,7 +216,6 @@ function openEditModal(b) {
     document.getElementById('edit_uuid').value = b.uuid;
     document.getElementById('edit_major').value = b.major;
     document.getElementById('edit_minor').value = b.minor;
-    document.getElementById('edit_rssi').value = b.rssi_threshold;
     document.getElementById('edit_ble_room_code').value = b.ble_room_code || '';
     document.getElementById('edit_is_active').checked = b.is_active;
     document.getElementById('editForm').action = '/admin/beacons/' + b.id + '/edit';

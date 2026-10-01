@@ -110,7 +110,6 @@
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">สถานะ</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">เวลา</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden md:table-cell">Face Score</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden lg:table-cell">RSSI</th>
                     <th class="px-4 py-3"></th>
                 </tr>
             </thead>
@@ -167,9 +166,6 @@
                         <span class="text-xs text-slate-400">—</span>
                         {% endif %}
                     </td>
-                    <td class="px-4 py-3.5 hidden lg:table-cell">
-                        <span class="font-mono text-xs text-slate-400">{{ a.ble_rssi ~ ' dBm' if a and a.ble_rssi else '—' }}</span>
-                    </td>
                     <td class="px-4 py-3.5 text-right">
                         <button data-id="{{ u.id }}" data-name="{{ u.full_name }}" onclick="openOverride(this.dataset.id, this.dataset.name)"
                                 class="text-xs font-medium text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 px-2.5 py-1.5 rounded-lg transition-all">
@@ -178,7 +174,7 @@
                     </td>
                 </tr>
             {% else %}
-                <tr><td colspan="8" class="px-5 py-12 text-center text-sm text-slate-400">ไม่มีนักศึกษาในวิชานี้</td></tr>
+                <tr><td colspan="7" class="px-5 py-12 text-center text-sm text-slate-400">ไม่มีนักศึกษาในวิชานี้</td></tr>
             {% endfor %}
             </tbody>
         </table>

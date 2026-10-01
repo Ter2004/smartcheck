@@ -11,7 +11,7 @@ from app.routes import admin, auth, student, teacher
 
 STORED_SECRET = "ab" * 32
 BEACON = {"id": "b1", "uuid": "u", "major": 1, "minor": 1, "room_name": "TEST-101",
-          "rssi_threshold": -75, "ble_room_code": "TEST-101", "is_active": True,
+          "ble_room_code": "TEST-101", "is_active": True,
           "ble_secret": STORED_SECRET}
 
 

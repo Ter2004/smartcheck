@@ -181,7 +181,7 @@ def checkin():
 
     open_sessions = (
         supabase_admin.table("sessions")
-        .select("*, courses(id, code, name), beacons(uuid, rssi_threshold, room_name)")
+        .select("*, courses(id, code, name), beacons(uuid, room_name)")
         .eq("is_open", True)
         .gte("start_time", _today_start.isoformat())
         .lt("start_time", _tomorrow_start.isoformat())

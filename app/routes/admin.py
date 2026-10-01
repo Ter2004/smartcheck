@@ -140,7 +140,7 @@ def import_csv():
 def beacons():
     beacons_data = (
         supabase_admin.table("beacons")
-        .select("id, uuid, major, minor, room_name, rssi_threshold, "
+        .select("id, uuid, major, minor, room_name, "
                 "ble_room_code, is_active, ble_secret")
         .order("room_name").execute().data or []
     )
@@ -191,7 +191,6 @@ def beacon_add():
             "major": int(request.form["major"]),
             "minor": int(request.form["minor"]),
             "room_name": request.form["room_name"].strip(),
-            "rssi_threshold": int(request.form.get("rssi_threshold", -75)),
             "ble_room_code": (request.form.get("ble_room_code") or "").strip() or None,
             "is_active": True,
         }).execute()
@@ -212,7 +211,6 @@ def beacon_edit(beacon_id):
             "major": int(request.form["major"]),
             "minor": int(request.form["minor"]),
             "room_name": request.form["room_name"].strip(),
-            "rssi_threshold": int(request.form.get("rssi_threshold", -75)),
             "ble_room_code": (request.form.get("ble_room_code") or "").strip() or None,
             "is_active": request.form.get("is_active") == "on",
         }).eq("id", beacon_id).execute()

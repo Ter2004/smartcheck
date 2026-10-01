@@ -287,7 +287,6 @@ def _checkin_one(base_url: str, email: str, entry: dict, session_id: str, images
 
     payload = {
         "session_id":      session_id,
-        "ble_rssi":        -60,
         "ble_skip":        False,
         "liveness_action": "passive",     # ข้าม strict EAR blink check (api_checkin.py:153) —
                                            # ตั้งใจ: load test วัด compute cost ของ spoof+embedding

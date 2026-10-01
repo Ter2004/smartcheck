@@ -2,10 +2,9 @@
  * ble_room_scanner.js — Web Bluetooth proof that the student is at the room board
  *
  * Talks to the SmartCheck ESP32 classroom peripheral (firmware/README.md):
- * a connectable GATT device, not an RSSI/iBeacon broadcaster, so BLE-mode
- * check-ins never populate ble_rssi. The room value the board exposes is
- * public and only picks the room. Presence is proven by the board signing a
- * server nonce:
+ * a connectable GATT device, not an RSSI/iBeacon broadcaster. The room value
+ * the board exposes is public and only picks the room. Presence is proven by
+ * the board signing a server nonce:
  *   connect → read room → getNonce(room) → write nonce → read HMAC-SHA256.
  * The nonce is requested after connecting, so the device picker does not eat
  * into its 30 s lifetime.

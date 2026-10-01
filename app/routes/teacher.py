@@ -119,7 +119,7 @@ def dashboard():
 
     beacons = (
         supabase_admin.table("beacons")
-        .select("id, room_name, uuid, rssi_threshold")
+        .select("id, room_name, uuid")
         .eq("is_active", True)
         .order("room_name")
         .execute()

@@ -48,7 +48,6 @@ def checkin():
         return jsonify({"ok": False, "error": "ไม่พบข้อมูล"}), 400
 
     session_id      = data.get("session_id")
-    ble_rssi        = data.get("ble_rssi")
     liveness_action = data.get("liveness_action", "") or ""
     face_image      = data.get("face_image")
 
@@ -68,16 +67,6 @@ def checkin():
         reject("liveness_challenge_required", received=liveness_action)
         return jsonify({"ok": False, "retry_face": True,
                         "error": "กรุณาทำตามคำสั่งหันหน้าก่อนเช็คชื่อ — กดลองใหม่"}), 400
-
-    # M6: validate ble_rssi before int() conversion
-    if ble_rssi is not None:
-        try:
-            ble_rssi = int(ble_rssi)
-            if not (-120 <= ble_rssi <= 0):
-                ble_rssi = None  # out of realistic RSSI range — ignore silently
-        except (ValueError, TypeError):
-            reject("ble_value_invalid")
-            return jsonify({"ok": False, "error": "ข้อมูล BLE ไม่ถูกต้อง"}), 400
 
     if not all([session_id, face_image]):
         reject("required_fields_missing")
@@ -387,9 +376,8 @@ def checkin():
         supabase_admin.table("attendance").insert({
             "session_id":      session_id,
             "student_id":      student_id,
-            "ble_rssi":        ble_rssi,  # already int or None from validation above
-            # No RSSI check runs at check-in; room proximity is the receipt
-            # (TOTP code or BLE GATT read) verified above.
+            # Room proximity is the receipt (TOTP code or the room board's
+            # signed nonce) verified above.
             "ble_pass":        False,
             # DB column keeps its name. It records the anti-spoof result; in
             # head_turn mode the turn was also verified (a failure returned
@@ -447,7 +435,7 @@ def _eligible(data):
     with stage("session_lookup"):
         sess_res = (
             supabase_admin.table("sessions")
-            .select("id, course_id, is_open, beacon_id, start_time, end_time, checkin_duration, beacons(rssi_threshold, ble_room_code)")
+            .select("id, course_id, is_open, beacon_id, start_time, end_time, checkin_duration, beacons(ble_room_code)")
             .eq("id", session_id)
             .maybe_single()
             .execute()

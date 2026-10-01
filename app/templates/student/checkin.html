@@ -250,7 +250,6 @@
     const flow = new CheckinFlow({
         sessionId:     "{{ session_data.id }}",
         beaconUUID:    "{{ session_data.beacons.uuid }}",
-        rssiThreshold: {{ session_data.beacons.rssi_threshold }},
         debug:         {{ (request.args.get('debug') == '1') | tojson }},
         apiUrl:        "{{ url_for('api_checkin.checkin') }}",
         proximityMethod: "{{ config.CHECKIN_PROXIMITY_METHOD }}",

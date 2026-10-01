@@ -26,7 +26,6 @@ class CheckinFlow {
     constructor(opts) {
         this.sessionId     = opts.sessionId;
         this.beaconUUID    = opts.beaconUUID;
-        this.rssiThreshold = opts.rssiThreshold;
         this.apiUrl        = opts.apiUrl || '/api/checkin';
         this.proximityMethod = opts.proximityMethod || 'ble';
         // 'head_turn': one server-chosen turn, re-checked by the server; 'passive': legacy.

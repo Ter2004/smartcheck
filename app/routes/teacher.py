@@ -179,8 +179,8 @@ def session_view(session_id):
         .eq("id", session_id)
         .maybe_single()
         .execute()
-        .data
     )
+    sess = sess.data if sess else None
     if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
         flash("ไม่พบ session หรือไม่มีสิทธิ์", "danger")
         return redirect(url_for("teacher.dashboard"))
@@ -264,8 +264,8 @@ def override_attendance(session_id):
         .eq("id", session_id)
         .maybe_single()
         .execute()
-        .data
     )
+    sess = sess.data if sess else None
     if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
         flash("ไม่มีสิทธิ์", "danger")
         return redirect(url_for("teacher.dashboard"))
@@ -294,8 +294,9 @@ def override_attendance(session_id):
         .eq("student_id", student_id)
         .maybe_single()
         .execute()
-        .data
     )
+    # maybe_single().execute() returns None (not an empty response) on 0 rows.
+    existing = existing.data if existing else None
 
     if existing:
         supabase_admin.table("attendance").update({

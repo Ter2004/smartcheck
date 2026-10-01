@@ -289,10 +289,9 @@ def session_create():
         flash("กรุณากรอกข้อมูลให้ครบ", "danger")
         return redirect(url_for("admin.sessions"))
 
-    course = (
-        supabase_admin.table("courses").select("code, name")
-        .eq("id", course_id).maybe_single().execute().data or {}
-    )
+    course = (supabase_admin.table("courses").select("code, name")
+              .eq("id", course_id).maybe_single().execute())
+    course = (course.data if course else None) or {}
     title = f"{course.get('code', '')} — {course.get('name', '')}"
 
     try:
@@ -406,8 +405,8 @@ def section_add(course_id):
         .eq("id", course_id)
         .maybe_single()
         .execute()
-        .data
     )
+    parent = parent.data if parent else None
     if not parent:
         flash("ไม่พบวิชา", "danger")
         return redirect(url_for("admin.courses"))
@@ -458,8 +457,8 @@ def course_detail(course_id):
         .eq("id", course_id)
         .maybe_single()
         .execute()
-        .data
     )
+    course = course.data if course else None
     if not course:
         flash("ไม่พบวิชานี้", "danger")
         return redirect(url_for("admin.courses"))
@@ -582,8 +581,8 @@ def course_import_csv(course_id):
             .eq("email", email)
             .maybe_single()
             .execute()
-            .data
         )
+        existing = existing.data if existing else None
 
         if existing:
             uid = existing["id"]
@@ -615,8 +614,8 @@ def course_import_csv(course_id):
             .eq("student_id", uid)
             .maybe_single()
             .execute()
-            .data
         )
+        dup = dup.data if dup else None
         if not dup:
             try:
                 supabase_admin.table("course_enrollments").insert({

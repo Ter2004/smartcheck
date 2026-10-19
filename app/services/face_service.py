@@ -8,13 +8,18 @@ import numpy as np
 import cv2
 import json
 
-# ─── Thresholds (edit here to tune) ──────────────────────────────────────────
-SELF_VERIFY_THRESHOLD    = 0.80   # no route uses it (self-verify step removed); calibration script reports it
-SAME_DEVICE_THRESHOLD    = 0.70   # check-in, trusted device
-NEW_DEVICE_THRESHOLD     = 0.80   # check-in, new / unbound device
-CONSISTENCY_THRESHOLD    = 0.80   # pairwise consistency during enrollment
-DUPLICATE_THRESHOLD      = 0.65   # reject if another student matches this closely
-CONTINUITY_THRESHOLD     = 0.80   # liveness -> capture identity continuity
+# ─── Thresholds ──────────────────────────────────────────────────────────────
+# Face-match thresholds are ArcFace settings in the environment
+# (ARCFACE_MATCH_THRESHOLD, ARCFACE_DUP_THRESHOLD, ENROLL_SELF_SIM_MIN; see
+# face_engine.validate_config). The FaceNet512 values below are kept only for
+# the unreachable v1 enrollment code and tests of its helpers; nothing in the
+# v2 enrollment or check-in path reads them.
+SELF_VERIFY_THRESHOLD    = 0.80   # FaceNet512 (removed)
+SAME_DEVICE_THRESHOLD    = 0.70   # FaceNet512 (removed); dead trusted-device path, never enabled
+NEW_DEVICE_THRESHOLD     = 0.80   # FaceNet512 (removed)
+CONSISTENCY_THRESHOLD    = 0.80   # FaceNet512 (removed)
+DUPLICATE_THRESHOLD      = 0.65   # FaceNet512 (removed)
+CONTINUITY_THRESHOLD     = 0.80   # FaceNet512 (removed)
 TEMPORAL_VAR_THRESHOLD   = 4.0   # historical, uncalibrated face-ROI reference
 # No calibrated face-crop separation range is retained. The former claim that
 # cropped real faces score ~15-25 is contradicted by a cooperative real session
@@ -46,16 +51,9 @@ SPOOF_DECISION_THRESHOLD = 0.50
 from app.services.request_audit import RequestLogger
 _audit = RequestLogger(logging.getLogger("smartcheck.enrollment"), {})
 
-# DeepFace caches one OpenCV face/eye detector per process. Its native cascade
-# buffers must not be used concurrently by enrollment and check-in requests.
-_deepface_lock = threading.RLock()
+# OpenCV's Haar cascade (ONNX audit-layer crop, temporal ROI) keeps native
+# buffers that must not be used by two requests at once.
 _cascade_lock = threading.Lock()
-
-
-def _call_deepface(method, **kwargs):
-    with _deepface_lock:
-        from deepface import DeepFace
-        return getattr(DeepFace, method)(**kwargs)
 
 
 class FaceNotDetectedError(ValueError):
@@ -76,69 +74,9 @@ def _largest_face(faces):
     return max(faces, key=area)
 
 
-# ─── Face detection for embeddings and Fasnet ─────────────────────────────────
-# RetinaFace, as in the head-turn check, on a copy no larger than DETECT_MAX_SIDE
-# and without upscaling: DeepFace's own "retinaface" backend upscales every frame
-# to 1024 px (~750 ms on CPU). OpenCV's Haar cascade, used until 2026-09-30,
-# missed or misplaced the face in 9+ frames of one webcam enrollment in which
-# RetinaFace found it every time (docs/evidence/eval-2026-09-30).
-DETECT_MAX_SIDE = 480
-MIN_FACE_SCORE  = 0.9
-# Same text as DeepFace, which _log_face_exception and callers match on.
-_NO_FACE_MSG = "Face could not be detected in numpy array."
-
-
-def _detect_main_face(img_bgr: np.ndarray):
-    """(x, y, w, h), left_eye, right_eye of the largest face, in img_bgr pixels.
-
-    Eyes follow DeepFace's convention (the person's own left/right).
-    Raises ValueError(_NO_FACE_MSG) when there is no face.
-    """
-    from retinaface import RetinaFace
-
-    h, w = img_bgr.shape[:2]
-    scale = min(1.0, DETECT_MAX_SIDE / max(h, w))
-    small = img_bgr if scale == 1.0 else cv2.resize(
-        img_bgr, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
-    with _deepface_lock:
-        faces = RetinaFace.detect_faces(small, threshold=MIN_FACE_SCORE, allow_upscaling=False)
-    if not isinstance(faces, dict) or not faces:
-        raise ValueError(_NO_FACE_MSG)
-    face = max(faces.values(), key=lambda f: (f["facial_area"][2] - f["facial_area"][0])
-                                             * (f["facial_area"][3] - f["facial_area"][1]))
-    x1, y1, x2, y2 = (v / scale for v in face["facial_area"])
-    x, y = max(0, int(x1)), max(0, int(y1))
-    box = (x, y, min(w - x - 1, int(x2 - x1)), min(h - y - 1, int(y2 - y1)))
-    eyes = [tuple(int(v / scale) for v in face["landmarks"][k][:2]) for k in ("left_eye", "right_eye")]
-    return box, eyes[0], eyes[1]
-
-
-def _aligned_face(img_bgr: np.ndarray, box, left_eye, right_eye) -> np.ndarray:
-    """The face rotated level and cropped exactly as DeepFace's detect-and-align does."""
-    from deepface.modules.detection import align_img_wrt_eyes, project_facial_area
-
-    h, w = img_bgr.shape[:2]
-    bh, bw = int(0.5 * h), int(0.5 * w)
-    padded = cv2.copyMakeBorder(img_bgr, bh, bh, bw, bw, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-    x, y, fw, fh = box
-    aligned, angle = align_img_wrt_eyes(img=padded, left_eye=(left_eye[0] + bw, left_eye[1] + bh),
-                                        right_eye=(right_eye[0] + bw, right_eye[1] + bh))
-    x1, y1, x2, y2 = project_facial_area(facial_area=(x + bw, y + bh, x + bw + fw, y + bh + fh),
-                                         angle=angle, size=(padded.shape[0], padded.shape[1]))
-    return aligned[int(y1):int(y2), int(x1):int(x2)]
-
-
-def _face_embedding(img_bgr: np.ndarray):
-    """(FaceNet512 embedding, box) of the largest face. Raises ValueError without a face."""
-    box, left_eye, right_eye = _detect_main_face(img_bgr)
-    crop = _aligned_face(img_bgr, box, left_eye, right_eye)
-    if crop.size == 0:
-        raise ValueError(_NO_FACE_MSG)
-    # With detector_backend="skip" DeepFace flips channels once (it expects the RGB
-    # face its detectors return), so pass RGB to feed FaceNet what it always got.
-    rep = _call_deepface("represent", img_path=np.ascontiguousarray(crop[:, :, ::-1]),
-                         model_name="Facenet512", enforce_detection=False, detector_backend="skip")
-    return rep[0]["embedding"], box
+# Detection, alignment and embedding live in face_engine.py (InsightFace
+# buffalo_l). DeepFace, RetinaFace and TensorFlow were removed in face stack v2
+# Phase 5; docs/face-stack-v2/phase5-cutover.md.
 
 
 def _log_face_exception(stage, error):
@@ -258,39 +196,18 @@ def _run_antispoof(img_bgr: np.ndarray) -> tuple:
     return is_real, real_score
 
 
-def _fasnet_impl() -> str:
-    """ANTISPOOF_FASNET: "deepface" (torch, default) or "onnx" (fasnet_onnx, same weights)."""
-    try:
-        from flask import current_app, has_app_context
-        value = current_app.config.get("ANTISPOOF_FASNET") if has_app_context() else None
-    except ImportError:
-        value = None
-    value = (value or os.getenv("ANTISPOOF_FASNET") or "deepface").strip().lower()
-    return value if value in ("deepface", "onnx") else "deepface"
-
-
 def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
     """
-    Run DeepFace's built-in anti-spoofing (Fasnet/MiniVision Silent-Face).
+    Fasnet (MiniVision Silent-Face, the weights DeepFace used) on ONNX Runtime,
+    on the SCRFD box of the main face (app/services/fasnet_onnx.py).
     Returns (is_real: bool, spoof_score: float) where spoof_score ∈ [0,1]
     and 0 = definitely real, 1 = definitely spoof.
     On exception returns (None, None) — caller redistributes weight.
     """
     try:
-        from app.services import face_engine
-        if face_engine.active_engine() == "arcface":
-            # Face box from SCRFD, the detector the arcface embedding uses.
-            box = face_engine.box_xywh(face_engine.detect_main(img_bgr), img_bgr.shape)
-        else:
-            box, _, _ = _detect_main_face(img_bgr)
-        if _fasnet_impl() == "onnx":
-            from app.services import fasnet_onnx
-            is_real, raw_score = fasnet_onnx.analyze(img_bgr, box)
-        else:
-            with _deepface_lock:
-                from deepface.modules import modeling
-                fasnet = modeling.build_model(task="spoofing", model_name="Fasnet")
-                is_real, raw_score = fasnet.analyze(img=img_bgr, facial_area=box)
+        from app.services import face_engine, fasnet_onnx
+        box = face_engine.box_xywh(face_engine.detect_main(img_bgr), img_bgr.shape)
+        is_real, raw_score = fasnet_onnx.analyze(img_bgr, box)
         is_real   = bool(is_real)
         raw_score = float(raw_score)
         spoof_score = (1.0 - raw_score) if is_real else raw_score
@@ -357,7 +274,7 @@ def combined_spoof_score(
     layers["temporal"]["spoof_score"] = None
     layers["temporal"]["decision"] = "log_only"
 
-    # ── Layer 4: DeepFace Fasnet (primary ML, fail-open) ───────────────────
+    # ── Layer 4: Fasnet (primary ML, ONNX, fail-open) ─────────────────────
     # TEMP PERF: wall-clock this layer for docs/review/06-performance.md — remove after measurement
     _t0_fasnet = time.perf_counter()
     try:
@@ -567,22 +484,18 @@ def _decode_image(base64_image: str) -> np.ndarray:
 
 
 def extract_embedding(base64_image: str, include_metadata: bool = False):
-    """
-    Decode base64 image → CLAHE normalize → FaceNet512 embedding (512-D list).
+    """Decode base64 → (CLAHE per FACE_CLAHE) → ArcFace embedding (512-D list).
+
+    Kept for callers of the old name; face_engine.extract_embedding does the work.
     Raises ValueError if face not detected or image unreadable.
     """
-    img = _decode_image(base64_image)
-    img = normalize_illumination(img)
-
-    embedding, (x, y, w, h) = _face_embedding(img)
-    if include_metadata:
-        return embedding, {"detector_crop": {"x": x, "y": y, "w": w, "h": h}}
-    return embedding
+    from app.services import face_engine
+    return face_engine.extract_embedding(base64_image, include_metadata=include_metadata)
 
 
 def spoof_check_with_embedding(base64_image: str) -> dict:
     """
-    Combined spoof detection + FaceNet512 embedding extraction.
+    Combined spoof detection + ArcFace embedding extraction.
 
     Returns dict with keys: is_real, confidence, combined_score,
     embedding (None if spoof or face not found), message, layers.
@@ -612,7 +525,8 @@ def spoof_check_with_embedding(base64_image: str) -> dict:
     embedding = None
     error_msg = ""
     try:
-        embedding, _ = _face_embedding(normalize_illumination(img))
+        from app.services import face_engine
+        embedding = [float(v) for v in face_engine.analyze(img)["embedding"]]
     except Exception as e:
         no_face = _log_face_exception("SPOOF_CHECK_EMBED", e) == "face_not_detected"
         error_msg = "" if no_face else "ไม่สามารถอ่านใบหน้าได้"
@@ -706,7 +620,7 @@ def max_similarity_multi(live_emb: list, stored_embeddings: list) -> float:
 
 def server_validate_frame(frame_b64: str) -> dict:
     """
-    Zero-trust frame validation — run BEFORE any DeepFace call (Sprint 2A).
+    Zero-trust frame validation — run BEFORE any model call (Sprint 2A).
 
     Checks (in order):
       1. Payload size: 3 KB – 500 KB

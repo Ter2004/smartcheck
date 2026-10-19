@@ -6,3 +6,9 @@ docs/
 test_images/
 .env
 *.log
+.build/
+dataset/
+compare-out/
+cloudflared.exe
+instance/
+*.patch

@@ -78,7 +78,9 @@ def main():
     parser.add_argument("--json", help="write the result to this file")
     args = parser.parse_args()
 
+    from scripts import face_pipelines as pipelines
     from scripts.face_pipelines import PIPELINE_NAME, warm_up, enrollment, checkin
+    extra = getattr(pipelines, "checkin_head_turn", None)
 
     paths = sorted({p for pattern in args.images.split(",") for p in glob.glob(pattern)})
     if len(paths) < 2:
@@ -90,11 +92,13 @@ def main():
     warm_s = time.perf_counter() - t0
     rss_warm = rss_mb()
 
-    enroll_ms, checkin_ms = [], []
+    enroll_ms, checkin_ms, turn_ms = [], [], []
     for i in range(args.runs):
         rotated = frames[i % len(frames):] + frames[:i % len(frames)]
         t = time.perf_counter(); enrollment(rotated); enroll_ms.append((time.perf_counter() - t) * 1000)
         t = time.perf_counter(); checkin(rotated); checkin_ms.append((time.perf_counter() - t) * 1000)
+        if extra:
+            t = time.perf_counter(); extra(rotated); turn_ms.append((time.perf_counter() - t) * 1000)
 
     result = {
         "pipeline": PIPELINE_NAME, "images": [os.path.basename(p) for p in paths],
@@ -103,6 +107,8 @@ def main():
         "warm_up_s": round(warm_s, 2),
         "enrollment": summary(enroll_ms), "checkin": summary(checkin_ms),
     }
+    if turn_ms:
+        result["checkin_head_turn"] = summary(turn_ms)
     print(json.dumps(result, indent=2))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as out:

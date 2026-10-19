@@ -25,9 +25,13 @@ def _frame(name, width=640):
 
 
 class ConfigTests(unittest.TestCase):
-    def test_facenet_default_needs_nothing(self):
-        self.assertEqual(face_engine.validate_config({}), {})
-        self.assertEqual(face_engine.model_version("facenet512"), "facenet512")
+    def test_arcface_is_the_default_and_facenet512_is_refused(self):
+        self.assertEqual(face_engine.active_engine({}), "arcface")
+        with self.assertRaisesRegex(RuntimeError, "FACE_CLAHE"):
+            face_engine.validate_config({})          # default engine still needs its settings
+        with self.assertRaisesRegex(RuntimeError, "removed"):
+            face_engine.validate_config({"FACE_ENGINE": "facenet512"})
+        self.assertEqual(face_engine.model_version("facenet512"), "facenet512")   # legacy row label
         self.assertEqual(face_engine.model_version("arcface"), "buffalo_l/w600k_r50")
 
     def test_unknown_engine_fails(self):

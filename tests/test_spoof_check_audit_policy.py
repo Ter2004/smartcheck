@@ -89,6 +89,7 @@ class SpoofCheckAuditPolicyTests(unittest.TestCase):
             "/probe", "probe", _undecorated(student.api_spoof_check), methods=["POST"]
         )
         self.app.config["EMBEDDING_INTEGRITY_SALT"] = "test-salt"
+        self.app.config["FACE_ENGINE"] = "facenet512"  # v1 enrollment routes (unreachable in production)
         self.app.add_url_rule(
             "/enroll-probe", "enroll_probe", _undecorated(student.api_enroll), methods=["POST"]
         )

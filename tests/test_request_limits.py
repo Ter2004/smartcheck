@@ -26,7 +26,7 @@ class RequestLimitTests(unittest.TestCase):
         self.assertEqual(Config.MAX_CONTENT_LENGTH, 10 * 1024 * 1024)
 
     def test_oversized_body_is_refused_before_the_route(self):
-        with patch.object(route, "extract_embedding") as extraction, \
+        with patch.object(route, "_verify_face_v2") as extraction, \
                 patch.object(route, "combined_spoof_score") as spoof:
             response = self.post("/api/checkin", face_image="A" * (11 * 1024 * 1024))
         self.assertEqual(response.status_code, 413)

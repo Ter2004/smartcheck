@@ -1,0 +1,40 @@
+{
+  "pipeline": "arcface (InsightFace buffalo_l) + Fasnet ONNX anti-spoof; check-in passive",
+  "images": [
+    "real_01_sharp_face1.jpg",
+    "real_03_sharp_face1_r.jpg",
+    "real_05_sharp_face2.jpg",
+    "real_07_sharp_face2_r.jpg",
+    "real_09_sharp_face3.jpg",
+    "real_11_sharp_face3_r.jpg"
+  ],
+  "python": "3.11.9",
+  "platform": "win32",
+  "rss_mb": {
+    "start": 94.6,
+    "after_warm_up": 824.7,
+    "after_runs": 836.0
+  },
+  "warm_up_s": 5.21,
+  "enrollment": {
+    "median_ms": 4114.9,
+    "p90_ms": 4189.0,
+    "min_ms": 4023.5,
+    "max_ms": 4279.5,
+    "n": 10
+  },
+  "checkin": {
+    "median_ms": 513.9,
+    "p90_ms": 522.2,
+    "min_ms": 499.0,
+    "max_ms": 531.1,
+    "n": 10
+  },
+  "checkin_head_turn": {
+    "median_ms": 1031.2,
+    "p90_ms": 1041.7,
+    "min_ms": 1015.9,
+    "max_ms": 1042.6,
+    "n": 10
+  }
+}

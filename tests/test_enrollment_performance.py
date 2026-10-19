@@ -12,7 +12,8 @@ from app.services.request_performance import init_request_performance
 class EnrollmentPerformanceTests(unittest.TestCase):
     def setUp(self):
         self.web = Flask(__name__)
-        self.web.config.update(SECRET_KEY="test", RATELIMIT_ENABLED=False)
+        self.web.config.update(SECRET_KEY="test", RATELIMIT_ENABLED=False,
+                               FACE_ENGINE="facenet512")  # v1 enrollment status (unreachable in production)
         init_request_performance(self.web)
         app.limiter.init_app(self.web)
         self.web.register_blueprint(student.student_bp, url_prefix="/student")

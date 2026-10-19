@@ -24,8 +24,10 @@ class FaceDetectionRetryTests(unittest.TestCase):
         self.assertFalse(result.get('retry_capture', False))
 
     def test_only_known_no_face_error_is_retryable(self):
-        with patch.object(service, '_detect_main_face', side_effect=ValueError('Face could not be detected.')):
-            with self.assertRaises(service.FaceNotDetectedError):
-                service._run_fasnet_antispoof(np.zeros((80, 80, 3), dtype=np.uint8))
-        with patch.object(service, '_detect_main_face', side_effect=ValueError('invalid model shape')):
+        from app.services import face_engine
+        for error in (face_engine.NoFaceError(), face_engine.MultipleFacesError()):
+            with patch.object(face_engine, 'detect_main', side_effect=error):
+                with self.assertRaises(service.FaceNotDetectedError):
+                    service._run_fasnet_antispoof(np.zeros((80, 80, 3), dtype=np.uint8))
+        with patch.object(face_engine, 'detect_main', side_effect=ValueError('invalid model shape')):
             self.assertEqual(service._run_fasnet_antispoof(np.zeros((80, 80, 3), dtype=np.uint8)), (None, None))

@@ -46,6 +46,9 @@ class Database:
         return query
 
 
+VERIFY_FACE_V2 = route._verify_face_v2   # the real one, for tests that need it unmocked
+
+
 class IntegratedTOTPTests(unittest.TestCase):
     def setUp(self):
         self.stack = ExitStack()
@@ -56,8 +59,7 @@ class IntegratedTOTPTests(unittest.TestCase):
         for name, result in {
             'server_validate_frame': {'valid': True},
             'combined_spoof_score': {'is_real': True},
-            'extract_embedding': [1., 0.],
-            'verify_face_multi': {'verified': True, 'best_similarity': 1., 'avg_similarity': 1.},
+            '_verify_face_v2': (1.0, None),          # face_templates match (tests/test_checkin_v2.py)
         }.items():
             self.stack.enter_context(patch.object(route, name, return_value=result))
         self.stack.enter_context(patch.object(route, '_decode_image',
@@ -71,6 +73,8 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.web.config.update(SECRET_KEY='test', ESP32_TOTP_SECRET=SECRET,
                                PROXIMITY_RECEIPT_SECRET='r' * 64,
                                EMBEDDING_INTEGRITY_SALT='salt', RATELIMIT_ENABLED=False,
+                               FACE_ENGINE='arcface', FACE_CLAHE='off', ARCFACE_MATCH_THRESHOLD='0.4',
+                               ARCFACE_DUP_THRESHOLD='0.5', ENROLL_SELF_SIM_MIN='0.6',  # test values
                                CHECKIN_PROXIMITY_METHOD='totp')  # default is 'ble'
         app.limiter.init_app(self.web)
         self.web.register_blueprint(route.api_checkin_bp)
@@ -248,7 +252,7 @@ class IntegratedTOTPTests(unittest.TestCase):
                                 headers={'X-CSRF-Token': 'csrf'})
 
     def test_preflight_does_not_run_face_and_totp_can_rotate_during_capture(self):
-        with patch.object(route, 'extract_embedding') as extraction:
+        with patch.object(route, '_verify_face_v2') as extraction:
             result = self.preflight()
             self.assertEqual(result.status_code, 200)
             extraction.assert_not_called()
@@ -331,7 +335,12 @@ class IntegratedTOTPTests(unittest.TestCase):
         def spoof(_image):
             face_service._audit.info('[COMBINED_SPOOF] decision=real')
             return {'is_real': True}
-        with self.assertLogs('smartcheck', level='INFO') as logs:
+        from app.services import face_engine, face_store
+        from app.services.security_service import compute_template_integrity_hash
+        templates = [np.eye(512, dtype=np.float32)[0]]
+        row = {'status': 'completed', 'model_version': 'buffalo_l/w600k_r50', 'templates': templates,
+               'integrity_hash': compute_template_integrity_hash('student', 'buffalo_l/w600k_r50', templates, 'salt')}
+        with self.assertLogs('smartcheck', level='INFO') as logs,                 patch.object(route, '_verify_face_v2', VERIFY_FACE_V2),                 patch.object(face_store, 'load_enrollment', return_value=row),                 patch.object(face_engine, 'analyze', return_value={'embedding': templates[0]}):
             with patch.object(route, 'combined_spoof_score', side_effect=spoof):
                 response = self.post()
         rid = response.headers['X-Request-ID']
@@ -367,7 +376,14 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.assertNotIn(SECRET.decode(), '\n'.join(logs.output))
 
     def test_extraction_error_has_start_error_and_rejection(self):
-        with patch.object(route, 'extract_embedding', side_effect=RuntimeError('private-image-data')):
+        from app.services import face_engine, face_store
+        from app.services.security_service import compute_template_integrity_hash
+        templates = [np.eye(512, dtype=np.float32)[0]]
+        row = {'status': 'completed', 'model_version': 'buffalo_l/w600k_r50', 'templates': templates,
+               'integrity_hash': compute_template_integrity_hash('student', 'buffalo_l/w600k_r50', templates, 'salt')}
+        with patch.object(route, '_verify_face_v2', VERIFY_FACE_V2), \
+                patch.object(face_store, 'load_enrollment', return_value=row), \
+                patch.object(face_engine, 'analyze', side_effect=RuntimeError('private-image-data')):
             with self.assertLogs('smartcheck', level='INFO') as logs:
                 self.assertEqual(self.post().status_code, 400)
         text = '\n'.join(logs.output)
@@ -437,8 +453,8 @@ class IntegratedTOTPTests(unittest.TestCase):
                 process.communicate()
 
     def test_valid_code_does_not_bypass_face(self):
-        with patch.object(route, 'verify_face_multi', return_value={
-                'verified': False, 'best_similarity': 0., 'avg_similarity': 0.}):
+        mismatch = lambda *args: (None, (route.jsonify({'ok': False, 'retry_face': True}), 400))
+        with patch.object(route, '_verify_face_v2', side_effect=mismatch):
             self.assertEqual(self.post().status_code, 400)
         self.assertEqual(self.db.records, [])
 

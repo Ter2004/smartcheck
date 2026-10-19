@@ -3,18 +3,24 @@
 flask==3.1.3
 supabase==2.13.0
 python-dotenv==1.1.0
-deepface==0.0.93
-retina-face==0.0.18
 gunicorn==23.0.0
 python-dateutil==2.9.0
 opencv-python-headless>=4.8.0,<4.12
 numpy==1.26.4
-tensorflow==2.15.0
-tf-keras==2.15.1
 Flask-Session==0.8.0
 Flask-Limiter==3.9.0
 APScheduler==3.10.4
 Flask-SQLAlchemy>=3.1.1
+# SQLAlchemy 2.1 maps postgresql:// to psycopg (v3), which is not installed;
+# 2.0.52 (psycopg2) is what the app runs on. Unpinned, a fresh image fails to start.
+SQLAlchemy==2.0.52
 psycopg2-binary>=2.9.9
 onnxruntime==1.24.4
+# Face stack v2: InsightFace buffalo_l (models are non-commercial research only).
+# 2.1 is a pure-Python wheel (0.7.3 needs a C++ compiler). onnx 1.16.2 is what
+# was tested here (newer onnx needs ml_dtypes >= 0.5).
+insightface==2.1
+onnx==1.16.2
+scipy==1.17.1
+scikit-image==0.26.0
 openpyxl==3.1.5

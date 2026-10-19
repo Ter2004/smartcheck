@@ -24,7 +24,8 @@ def table_mock(data):
 class LivenessRouteTests(unittest.TestCase):
     def setUp(self):
         self.web = Flask(__name__)
-        self.web.config.update(SECRET_KEY='test', RATELIMIT_ENABLED=False)
+        self.web.config.update(SECRET_KEY='test', RATELIMIT_ENABLED=False,
+                                FACE_ENGINE='facenet512')  # v1 routes (unreachable in production)
         app.limiter.init_app(self.web)
         self.web.register_blueprint(student.student_bp, url_prefix='/student')
         self.client = self.web.test_client()

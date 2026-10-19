@@ -1,61 +1,68 @@
 """The face work each route does per request, for scripts/bench_face_pipeline.py.
 
-Each function makes the same service calls as the route, in the same order,
-minus Supabase and session handling. Liveness frames go through analyze_frame
-directly so a frame that would fail early is still fully timed.
+Face stack v2 (InsightFace buffalo_l + Fasnet ONNX). Each function makes the
+same service calls as the route, in the same order, minus Supabase and session
+handling, and without the early exits, so every step is always timed.
+The legacy (FaceNet512/DeepFace) pipeline and its numbers are in commit d2dc68b
+(scripts/face_pipelines.py) and docs/face-stack-v2/bench-phase0-legacy.json.
 """
+import numpy as np
+
+from app.services import enroll_v2, face_engine
 from app.services import face_service as fs
 from app.services import liveness_challenge as lc
 
+PIPELINE_NAME = "arcface (InsightFace buffalo_l) + Fasnet ONNX anti-spoof; check-in passive"
 _STORED = []
-
-PIPELINE_NAME = "facenet512 (DeepFace) + RetinaFace + Fasnet/ONNX anti-spoof, head-turn liveness"
 
 
 def warm_up(frames):
     """Load every model once (first calls are not timed)."""
+    face_engine.warm_up()
     raw = fs._decode_image(frames[0])
     fs.combined_spoof_score(raw)
-    fs.extract_embedding(frames[0])
-    lc.analyze_frame(raw)
-    _STORED[:] = [fs.extract_embedding(frames[0])] * 5   # stands in for the 5 enrolled embeddings
+    face = face_engine.analyze(raw, clahe=False)
+    _STORED[:] = [face["embedding"]] * 5   # stands in for the 5 enrolled templates
 
 
 def enrollment(frames):
-    """/student/api/liveness/verify (2 gestures) + 5 x /api/spoof_check + /api/enroll."""
-    five = (frames * 5)[:5]
-    # Liveness verify: before, 2 gesture frames, after; then 2 continuity references.
-    gesture = [lc.decode_frame(f) for f in (frames * 4)[:4]]
-    for f in (frames * 4)[:4]:
+    """/student/api/enroll (v2) on 8 frames: validate, decode, analyze, quality, anti-spoof, consistency.
+
+    The 1:N duplicate check is a database call (match_face_templates) and is not timed here.
+    """
+    eight = (frames * 8)[:8]
+    faces = []
+    for f in eight:
         fs.server_validate_frame(f)
-    analyzed = [lc.analyze_frame(img) for img in gesture]
-    _ = [float(analyzed[0]["embedding"] @ a["embedding"]) for a in analyzed[1:]]
-    refs = [fs.extract_embedding(frames[0]), fs.extract_embedding(frames[-1])]
-    # Step-4 capture: one spoof check (+ embedding) per frame.
-    for f in five:
-        fs.server_validate_frame(f)
-        fs.spoof_check_with_embedding(f)
-    # /api/enroll
-    for f in five:
-        fs.server_validate_frame(f)
-    raw = [fs._decode_image(f) for f in five]
-    fs.detect_static_image(raw)
-    for img in raw:
+        img = fs._decode_image(f)
+        face = face_engine.analyze(img, clahe=False)
+        enroll_v2.quality(img)
         fs.combined_spoof_score(img)
-    embeddings = [fs.extract_embedding(f) for f in five]
-    fs.check_embedding_consistency(embeddings, threshold=fs.CONSISTENCY_THRESHOLD)
-    _ = [max(fs.cosine_similarity(e, r) for r in refs) for e in embeddings]
-    return embeddings
+        lc.direction(lc.ARCFACE_YAW_SIGN * face["yaw_deg"], "deg")
+        faces.append(face)
+    embs = [f["embedding"] for f in faces[:5]]
+    _ = [float(embs[a] @ embs[b]) for a in range(3) for b in range(a + 1, 3)]
+    _ = [max(float(e @ x) for x in embs[:3]) for e in embs[3:]]
+    return embs
 
 
 def checkin(frames):
-    """/api/checkin in head_turn mode: frontal frame + 1 gesture frame + after frame."""
+    """/api/checkin, CHECKIN_LIVENESS=passive: validate, anti-spoof, embedding, match."""
     face_image = frames[0]
     fs.server_validate_frame(face_image)
     raw = fs._decode_image(face_image)
     fs.combined_spoof_score(raw)
-    extra = [lc.decode_frame(f) for f in (frames[1:] + frames)[:2]]
-    analyzed = [lc.analyze_frame(img) for img in [raw] + extra]
+    live = face_engine.analyze(raw, clahe=False)["embedding"]
+    return max(float(live @ t) for t in _STORED)
+
+
+def checkin_head_turn(frames):
+    """/api/checkin in head_turn mode on v2 (same 3 frames as the legacy baseline)."""
+    face_image = frames[0]
+    fs.server_validate_frame(face_image)
+    raw = fs._decode_image(face_image)
+    fs.combined_spoof_score(raw)
+    extra = [fs._decode_image(f) for f in (frames[1:] + frames)[:2]]
+    analyzed = [face_engine.analyze(img, clahe=False) for img in [raw] + extra]
     _ = [float(analyzed[0]["embedding"] @ a["embedding"]) for a in analyzed[1:]]
-    live = fs.extract_embedding(face_image)
-    return fs.verify_face_multi(live, _STORED, fs.NEW_DEVICE_THRESHOLD)
+    return max(float(analyzed[0]["embedding"] @ t) for t in _STORED)

@@ -1,8 +1,8 @@
-"""Face detection, alignment and embedding, switchable between two stacks.
+"""Face detection, alignment and embedding (InsightFace buffalo_l).
 
-FACE_ENGINE=facenet512 (default) keeps the existing DeepFace path in
-face_service.py untouched. FACE_ENGINE=arcface uses InsightFace buffalo_l on
-ONNX Runtime CPU: SCRFD det_10g finds the face and its 5 keypoints, the face is
+FACE_ENGINE=arcface is the only engine since face stack v2 Phase 5: the
+DeepFace/FaceNet512 path and TensorFlow were removed ("facenet512" remains only
+as the model_version label of legacy rows). buffalo_l runs on ONNX Runtime CPU: SCRFD det_10g finds the face and its 5 keypoints, the face is
 aligned to the ArcFace template, w600k_r50 returns a 512-D embedding, and
 1k3d68 gives the head pose (pitch, yaw, roll in degrees).
 
@@ -72,7 +72,7 @@ def _config():
 
 
 def active_engine(config=None):
-    return str((config or _config()).get("FACE_ENGINE") or "facenet512").strip().lower()
+    return str((config or _config()).get("FACE_ENGINE") or "arcface").strip().lower()
 
 
 def model_version(engine=None):
@@ -94,10 +94,11 @@ def validate_config(config):
     Returns the parsed arcface settings ({} for facenet512).
     """
     engine = active_engine(config)
-    if engine not in ENGINES:
-        raise RuntimeError(f"[SmartCheck] FACE_ENGINE={engine!r} is invalid (expected one of {ENGINES}).")
+    if engine == "facenet512":
+        raise RuntimeError("[SmartCheck] FACE_ENGINE=facenet512 was removed with DeepFace/TensorFlow "
+                           "(face stack v2 Phase 5). Use arcface, or run commit f666cd3 for the old stack.")
     if engine != "arcface":
-        return {}
+        raise RuntimeError(f"[SmartCheck] FACE_ENGINE={engine!r} is invalid (expected 'arcface').")
     missing = [k for k in ("FACE_CLAHE",) + ARCFACE_THRESHOLD_KEYS if config.get(k) in (None, "")]
     if missing:
         raise RuntimeError(
@@ -304,8 +305,6 @@ def extract_embedding(base64_image, include_metadata=False):
     """Decode → (CLAHE if configured) → embedding of the main face as a list of floats."""
     from app.services import face_service
 
-    if active_engine() != "arcface":
-        return face_service.extract_embedding(base64_image, include_metadata=include_metadata)
     img = face_service._decode_image(base64_image)
     face = analyze(img)
     embedding = [float(v) for v in face["embedding"]]

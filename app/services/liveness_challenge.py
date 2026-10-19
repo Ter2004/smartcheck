@@ -6,9 +6,10 @@ turn_right / tilt_left / tilt_right) â€” two for enrollment, one for check-in â€
 bound to a one-time nonce. The client returns one frame taken
 before the gestures, one frame per
 gesture (captured when the browser detector reports it done) and one after.
-The server then checks from RetinaFace landmarks that each gesture frame shows
-the head turned or tilted the requested way, and from FaceNet embeddings that
-every frame shows the same face as the frontal reference.
+The server then checks from the face landmarks (InsightFace landmark_3d_68 yaw,
+SCRFD eye line) that each gesture frame shows the head turned or tilted the
+requested way, and from ArcFace embeddings that every frame shows the same face
+as the frontal reference.
 
 Conventions on the raw (unmirrored) camera frame, as in mediapipe_liveness.js:
 turn_left moves the nose toward the image's right; tilt_left (left ear toward
@@ -23,7 +24,6 @@ pre-made images of one face in the right poses, or a live deepfake.
 import secrets
 import time
 
-import cv2
 import numpy as np
 
 from app.services import face_service
@@ -164,45 +164,12 @@ def _analyze_frame_arcface(img_bgr):
 def analyze_frame(img_bgr):
     """Return {"yaw", "roll", "embedding", "unit"} for the single main face in a BGR frame.
 
-    The identity crop is rotated to a level eye line first: FaceNet is not
-    rotation-invariant, and a tilt frame would otherwise score low.
+    InsightFace since face stack v2: yaw in degrees (landmark_3d_68), roll from
+    the SCRFD eye line, ArcFace embedding. The RetinaFace/FaceNet512 reader and
+    its ratio-scale yaw were removed with TensorFlow; the ratio thresholds stay
+    as the calibration reference of the degree limits.
     """
-    from app.services import face_engine
-    if face_engine.active_engine() == "arcface":
-        return _analyze_frame_arcface(img_bgr)
-    from retinaface import RetinaFace
-
-    # Landmarks on a downscaled copy (selfie faces are large), identity crop
-    # from the full-resolution frame.
-    h, w = img_bgr.shape[:2]
-    scale = min(1.0, DETECT_MAX_SIDE / max(h, w))
-    small = img_bgr if scale == 1.0 else cv2.resize(
-        img_bgr, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
-    # One TF model at a time per process, like the other face calls.
-    with face_service._deepface_lock:
-        faces = RetinaFace.detect_faces(small, threshold=MIN_FACE_SCORE, allow_upscaling=False)
-    if not isinstance(faces, dict) or not faces:
-        raise FrameError("no_face")
-    ranked = sorted(faces.values(), key=lambda f: _area(f["facial_area"]), reverse=True)
-    main = ranked[0]
-    if len(ranked) > 1 and _area(ranked[1]["facial_area"]) >= SECOND_FACE_AREA_RATIO * _area(main["facial_area"]):
-        raise FrameError("multiple_faces")
-
-    roll = roll_deg(main["landmarks"])
-    x1, y1, x2, y2 = (v / scale for v in main["facial_area"])
-    left, right = (p / scale for p in _eyes(main["landmarks"]))
-    level = cv2.getRotationMatrix2D(tuple(((left + right) / 2).tolist()), roll, 1.0)
-    upright = cv2.warpAffine(img_bgr, level, (w, h), borderMode=cv2.BORDER_REPLICATE)
-    cx, cy = level @ np.array([(x1 + x2) / 2, (y1 + y2) / 2, 1.0])
-    half_w, half_h = (x2 - x1) * 0.6, (y2 - y1) * 0.6   # box plus 10% margin each side
-    crop = upright[max(0, int(cy - half_h)):min(h, int(cy + half_h)),
-                   max(0, int(cx - half_w)):min(w, int(cx + half_w))]
-    crop = face_service.normalize_illumination(crop)
-    rep = face_service._call_deepface("represent", img_path=crop,
-                                      model_name="Facenet512", detector_backend="skip")
-    embedding = np.asarray(rep[0]["embedding"], dtype=np.float32)
-    return {"yaw": yaw_ratio(main["landmarks"]), "roll": roll,
-            "embedding": embedding / (np.linalg.norm(embedding) + 1e-12), "unit": "ratio"}
+    return _analyze_frame_arcface(img_bgr)
 
 
 def gesture(expected, frame, before):

@@ -23,7 +23,7 @@ python -m unittest discover -s tests -v
 python -m unittest discover -s tests -p 'test_checkin_selection.py' -v
 ```
 
-Use the project's virtual environment. Face tests need the installed DeepFace/TensorFlow dependencies; tests mock model calls where appropriate. JavaScript checks are in `scripts/test_*.js` and run individually with Node. Browser and real-device checks are still needed for camera/BLE flows, including iPhone.
+Use the project's virtual environment. Face tests use the installed InsightFace models (~/.insightface/models/buffalo_l) and skip when absent; set SMARTCHECK_TEST_PG_DSN to a throwaway pgvector Postgres to run tests/test_face_stack_v2_sql.py. Dev-only scripts that need DeepFace/torch are listed in requirements-dev.txt. JavaScript checks are in `scripts/test_*.js` and run individually with Node. Browser and real-device checks are still needed for camera/BLE flows, including iPhone.
 
 ## Architecture
 
@@ -50,19 +50,16 @@ from app import supabase_admin  # service key — all data reads/writes (bypasse
 ```
 All application data access uses `supabase_admin`. `supabase` (anon) is used only for `auth.sign_in_with_password`.
 
-### Face pipeline (`app/services/face_service.py`)
-The core AI pipeline runs entirely server-side:
+### Face pipeline (face stack v2: `face_engine.py`, `face_service.py`, `enroll_v2.py`)
+InsightFace buffalo_l on ONNX Runtime CPU; DeepFace/TensorFlow were removed (docs/face-stack-v2/). Server-side:
 1. `server_validate_frame()` — zero-trust JPEG validation (size, magic bytes, blur, color variance)
-2. `combined_spoof_score()` — only Fasnet (0.70) and ONNX (0.10) vote; temporal variance is computed and logged only. Fasnet unavailable → fail-close. (Moiré and screen-texture FFT layers were removed 2026-09-30 — no separation on CelebA-Spoof, see `docs/evidence/eval-2026-09-30/`.)
-3. `extract_embedding()` — CLAHE normalization → FaceNet512 (512-D vector) via DeepFace, on the largest detected face
-4. `verify_face_multi()` — cosine similarity against all stored embeddings; decision on best (not average)
+2. `combined_spoof_score()` — Fasnet (0.70, `fasnet_onnx.py`, same weights as DeepFace's, on the SCRFD box) and ONNX (0.10) vote; temporal variance is logged only. Fasnet unavailable → fail-close.
+3. `face_engine.analyze()` — SCRFD detection (padded retry for close-ups), one significant face, ArcFace w600k_r50 embedding (512-D, unit length), 3D-68 head pose; optional CLAHE (`FACE_CLAHE`)
+4. Check-in: max cosine against the student's `face_templates` (active `model_version`, HMAC-verified) ≥ `ARCFACE_MATCH_THRESHOLD`; another model version → "re-enrollment required" (409)
 
-Liveness is decided server-side by a head-gesture challenge (`app/services/liveness_challenge.py`): the server picks random distinct gestures from `ACTIONS` (turn left/right and tilt left/right, tilt thresholds from `scripts/calibrate_tilt.py`), RetinaFace landmarks confirm each one (yaw along the eye line; tilt as roll change from the frontal frame) and FaceNet on a level-rotated crop confirms the same face. Enrollment uses two gestures (`/student/api/liveness/*`; `/api/enroll` requires a pass within 15 min). Check-in uses one (`/api/checkin/liveness/challenge`) verified inside `/api/checkin` against the submitted frame. `CHECKIN_LIVENESS=passive` reverts check-in to hands-free capture.
+Enrollment (`/student/enroll` → `enroll_face_v2.html` + `enrollment_v2.js`, server `app/services/enroll_v2.py`): consent → one camera session (align, look + blink, one server-issued head turn) → ≤ 8 frames → checks → 3 frontal + 2 turned templates in `face_enrollments`/`face_templates` (migration `20261019_face_stack_v2.sql`) via one RPC transaction, 1:N duplicate block via `match_face_templates`. Check-in liveness: `CHECKIN_LIVENESS=passive` (head_turn still supported; yaw limits in degrees in `liveness_challenge.py`).
 
-Key thresholds (edit in `face_service.py` top section):
-- `SAME_DEVICE_THRESHOLD = 0.70`, `NEW_DEVICE_THRESHOLD = 0.80`
-- `DUPLICATE_THRESHOLD = 0.65` (`SELF_VERIFY_THRESHOLD = 0.80` is no longer used by any route; `scripts/calibrate_thresholds.py` still reports it)
-- `SPOOF_DECISION_THRESHOLD = 0.50`
+Thresholds: `FACE_CLAHE`, `ARCFACE_MATCH_THRESHOLD`, `ARCFACE_DUP_THRESHOLD`, `ENROLL_SELF_SIM_MIN` are required env settings with no defaults (choose with `scripts/compare_models.py`); `SPOOF_DECISION_THRESHOLD = 0.50`. The FaceNet512 constants left in `face_service.py` belong to the unreachable v1 enrollment code.
 
 ### Security layer (`app/services/security_service.py`)
 - **Device token**: HMAC-SHA256 signed token binding `user_id + device_fingerprint`, verified on every check-in
@@ -89,7 +86,7 @@ Migrations live in `database/migrations/`. Apply via Supabase SQL Editor or psql
 ### Session & config
 Flask-Session uses SQLAlchemy backend (`flask_sessions` table on `DATABASE_URL`). Sessions expire after 1 hour. In production: `SESSION_COOKIE_SECURE=True`, requires HTTPS.
 
-Enrollment is one flow: consent → lighting → server-verified head turn → 5 frontal photos. The EAR calibration step and the circular variant (`ENROLL_FLOW_MODE`) were removed 2026-09-30.
+Enrollment is the v2 flow above. The v1 page (`enroll_face.html`, `enrollment_flow.js`) and its routes (`/student/api/spoof_check`, `/student/api/liveness/*`, the legacy body of `/api/enroll`) are no longer reachable from the UI and are kept only until the real-class test confirms v2.
 
 ## Conventions
 - All templates extend `base.html`; flash categories: `success`, `danger`, `warning`, `info`

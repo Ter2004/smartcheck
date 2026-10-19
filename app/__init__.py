@@ -128,7 +128,6 @@ def create_app():
         face_engine.warm_up()
     # Suppress noisy third-party loggers
     logging.getLogger("apscheduler").setLevel(logging.WARNING)
-    logging.getLogger("deepface").setLevel(logging.WARNING)
 
     # --- SQLAlchemy (Flask-Session backend) ---
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")

@@ -1,5 +1,6 @@
 # Pip constraints — pins transitive deps that cause version hell.
 # numpy 2.x breaks torch 2.2.x ABI; tensorflow 2.16+ breaks DeepFace.
+# torch/tensorflow/deepface lines apply only to requirements-dev.txt now.
 numpy==1.26.4
 tensorflow==2.15.0
 tensorflow-cpu==2.15.0

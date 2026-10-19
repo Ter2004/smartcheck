@@ -11,13 +11,11 @@ from app import supabase_admin
 from app.services.request_audit import RequestLogger, audited_checkin, event, reject, stage
 _log = RequestLogger(logging.getLogger("smartcheck.checkin"), {})
 from app.services.face_service import (
-    extract_embedding, verify_face_multi,
     combined_spoof_score, is_system_failure,
     _decode_image, server_validate_frame,
-    SAME_DEVICE_THRESHOLD, NEW_DEVICE_THRESHOLD,
 )
 from app.services.security_service import (
-    verify_device_token_details, verify_embedding_integrity, csrf_protect,
+    verify_device_token_details, csrf_protect,
 )
 from app.services.esp32_totp import verify_code
 from app.services import ble_challenge, proximity_receipt
@@ -29,7 +27,6 @@ from app import limiter as _limiter
 
 api_checkin_bp = Blueprint("api_checkin", __name__)
 
-# ─── Face verification thresholds (FaceNet512) ───────────────────────────────
 @api_checkin_bp.route("/api/checkin", methods=["POST"])
 @audited_checkin
 @login_required
@@ -283,78 +280,17 @@ def checkin():
             return jsonify({"ok": False, "error": "อุปกรณ์นี้ถูกผูกกับบัญชีอื่นแล้ว"}), 403
         supabase_admin.table("users").update({"device_id": device_id}).eq("id", student_id).execute()
 
-    # Sprint 1B: HMAC device token counts as trusted regardless of DB binding
-    token_trusted  = device_payload is not None   # cryptographic proof of device
-    db_trusted     = bool(user_device and device_id and user_device == device_id)
-    device_trusted = token_trusted or db_trusted
-    face_threshold = SAME_DEVICE_THRESHOLD if device_trusted else NEW_DEVICE_THRESHOLD
+    # Device trust no longer changes the face threshold: the arcface path has one
+    # threshold (ARCFACE_MATCH_THRESHOLD). The old trusted-device 0.70 FaceNet path
+    # was never reachable (no device token is ever issued) and is not carried over.
 
-    # ─── 6. Face verification (multi-embedding) ───────────────────────────────
-    from app.services import face_engine
-    if face_engine.active_engine() == "arcface":
-        score, failure = _verify_face_v2(student_id, raw_frame)
-        if failure is not None:
-            return failure
-        _perf["embed"] = round((time.perf_counter() - _t8) * 1000, 2); _t9 = time.perf_counter()
-        _perf["verify"] = 0.0; _t10 = time.perf_counter()
-        return _record_attendance(sess, session_id, student_id, score, antispoof_pass, liveness_action,
-                                  device_id, _perf, _t0, _t10)
-
-    with stage("biometrics_lookup"):
-        bio_res = (
-            supabase_admin.table("student_biometrics")
-            .select("face_embeddings, integrity_hash")
-            .eq("user_id", student_id)
-            .maybe_single()
-            .execute()
-        )
-    if not bio_res or not bio_res.data:
-        reject("biometrics_missing")
-        return jsonify({"ok": False, "error": "ยังไม่ได้ลงทะเบียนใบหน้า"}), 400
-
-    stored_embeddings = bio_res.data.get("face_embeddings") or []
-    if not stored_embeddings:
-        reject("embeddings_empty")
-        return jsonify({"ok": False, "error": "ยังไม่ได้ลงทะเบียนใบหน้า"}), 400
-
-    # Sprint 2B: verify embedding integrity before using them
-    stored_hash = bio_res.data.get("integrity_hash") or ""
-    if not verify_embedding_integrity(
-        student_id, stored_embeddings, stored_hash,
-        current_app.config["EMBEDDING_INTEGRITY_SALT"],
-    ):
-        _log.warning(f"[INTEGRITY] VIOLATION student={student_id}")
-        reject("embedding_integrity_failed")
-        return jsonify({
-            "ok":   False,
-            "error": "ข้อมูลชีวมาตรไม่สมบูรณ์ — กรุณาลงทะเบียนใบหน้าใหม่อีกครั้ง",
-        }), 403
-
-    try:
-        with stage("extraction"):
-            live_embedding = extract_embedding(face_image)
-    except Exception as e:
-        _log.warning(f"[FACE] extract_embedding failed: {type(e).__name__}")
-        # L1: don't expose internal error details to client
-        reject("extraction_failed")
-        return jsonify({"ok": False, "error": "ตรวจใบหน้าไม่สำเร็จ กรุณาถ่ายใหม่อีกครั้ง", "retry_face": True}), 400
-    _perf["embed"] = round((time.perf_counter() - _t8) * 1000, 2); _t9 = time.perf_counter()
-
-    with stage("matching"):
-        verify_result = verify_face_multi(live_embedding, stored_embeddings, face_threshold)
-    score = verify_result["best_similarity"]
-    _log.info(f"[FACE] best={score:.4f} avg={verify_result['avg_similarity']:.4f} "
-              f"threshold={face_threshold} trusted={device_trusted} pass={verify_result['verified']}")
-
-    if not verify_result["verified"]:
-        reject("face_mismatch")
-        return jsonify({
-            "ok": False,
-            "error": "ใบหน้าไม่ตรง — กรุณาถ่ายรูปใหม่",
-            "retry_face": True,
-        }), 400
-    _perf["verify"] = round((time.perf_counter() - _t9) * 1000, 2); _t10 = time.perf_counter()
-
+    # ─── 6. Face verification (face_templates of the active model) ──────────
+    score, failure = _verify_face_v2(student_id, raw_frame)
+    if failure is not None:
+        return failure
+    _perf["embed"] = round((time.perf_counter() - _t8) * 1000, 2)
+    _perf["verify"] = 0.0
+    _t10 = time.perf_counter()
     return _record_attendance(sess, session_id, student_id, score, antispoof_pass, liveness_action,
                               device_id, _perf, _t0, _t10)
 

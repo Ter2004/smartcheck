@@ -1,0 +1,12 @@
+# Dev-only tools for face stack v2 (not installed in the image):
+#   scripts/export_fasnet_onnx.py, scripts/fasnet_parity.py   -> torch + deepface
+#   scripts/compare_models.py (facenet512 config), scripts/calibrate_arcface_yaw.py,
+#   scripts/calibrate_thresholds.py, scripts/calibrate_tilt.py -> deepface + tensorflow + retina-face
+# Install into a separate venv: pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
+#   plus ml-dtypes==0.2.0 (TensorFlow 2.15) — see docs/face-stack-v2/phase0-recon.md.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2
+deepface==0.0.93
+retina-face==0.0.18
+tensorflow==2.15.0
+tf-keras==2.15.1

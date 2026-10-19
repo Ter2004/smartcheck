@@ -290,6 +290,16 @@ def checkin():
     face_threshold = SAME_DEVICE_THRESHOLD if device_trusted else NEW_DEVICE_THRESHOLD
 
     # ─── 6. Face verification (multi-embedding) ───────────────────────────────
+    from app.services import face_engine
+    if face_engine.active_engine() == "arcface":
+        score, failure = _verify_face_v2(student_id, raw_frame)
+        if failure is not None:
+            return failure
+        _perf["embed"] = round((time.perf_counter() - _t8) * 1000, 2); _t9 = time.perf_counter()
+        _perf["verify"] = 0.0; _t10 = time.perf_counter()
+        return _record_attendance(sess, session_id, student_id, score, antispoof_pass, liveness_action,
+                                  device_id, _perf, _t0, _t10)
+
     with stage("biometrics_lookup"):
         bio_res = (
             supabase_admin.table("student_biometrics")
@@ -345,6 +355,56 @@ def checkin():
         }), 400
     _perf["verify"] = round((time.perf_counter() - _t9) * 1000, 2); _t10 = time.perf_counter()
 
+    return _record_attendance(sess, session_id, student_id, score, antispoof_pass, liveness_action,
+                              device_id, _perf, _t0, _t10)
+
+
+def _verify_face_v2(student_id, raw_frame):
+    """(best similarity, None) or (None, error response): face_templates of the active model.
+
+    A missing enrollment of the active model_version — including a student who
+    only has a legacy FaceNet512 row — is "re-enrollment required", never a
+    failed match. The row's HMAC is verified before any comparison.
+    """
+    from app.services import face_engine, face_store
+    from app.services.security_service import verify_template_integrity
+
+    model_version = face_engine.model_version()
+    with stage("biometrics_lookup"):
+        enrollment = face_store.load_enrollment(supabase_admin, student_id)
+    if not enrollment or enrollment.get("status") != "completed" \
+            or enrollment.get("model_version") != model_version or not enrollment.get("templates"):
+        reject("reenrollment_required", stored_model=(enrollment or {}).get("model_version"))
+        return None, (jsonify({"ok": False, "reenroll_required": True,
+                               "error": "ระบบจดจำใบหน้าได้รับการปรับปรุง — กรุณาลงทะเบียนใบหน้าใหม่ก่อนเช็คชื่อ"}), 409)
+    if not verify_template_integrity(student_id, model_version, enrollment["templates"],
+                                     enrollment.get("integrity_hash") or "",
+                                     current_app.config["EMBEDDING_INTEGRITY_SALT"]):
+        _log.warning(f"[INTEGRITY] VIOLATION (v2) student={student_id}")
+        reject("embedding_integrity_failed")
+        return None, (jsonify({"ok": False,
+                               "error": "ข้อมูลชีวมาตรไม่สมบูรณ์ — กรุณาลงทะเบียนใบหน้าใหม่อีกครั้ง"}), 403)
+    try:
+        with stage("extraction"):
+            live = face_engine.analyze(raw_frame)["embedding"]
+    except Exception as error:
+        _log.warning(f"[FACE] arcface analyze failed: {type(error).__name__}")
+        reject("extraction_failed")
+        return None, (jsonify({"ok": False, "error": "ตรวจใบหน้าไม่สำเร็จ กรุณาถ่ายใหม่อีกครั้ง",
+                               "retry_face": True}), 400)
+    threshold = face_engine.threshold("ARCFACE_MATCH_THRESHOLD")
+    with stage("matching"):
+        score = max(float(live @ t) for t in enrollment["templates"])
+    _log.info(f"[FACE] engine=arcface best={score:.4f} threshold={threshold} pass={score >= threshold}")
+    if score < threshold:
+        reject("face_mismatch")
+        return None, (jsonify({"ok": False, "error": "ใบหน้าไม่ตรง — กรุณาถ่ายรูปใหม่", "retry_face": True}), 400)
+    return score, None
+
+
+def _record_attendance(sess, session_id, student_id, score, antispoof_pass, liveness_action,
+                       device_id, _perf, _t0, _t10):
+    """Duplicate guard, present/late, insert. Shared by both face engines."""
     # ─── 7. Duplicate check-in guard ─────────────────────────────────────────
     with stage("attendance_lookup"):
         dup = (

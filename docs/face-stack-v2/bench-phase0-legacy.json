@@ -1,0 +1,33 @@
+{
+  "pipeline": "facenet512 (DeepFace) + RetinaFace + Fasnet/ONNX anti-spoof, head-turn liveness",
+  "images": [
+    "real_02_sharp_face1_ok.jpg",
+    "real_04_sharp_face1_r_ok.jpg",
+    "real_06_sharp_face2_ok.jpg",
+    "real_08_sharp_face2_r_ok.jpg",
+    "real_10_sharp_face3_ok.jpg",
+    "real_12_sharp_face3_r_ok.jpg"
+  ],
+  "python": "3.11.9",
+  "platform": "win32",
+  "rss_mb": {
+    "start": 96.2,
+    "after_warm_up": 1211.3,
+    "after_runs": 1265.7
+  },
+  "warm_up_s": 40.32,
+  "enrollment": {
+    "median_ms": 8181.0,
+    "p90_ms": 8516.1,
+    "min_ms": 7944.5,
+    "max_ms": 8874.9,
+    "n": 10
+  },
+  "checkin": {
+    "median_ms": 1600.4,
+    "p90_ms": 1744.3,
+    "min_ms": 1568.5,
+    "max_ms": 1745.5,
+    "n": 10
+  }
+}

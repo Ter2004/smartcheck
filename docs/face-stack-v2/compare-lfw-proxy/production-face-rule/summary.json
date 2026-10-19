@@ -1,0 +1,286 @@
+{
+  "dataset": "LFW proxy: first 40 people with >=10 images, first 10 images each, tag _lfw",
+  "people": 40,
+  "images": 400,
+  "configs": {
+    "facenet512": {
+      "overall": {
+        "n_genuine": 200,
+        "n_impostor": 7800,
+        "min_genuine": 0.2296,
+        "max_impostor": 0.7098,
+        "margin": -0.4802,
+        "far_0": {
+          "threshold": 0.7098,
+          "far": 0.0,
+          "frr": 0.205
+        },
+        "far_0.001": {
+          "threshold": 0.6635,
+          "far": 0.000897,
+          "frr": 0.105
+        },
+        "far_0.01": {
+          "threshold": 0.5292,
+          "far": 0.01,
+          "frr": 0.02
+        },
+        "eer": {
+          "eer": 0.0158,
+          "threshold": 0.5037
+        }
+      },
+      "by_lighting": {
+        "lfw": {
+          "n_genuine": 200,
+          "n_impostor": 7800,
+          "min_genuine": 0.2296,
+          "max_impostor": 0.7098,
+          "margin": -0.4802,
+          "far_0": {
+            "threshold": 0.7098,
+            "far": 0.0,
+            "frr": 0.205
+          },
+          "far_0.001": {
+            "threshold": 0.6635,
+            "far": 0.000897,
+            "frr": 0.105
+          },
+          "far_0.01": {
+            "threshold": 0.5292,
+            "far": 0.01,
+            "frr": 0.02
+          },
+          "eer": {
+            "eer": 0.0158,
+            "threshold": 0.5037
+          }
+        }
+      },
+      "enroll_pairwise": {
+        "n_pairs": 400,
+        "min": 0.1825,
+        "p1": 0.3262,
+        "p5": 0.471,
+        "median": 0.6998,
+        "lowest_person_minimums": [
+          [
+            "Anna_Kournikova",
+            0.1825
+          ],
+          [
+            "Angelina_Jolie",
+            0.343
+          ],
+          [
+            "Bill_Gates",
+            0.3852
+          ],
+          [
+            "Amelie_Mauresmo",
+            0.4025
+          ],
+          [
+            "Alvaro_Uribe",
+            0.4106
+          ]
+        ]
+      },
+      "latency_ms_per_image": {
+        "mean": 332.3,
+        "median": 321.2
+      },
+      "no_face": {
+        "count": 0,
+        "of_images": 400
+      }
+    },
+    "arcface_clahe_off": {
+      "overall": {
+        "n_genuine": 103,
+        "n_impostor": 2266,
+        "min_genuine": 0.4049,
+        "max_impostor": 0.3319,
+        "margin": 0.073,
+        "far_0": {
+          "threshold": 0.3319,
+          "far": 0.0,
+          "frr": 0.0
+        },
+        "far_0.001": {
+          "threshold": 0.2876,
+          "far": 0.000883,
+          "frr": 0.0
+        },
+        "far_0.01": {
+          "threshold": 0.1951,
+          "far": 0.009709,
+          "frr": 0.0
+        },
+        "eer": {
+          "eer": 0.0,
+          "threshold": 0.4049
+        }
+      },
+      "by_lighting": {
+        "lfw": {
+          "n_genuine": 103,
+          "n_impostor": 2266,
+          "min_genuine": 0.4049,
+          "max_impostor": 0.3319,
+          "margin": 0.073,
+          "far_0": {
+            "threshold": 0.3319,
+            "far": 0.0,
+            "frr": 0.0
+          },
+          "far_0.001": {
+            "threshold": 0.2876,
+            "far": 0.000883,
+            "frr": 0.0
+          },
+          "far_0.01": {
+            "threshold": 0.1951,
+            "far": 0.009709,
+            "frr": 0.0
+          },
+          "eer": {
+            "eer": 0.0,
+            "threshold": 0.4049
+          }
+        }
+      },
+      "enroll_pairwise": {
+        "n_pairs": 230,
+        "min": 0.3786,
+        "p1": 0.4436,
+        "p5": 0.4891,
+        "median": 0.6631,
+        "lowest_person_minimums": [
+          [
+            "Anna_Kournikova",
+            0.3786
+          ],
+          [
+            "Angelina_Jolie",
+            0.4401
+          ],
+          [
+            "Andy_Roddick",
+            0.4522
+          ],
+          [
+            "George_HW_Bush",
+            0.4811
+          ],
+          [
+            "Bill_Gates",
+            0.5053
+          ]
+        ]
+      },
+      "latency_ms_per_image": {
+        "mean": 183.0,
+        "median": 164.5
+      },
+      "no_face": {
+        "count": 42,
+        "of_images": 400
+      }
+    },
+    "arcface_clahe_on": {
+      "overall": {
+        "n_genuine": 116,
+        "n_impostor": 2900,
+        "min_genuine": 0.347,
+        "max_impostor": 0.2848,
+        "margin": 0.0622,
+        "far_0": {
+          "threshold": 0.2848,
+          "far": 0.0,
+          "frr": 0.0
+        },
+        "far_0.001": {
+          "threshold": 0.2775,
+          "far": 0.00069,
+          "frr": 0.0
+        },
+        "far_0.01": {
+          "threshold": 0.1967,
+          "far": 0.01,
+          "frr": 0.0
+        },
+        "eer": {
+          "eer": 0.0,
+          "threshold": 0.347
+        }
+      },
+      "by_lighting": {
+        "lfw": {
+          "n_genuine": 116,
+          "n_impostor": 2900,
+          "min_genuine": 0.347,
+          "max_impostor": 0.2848,
+          "margin": 0.0622,
+          "far_0": {
+            "threshold": 0.2848,
+            "far": 0.0,
+            "frr": 0.0
+          },
+          "far_0.001": {
+            "threshold": 0.2775,
+            "far": 0.00069,
+            "frr": 0.0
+          },
+          "far_0.01": {
+            "threshold": 0.1967,
+            "far": 0.01,
+            "frr": 0.0
+          },
+          "eer": {
+            "eer": 0.0,
+            "threshold": 0.347
+          }
+        }
+      },
+      "enroll_pairwise": {
+        "n_pairs": 260,
+        "min": 0.2713,
+        "p1": 0.3935,
+        "p5": 0.4508,
+        "median": 0.6396,
+        "lowest_person_minimums": [
+          [
+            "Anna_Kournikova",
+            0.2713
+          ],
+          [
+            "Andy_Roddick",
+            0.4077
+          ],
+          [
+            "Angelina_Jolie",
+            0.4226
+          ],
+          [
+            "George_HW_Bush",
+            0.4276
+          ],
+          [
+            "David_Beckham",
+            0.4295
+          ]
+        ]
+      },
+      "latency_ms_per_image": {
+        "mean": 182.6,
+        "median": 164.3
+      },
+      "no_face": {
+        "count": 39,
+        "of_images": 400
+      }
+    }
+  }
+}

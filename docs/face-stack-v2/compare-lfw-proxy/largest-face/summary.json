@@ -1,0 +1,195 @@
+{
+  "dataset": "LFW proxy: first 40 people with >=10 images, first 10 images each, tag _lfw",
+  "people": 40,
+  "images": 400,
+  "configs": {
+    "arcface_clahe_off": {
+      "overall": {
+        "n_genuine": 200,
+        "n_impostor": 7800,
+        "min_genuine": -0.0603,
+        "max_impostor": 0.6938,
+        "margin": -0.7541,
+        "far_0": {
+          "threshold": 0.6938,
+          "far": 0.0,
+          "frr": 0.275
+        },
+        "far_0.001": {
+          "threshold": 0.3319,
+          "far": 0.000897,
+          "frr": 0.015
+        },
+        "far_0.01": {
+          "threshold": 0.1849,
+          "far": 0.01,
+          "frr": 0.015
+        },
+        "eer": {
+          "eer": 0.015,
+          "threshold": 0.1717
+        }
+      },
+      "by_lighting": {
+        "lfw": {
+          "n_genuine": 200,
+          "n_impostor": 7800,
+          "min_genuine": -0.0603,
+          "max_impostor": 0.6938,
+          "margin": -0.7541,
+          "far_0": {
+            "threshold": 0.6938,
+            "far": 0.0,
+            "frr": 0.275
+          },
+          "far_0.001": {
+            "threshold": 0.3319,
+            "far": 0.000897,
+            "frr": 0.015
+          },
+          "far_0.01": {
+            "threshold": 0.1849,
+            "far": 0.01,
+            "frr": 0.015
+          },
+          "eer": {
+            "eer": 0.015,
+            "threshold": 0.1717
+          }
+        }
+      },
+      "enroll_pairwise": {
+        "n_pairs": 400,
+        "min": -0.2208,
+        "p1": -0.0887,
+        "p5": 0.365,
+        "median": 0.6729,
+        "lowest_person_minimums": [
+          [
+            "Dick_Cheney",
+            -0.2208
+          ],
+          [
+            "David_Beckham",
+            -0.0883
+          ],
+          [
+            "Catherine_Zeta-Jones",
+            -0.0271
+          ],
+          [
+            "Condoleezza_Rice",
+            0.034
+          ],
+          [
+            "Andre_Agassi",
+            0.0431
+          ]
+        ]
+      },
+      "latency_ms_per_image": {
+        "mean": 173.5,
+        "median": 158.6
+      },
+      "no_face": {
+        "count": 0,
+        "of_images": 400
+      },
+      "second_large_face_frames": 42
+    },
+    "arcface_clahe_on": {
+      "overall": {
+        "n_genuine": 200,
+        "n_impostor": 7800,
+        "min_genuine": 0.0304,
+        "max_impostor": 0.6719,
+        "margin": -0.6415,
+        "far_0": {
+          "threshold": 0.6719,
+          "far": 0.0,
+          "frr": 0.3
+        },
+        "far_0.001": {
+          "threshold": 0.2848,
+          "far": 0.000897,
+          "frr": 0.01
+        },
+        "far_0.01": {
+          "threshold": 0.1894,
+          "far": 0.01,
+          "frr": 0.01
+        },
+        "eer": {
+          "eer": 0.01,
+          "threshold": 0.1894
+        }
+      },
+      "by_lighting": {
+        "lfw": {
+          "n_genuine": 200,
+          "n_impostor": 7800,
+          "min_genuine": 0.0304,
+          "max_impostor": 0.6719,
+          "margin": -0.6415,
+          "far_0": {
+            "threshold": 0.6719,
+            "far": 0.0,
+            "frr": 0.3
+          },
+          "far_0.001": {
+            "threshold": 0.2848,
+            "far": 0.000897,
+            "frr": 0.01
+          },
+          "far_0.01": {
+            "threshold": 0.1894,
+            "far": 0.01,
+            "frr": 0.01
+          },
+          "eer": {
+            "eer": 0.01,
+            "threshold": 0.1894
+          }
+        }
+      },
+      "enroll_pairwise": {
+        "n_pairs": 400,
+        "min": 0.0025,
+        "p1": 0.0318,
+        "p5": 0.434,
+        "median": 0.6431,
+        "lowest_person_minimums": [
+          [
+            "Catherine_Zeta-Jones",
+            0.0025
+          ],
+          [
+            "Condoleezza_Rice",
+            0.0169
+          ],
+          [
+            "Anna_Kournikova",
+            0.2713
+          ],
+          [
+            "Andy_Roddick",
+            0.4077
+          ],
+          [
+            "David_Nalbandian",
+            0.4164
+          ]
+        ]
+      },
+      "latency_ms_per_image": {
+        "mean": 178.7,
+        "median": 161.8
+      },
+      "no_face": {
+        "count": 0,
+        "of_images": 400
+      },
+      "second_large_face_frames": 39
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "note": "Linux containers on the same laptop (Docker Desktop), same 3 frames (test_images/real_0[13579]_sharp_face?.jpg), --runs 10, run back to back. Legacy = smartcheck:legacy-43f5f7b with the Phase 0 scripts (d2dc68b); v2 = smartcheck:face-stack-v2.",
+  "legacy_43f5f7b": {
+    "rss_mb": {
+      "start": 120.3,
+      "after_warm_up": 1380.6,
+      "after_runs": 1534.9
+    },
+    "warm_up_s": 33.76,
+    "enrollment": {
+      "median_ms": 8535.4,
+      "p90_ms": 10781.6,
+      "min_ms": 7959.6,
+      "max_ms": 10876.5,
+      "n": 10
+    },
+    "checkin": {
+      "median_ms": 1676.2,
+      "p90_ms": 1900.5,
+      "min_ms": 1585.8,
+      "max_ms": 2180.6,
+      "n": 10
+    }
+  },
+  "face_stack_v2": {
+    "rss_mb": {
+      "start": 108.7,
+      "after_warm_up": 871.4,
+      "after_runs": 872.8
+    },
+    "warm_up_s": 3.95,
+    "enrollment": {
+      "median_ms": 4408.4,
+      "p90_ms": 4515.9,
+      "min_ms": 4173.8,
+      "max_ms": 4613.3,
+      "n": 10
+    },
+    "checkin": {
+      "median_ms": 579.3,
+      "p90_ms": 661.7,
+      "min_ms": 490.6,
+      "max_ms": 731.8,
+      "n": 10
+    },
+    "checkin_head_turn": {
+      "median_ms": 1100.2,
+      "p90_ms": 1359.8,
+      "min_ms": 1055.7,
+      "max_ms": 1452.1,
+      "n": 10
+    }
+  }
+}

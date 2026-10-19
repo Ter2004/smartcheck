@@ -111,10 +111,19 @@ and no Supabase (`scripts/bench_face_pipeline.py --runs 10`).
 - **v2:** `/api/enroll` on 8 frames;
 - neither includes the database duplicate search.
 
-**Docker (Linux), both images on the same 3 frames, run back to back:** see
-`bench-phase5-docker.json`. A first legacy run overlapped a docker build, so
-its timings are not used. Its memory figure, 1395 MB after warm-up against
-867 MB for v2, is not affected by CPU load.
+**Docker (Linux), both images on the same 3 frames, run back to back** (`bench-phase5-docker.json`):
+
+| | legacy image (43f5f7b) | v2 image |
+|---|---|---|
+| RSS after warm-up | 1381 MB | **871 MB** |
+| warm-up | 33.8 s | **3.95 s** |
+| check-in, head_turn, median / p90 | 1676 / 1901 ms | **1100 / 1360 ms** |
+| check-in, passive, median / p90 | — | **579 / 662 ms** |
+| enrollment server work *, median / p90 | 8535 / 10782 ms | **4408 / 4516 ms** |
+
+The legacy p90 values are noisy: two short `docker run` checks overlapped that
+run. An earlier legacy run overlapped a whole docker build, so it is discarded.
+That run still measured RSS 1395 MB.
 
 ## Still to decide or do (yours)
 

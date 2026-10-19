@@ -58,7 +58,7 @@ calibrated ratio limits on 1,461 LFW faces (corr 0.953).
 | measured | legacy | v2 |
 |---|---|---|
 | Docker image | 4.49 GB | 1.64 GB |
-| RSS after warm-up (Windows) | 1213 MB | 825 MB |
+| RSS after warm-up (Windows / Docker) | 1213 / 1381 MB | 825 / 871 MB |
 | model warm-up | 36.7 s | 5.2 s |
 | check-in, head_turn mode, median | 1688 ms | 1031 ms |
 | check-in, passive (new default), median | — | 514 ms |
@@ -80,6 +80,14 @@ These times are in-process server CPU work. They exclude network, database and b
 3. **`enroll_v2.quality` passed float32 to the Laplacian.** OpenCV rejects
    that, so every v2 enrollment would have failed. A test caught it before any
    real use.
+4. **`.dockerignore` did not exclude `firmware/`.** The git-ignored
+   `firmware/smartcheck_ble/secret.h` (the ESP32 room key) was copied into any
+   image built from the working folder.
+   - Images built from a clean checkout do not have it.
+   - `firmware/` is now excluded, and the local v2 image was rebuilt and checked
+     ("no firmware in image").
+   - If an image was ever built from the working folder and pushed or deployed,
+     rotate that room key.
 
 ## Not done or not verifiable here
 
@@ -131,7 +139,8 @@ of DeepFace's FasNet.py.
 
 ## Local artifacts from this session
 
-- **Docker images:** `smartcheck:legacy-43f5f7b` (4.49 GB) and `smartcheck:face-stack-v2` (1.64 GB).
+- **Docker image:** `smartcheck:face-stack-v2` (1.64 GB).
+  - The legacy comparison image was removed after measuring; its numbers are
+    in `bench-phase5-docker.json` and phase5-cutover.md.
 - **Test database container:** `sc-pgtest` (pgvector/pgvector:pg17 on 127.0.0.1:54329).
-- **To remove them:**
-  `docker rm -f sc-pgtest && docker rmi smartcheck:legacy-43f5f7b smartcheck:face-stack-v2`.
+- **To remove them:** `docker rm -f sc-pgtest && docker rmi smartcheck:face-stack-v2`.

@@ -12,3 +12,6 @@ compare-out/
 cloudflared.exe
 instance/
 *.patch
+# Server image needs no firmware; secret.h holds the ESP32 room key
+firmware/
+.pytest_cache/

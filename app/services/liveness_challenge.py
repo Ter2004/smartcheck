@@ -37,8 +37,10 @@ ENROLL_ACTIONS = 2
 CHECKIN_ACTIONS = 1
 CHALLENGE_TTL_S = 120
 # Yaw is the nose's horizontal offset from the eye midpoint, in inter-eye
-# distances. On LFW, 72% of photos fall within 0.15; the browser accepts a turn
-# at noseRelX 0.62, which lands around 0.25 or more on this scale.
+# distances. On LFW, 72% of photos fall within 0.15. The browser measures turns
+# with the same formula on MediaPipe points (eyeYaw, TURN_YAW 0.30): this reads
+# about 0.74x that, so 94% of LFW faces it accepts reach 0.20 here. Its earlier
+# noseRelX 0.65 read only ~0.11 here and 1% passed (3,870 faces, 2026-10-04).
 FRONTAL_MAX_YAW = 0.18
 TURN_MIN_YAW = 0.20
 # FaceNet cosine on RetinaFace crops. Turned-vs-frontal is cross-pose, so it is

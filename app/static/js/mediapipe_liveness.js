@@ -7,8 +7,8 @@
  *
  * Supported actions:
  *   'smile'         — ยิ้ม (mouth-width ratio)
- *   'turn_left'     — หันซ้าย (noseRelX > 0.65)
- *   'turn_right'    — หันขวา (noseRelX < 0.35)
+ *   'turn_left'     — หันซ้าย (eyeYaw > 0.30)
+ *   'turn_right'    — หันขวา (eyeYaw < -0.30)
  *   'nod'           — พยักหน้า (pitch swing ≥15°)
  *   'raise_eyebrows'— ยกคิ้ว (brow-to-eye distance +20%)
  */
@@ -36,6 +36,23 @@ function eyeRollDeg(lm, video) {
 }
 // Asks for more than the server's TILT_MIN_DEG, so frames it accepts pass there.
 const TILT_DEG = 18;
+
+/** Nose offset from the eye midpoint along the eye line, in eye distances, on the raw
+ *  frame in pixels: liveness_challenge.yaw_ratio on MediaPipe points (eye centre = mean
+ *  of its two corners). Positive = nose toward the image's right = turn_left. */
+function eyeYaw(lm, video) {
+    if (!lm || lm.length < 468) return 0;
+    const w = video?.videoWidth || 640, h = video?.videoHeight || 480;
+    const c = (i, j) => ({x: (lm[i].x + lm[j].x) / 2 * w, y: (lm[i].y + lm[j].y) / 2 * h});
+    let a = c(33, 133), b = c(362, 263);
+    if (a.x > b.x) [a, b] = [b, a];
+    const ax = b.x - a.x, ay = b.y - a.y, d = ax * ax + ay * ay;
+    if (d < 1e-6) return 0;
+    return ((lm[1].x * w - (a.x + b.x) / 2) * ax + (lm[1].y * h - (a.y + b.y) / 2) * ay) / d;
+}
+// The server reads about 0.74x this value (LFW, 3,870 faces, 2026-10-04): 0.30 here
+// passes its TURN_MIN_YAW 0.20 for 94% of faces, where noseRelX 0.65 passed only 1%.
+const TURN_YAW = 0.30;
 
 /** Pitch proxy: nose y relative to forehead-chin span */
 function nosePitch(lm) {
@@ -80,41 +97,39 @@ function buildActionChecker(action, video) {
     }
 
     if (action === 'turn_left') {
-        // In mirrored selfie view: user turns left → nose moves to screen-right → relX increases
-        // 0.65/0.35, not 0.62/0.38: at 0.38 the server once measured yaw -0.184, short of
-        // its 0.20 (2026-09-30 webcam log), so frames the browser accepts must turn further.
-        const TURN_THRESHOLD = 0.65;
+        // In mirrored selfie view: user turns left → nose moves to screen-right → yaw increases.
+        // Measured like the server (eyeYaw), not by noseRelX: noseRelX 0.65 read only
+        // ~0.11 there (LFW, 2026-10-04), so every phone turn failed server-side.
         const TURN_FRAMES    = 3;   // 3 frames (was 5 — reduced for faster response)
         let turnFrames = 0;
         return {
             check(lm) {
-                const rel = noseRelX(lm);
-                if (rel > TURN_THRESHOLD) {
+                const yaw = eyeYaw(lm, video);
+                if (yaw > TURN_YAW) {
                     turnFrames++;
                     if (turnFrames >= TURN_FRAMES) return { done: true, statusText: '✓ หันซ้ายสำเร็จ!' };
                     return { done: false, statusText: `กำลังหัน... (${turnFrames}/${TURN_FRAMES})` };
                 }
                 turnFrames = 0;
-                return { done: false, statusText: `กรุณาหันหน้าไปทางซ้าย (${rel.toFixed(2)})` };
+                return { done: false, statusText: `กรุณาหันหน้าไปทางซ้าย (${yaw.toFixed(2)})` };
             }
         };
     }
 
     if (action === 'turn_right') {
-        // user turns right → nose moves to screen-left → relX decreases
-        const TURN_THRESHOLD = 0.35;
+        // user turns right → nose moves to screen-left → yaw decreases
         const TURN_FRAMES    = 3;   // 3 frames (was 5 — reduced for faster response)
         let turnFrames = 0;
         return {
             check(lm) {
-                const rel = noseRelX(lm);
-                if (rel < TURN_THRESHOLD) {
+                const yaw = eyeYaw(lm, video);
+                if (yaw < -TURN_YAW) {
                     turnFrames++;
                     if (turnFrames >= TURN_FRAMES) return { done: true, statusText: '✓ หันขวาสำเร็จ!' };
                     return { done: false, statusText: `กำลังหัน... (${turnFrames}/${TURN_FRAMES})` };
                 }
                 turnFrames = 0;
-                return { done: false, statusText: `กรุณาหันหน้าไปทางขวา (${rel.toFixed(2)})` };
+                return { done: false, statusText: `กรุณาหันหน้าไปทางขวา (${yaw.toFixed(2)})` };
             }
         };
     }

@@ -23,6 +23,22 @@ class CheckinFlow {
         return Math.atan2((b.y - a.y) * (height || 480), (b.x - a.x) * (width || 640)) * 180 / Math.PI;
     }
 
+    // Turn measured like the server; same formula and threshold as eyeYaw/TURN_YAW in
+    // mediapipe_liveness.js (noseRelX 0.65 read only ~0.11 server-side, LFW 2026-10-04).
+    static TURN_YAW = 0.30;
+
+    /** Nose offset from the eye midpoint along the eye line, in eye distances, in pixels.
+     *  Positive = nose toward the image's right = turn_left. */
+    static eyeYaw(lm, width, height) {
+        const w = width || 640, h = height || 480;
+        const c = (i, j) => ({x: (lm[i].x + lm[j].x) / 2 * w, y: (lm[i].y + lm[j].y) / 2 * h});
+        let a = c(33, 133), b = c(362, 263);
+        if (a.x > b.x) [a, b] = [b, a];
+        const ax = b.x - a.x, ay = b.y - a.y, d = ax * ax + ay * ay;
+        if (d < 1e-6) return 0;
+        return ((lm[1].x * w - (a.x + b.x) / 2) * ax + (lm[1].y * h - (a.y + b.y) / 2) * ay) / d;
+    }
+
     constructor(opts) {
         this.sessionId     = opts.sessionId;
         this.beaconUUID    = opts.beaconUUID;
@@ -309,10 +325,11 @@ class CheckinFlow {
             if (phase === 'turn') {
                 // Same thresholds as mediapipe_liveness.js (raw frame coordinates). A tilt
                 // is measured from the frontal frame and must not also be a turn.
+                const yaw = CheckinFlow.eyeYaw(lm, video.videoWidth, video.videoHeight);
                 const turned = isTilt
                     ? noseRelX > 0.35 && noseRelX < 0.65 &&
                       (turnAction === 'tilt_left' ? rollDelta >= CheckinFlow.TILT_DEG : rollDelta <= -CheckinFlow.TILT_DEG)
-                    : turnAction === 'turn_left' ? noseRelX > 0.65 : noseRelX < 0.35;
+                    : turnAction === 'turn_left' ? yaw > CheckinFlow.TURN_YAW : yaw < -CheckinFlow.TURN_YAW;
                 turnCount = turned ? turnCount + 1 : 0;
                 guide.classList.remove('fail');
                 guide.classList.add('ok');

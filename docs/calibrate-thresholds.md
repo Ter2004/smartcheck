@@ -60,4 +60,7 @@ classes, embedding caching, invalid embeddings and extraction failures. A local
 smoke run processed two pairs from existing `test_images` through the actual
 FaceNet512 model. That smoke run checks execution only: its tiny, manually chosen
 sample is **not LFW and is not evidence for changing any production threshold**.
-The LFW measurement remains pending until the dataset is provided locally.
+An exploratory LFW measurement has now been run on 200 development-test pairs;
+188 were evaluable. See [the local LFW report](review/lfw-local-evaluation-20260924.md)
+for sources, download instructions, exclusions and actual results. This does not
+replace full-dataset or real-camera validation.

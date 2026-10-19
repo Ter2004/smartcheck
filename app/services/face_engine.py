@@ -19,6 +19,7 @@ import os
 import threading
 import time
 
+import cv2
 import numpy as np
 
 MODEL_VERSIONS = {"facenet512": "facenet512", "arcface": "buffalo_l/w600k_r50"}
@@ -29,6 +30,12 @@ DET_SIZE = (640, 640)
 # smaller ones (people far behind) are ignored. Same rule and value as the
 # head-turn check (liveness_challenge.SECOND_FACE_AREA_RATIO).
 SECOND_FACE_AREA_RATIO = 0.5
+# SCRFD misses faces that fill the frame (close-up selfies, tight crops): on
+# 104 frames (CelebA-Spoof crops + test_images) it found 19 as is and 101 with a
+# black border of 0.5 x the longer side (95 at 0.25, 98 at 1.0). Detection runs
+# on the frame first and retries padded only when nothing is found, so normal
+# frames keep their full resolution.
+PAD_RETRY = 0.5
 
 _log = logging.getLogger("smartcheck.face_engine")
 _app = None
@@ -198,6 +205,25 @@ def roll_deg_from_kps(kps):
     return float(np.degrees(np.arctan2(right[1] - left[1], right[0] - left[0])))
 
 
+def _padded(img):
+    b = int(round(PAD_RETRY * max(img.shape[:2])))
+    return cv2.copyMakeBorder(img, b, b, b, b, cv2.BORDER_CONSTANT, value=(0, 0, 0)), b
+
+
+def _get_faces(app, img):
+    """app.get on the frame, retried on a padded copy; coordinates in frame pixels."""
+    with _infer_lock:
+        faces = app.get(img)
+        if faces:
+            return faces
+        padded, b = _padded(img)
+        faces = app.get(padded)
+    for f in faces:
+        f.bbox = f.bbox - b
+        f.kps = f.kps - b
+    return faces
+
+
 def analyze(img, channel_order="BGR", clahe=None, reject_multiple=True):
     """The single main face of a frame: embedding, detection score, size and pose.
 
@@ -213,9 +239,7 @@ def analyze(img, channel_order="BGR", clahe=None, reject_multiple=True):
         clahe = clahe_enabled()
     if clahe:
         img = normalize_illumination(img)
-    app = get_app()
-    with _infer_lock:
-        faces = app.get(img)
+    faces = _get_faces(get_app(), img)
     if not faces:
         raise NoFaceError()
     ranked = sorted(faces, key=lambda f: _area(f.bbox), reverse=True)
@@ -237,6 +261,33 @@ def analyze(img, channel_order="BGR", clahe=None, reject_multiple=True):
         "eye_roll_deg": roll_deg_from_kps(main.kps),
         "faces": len(faces), "second_large_face": bool(second_large),
     }
+
+
+def detect_main(img, channel_order="BGR"):
+    """SCRFD only (no embedding, no pose): bbox, 5 keypoints and score of the largest face.
+
+    For callers that only need the face box, such as anti-spoof. Raises
+    NoFaceError or MultipleFacesError under the same rules as analyze().
+    """
+    img = ensure_bgr(img, channel_order)
+    app = get_app()
+    with _infer_lock:
+        bboxes, kpss = app.det_model.detect(img, max_num=0, metric="default")
+        if bboxes is None or len(bboxes) == 0:
+            padded, b = _padded(img)
+            bboxes, kpss = app.det_model.detect(padded, max_num=0, metric="default")
+            if bboxes is not None and len(bboxes):
+                bboxes = bboxes.copy()
+                bboxes[:, :4] -= b
+                kpss = None if kpss is None else kpss - b
+    if bboxes is None or len(bboxes) == 0:
+        raise NoFaceError()
+    order = sorted(range(len(bboxes)), key=lambda i: _area(bboxes[i][:4]), reverse=True)
+    main = order[0]
+    if len(order) > 1 and _area(bboxes[order[1]][:4]) >= SECOND_FACE_AREA_RATIO * _area(bboxes[main][:4]):
+        raise MultipleFacesError()
+    return {"bbox": tuple(float(v) for v in bboxes[main][:4]), "det_score": float(bboxes[main][4]),
+            "kps": None if kpss is None else np.asarray(kpss[main], dtype=float)}
 
 
 def box_xywh(face, img_shape):

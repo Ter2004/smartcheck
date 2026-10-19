@@ -68,6 +68,16 @@ DETECT_MAX_SIDE = 480
 # A second face at least this fraction of the main face's area fails the frame.
 SECOND_FACE_AREA_RATIO = 0.5
 
+# arcface engine: the same limits in landmark_3d_68 yaw degrees, translated from
+# the ratio limits above on 1,461 LFW faces measured both ways
+# (scripts/calibrate_arcface_yaw.py, docs/face-stack-v2/arcface-yaw-calibration.json):
+# corr 0.953, least-squares slope 102.1 deg per ratio unit, same sign. Medians of
+# faces near each ratio limit read 19.0 / 20.5 / 33.8 degrees.
+ARCFACE_YAW_SIGN = 1.0
+ARCFACE_FRONTAL_MAX_YAW_DEG = 18.4   # 0.18
+ARCFACE_TURN_MIN_YAW_DEG = 20.4      # 0.20
+ARCFACE_TILT_MAX_YAW_DEG = 35.7      # 0.35
+
 
 class FrameError(ValueError):
     """A frame cannot be evaluated (no face, several faces)."""
@@ -110,12 +120,20 @@ def roll_deg(landmarks):
     return float(np.degrees(np.arctan2(right[1] - left[1], right[0] - left[0])))
 
 
-def direction(yaw):
-    if abs(yaw) <= FRONTAL_MAX_YAW:
+def _yaw_limits(unit):
+    """(frontal max, turn min, tilt max) on the frame's yaw scale."""
+    if unit == "deg":
+        return ARCFACE_FRONTAL_MAX_YAW_DEG, ARCFACE_TURN_MIN_YAW_DEG, ARCFACE_TILT_MAX_YAW_DEG
+    return FRONTAL_MAX_YAW, TURN_MIN_YAW, TILT_MAX_YAW
+
+
+def direction(yaw, unit="ratio"):
+    frontal_max, turn_min, _ = _yaw_limits(unit)
+    if abs(yaw) <= frontal_max:
         return "frontal"
-    if yaw >= TURN_MIN_YAW:
+    if yaw >= turn_min:
         return "turn_left"
-    if yaw <= -TURN_MIN_YAW:
+    if yaw <= -turn_min:
         return "turn_right"
     return "partial"
 
@@ -125,12 +143,33 @@ def _area(box):
     return max(0, x2 - x1) * max(0, y2 - y1)
 
 
+def _analyze_frame_arcface(img_bgr):
+    """arcface engine: yaw in degrees from landmark_3d_68, roll from the SCRFD eye line.
+
+    Yaw is signed like yaw_ratio (positive = nose toward the image's right =
+    turn_left). ArcFace embeds an aligned crop, so no extra levelling is needed.
+    """
+    from app.services import face_engine
+
+    try:
+        face = face_engine.analyze(img_bgr)
+    except face_engine.MultipleFacesError:
+        raise FrameError("multiple_faces") from None
+    except face_engine.NoFaceError:
+        raise FrameError("no_face") from None
+    return {"yaw": ARCFACE_YAW_SIGN * face["yaw_deg"], "roll": face["eye_roll_deg"],
+            "embedding": face["embedding"], "unit": "deg"}
+
+
 def analyze_frame(img_bgr):
-    """Return {"yaw", "roll", "embedding"} for the single main face in a BGR frame.
+    """Return {"yaw", "roll", "embedding", "unit"} for the single main face in a BGR frame.
 
     The identity crop is rotated to a level eye line first: FaceNet is not
     rotation-invariant, and a tilt frame would otherwise score low.
     """
+    from app.services import face_engine
+    if face_engine.active_engine() == "arcface":
+        return _analyze_frame_arcface(img_bgr)
     from retinaface import RetinaFace
 
     # Landmarks on a downscaled copy (selfie faces are large), identity crop
@@ -163,13 +202,14 @@ def analyze_frame(img_bgr):
                                       model_name="Facenet512", detector_backend="skip")
     embedding = np.asarray(rep[0]["embedding"], dtype=np.float32)
     return {"yaw": yaw_ratio(main["landmarks"]), "roll": roll,
-            "embedding": embedding / (np.linalg.norm(embedding) + 1e-12)}
+            "embedding": embedding / (np.linalg.norm(embedding) + 1e-12), "unit": "ratio"}
 
 
 def gesture(expected, frame, before):
     """What an action frame shows, in the terms of `expected`'s kind."""
+    unit = frame.get("unit", "ratio")
     if expected.startswith("tilt_"):
-        if abs(frame["yaw"]) > TILT_MAX_YAW:
+        if abs(frame["yaw"]) > _yaw_limits(unit)[2]:
             return "turned"
         delta = frame["roll"] - before["roll"]
         if delta >= TILT_MIN_DEG:
@@ -177,7 +217,18 @@ def gesture(expected, frame, before):
         if delta <= -TILT_MIN_DEG:
             return "tilt_right"
         return "level"
-    return direction(frame["yaw"])
+    return direction(frame["yaw"], unit)
+
+
+def _identity_minimums(unit):
+    """(frontal after-frame minimum, other frames minimum) for the engine's embeddings."""
+    if unit == "deg":
+        # Same person, seconds apart: the arcface check-in match threshold
+        # (ARCFACE_MATCH_THRESHOLD, chosen with scripts/compare_models.py).
+        from app.services import face_engine
+        match = face_engine.threshold("ARCFACE_MATCH_THRESHOLD")
+        return match, match
+    return FRONTAL_IDENTITY_MIN, TURN_IDENTITY_MIN
 
 
 def verify(challenge, nonce, before, action_frames, after, now=None, analyze=analyze_frame):
@@ -212,7 +263,8 @@ def verify(challenge, nonce, before, action_frames, after, now=None, analyze=ana
         result["yaws"].append(round(analyzed[name]["yaw"], 3))
         result["rolls"].append(round(analyzed[name]["roll"], 1))
 
-    if direction(analyzed["before"]["yaw"]) != "frontal":
+    unit = analyzed["before"].get("unit", "ratio")
+    if direction(analyzed["before"]["yaw"], unit) != "frontal":
         return fail("not_frontal:before")
     for i, expected in enumerate(challenge["actions"]):
         seen = gesture(expected, analyzed[f"action_{i + 1}"], analyzed["before"])

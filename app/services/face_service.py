@@ -258,6 +258,17 @@ def _run_antispoof(img_bgr: np.ndarray) -> tuple:
     return is_real, real_score
 
 
+def _fasnet_impl() -> str:
+    """ANTISPOOF_FASNET: "deepface" (torch, default) or "onnx" (fasnet_onnx, same weights)."""
+    try:
+        from flask import current_app, has_app_context
+        value = current_app.config.get("ANTISPOOF_FASNET") if has_app_context() else None
+    except ImportError:
+        value = None
+    value = (value or os.getenv("ANTISPOOF_FASNET") or "deepface").strip().lower()
+    return value if value in ("deepface", "onnx") else "deepface"
+
+
 def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
     """
     Run DeepFace's built-in anti-spoofing (Fasnet/MiniVision Silent-Face).
@@ -266,11 +277,20 @@ def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
     On exception returns (None, None) — caller redistributes weight.
     """
     try:
-        box, _, _ = _detect_main_face(img_bgr)
-        with _deepface_lock:
-            from deepface.modules import modeling
-            fasnet = modeling.build_model(task="spoofing", model_name="Fasnet")
-            is_real, raw_score = fasnet.analyze(img=img_bgr, facial_area=box)
+        from app.services import face_engine
+        if face_engine.active_engine() == "arcface":
+            # Face box from SCRFD, the detector the arcface embedding uses.
+            box = face_engine.box_xywh(face_engine.detect_main(img_bgr), img_bgr.shape)
+        else:
+            box, _, _ = _detect_main_face(img_bgr)
+        if _fasnet_impl() == "onnx":
+            from app.services import fasnet_onnx
+            is_real, raw_score = fasnet_onnx.analyze(img_bgr, box)
+        else:
+            with _deepface_lock:
+                from deepface.modules import modeling
+                fasnet = modeling.build_model(task="spoofing", model_name="Fasnet")
+                is_real, raw_score = fasnet.analyze(img=img_bgr, facial_area=box)
         is_real   = bool(is_real)
         raw_score = float(raw_score)
         spoof_score = (1.0 - raw_score) if is_real else raw_score

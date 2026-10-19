@@ -77,6 +77,21 @@ class Config:
         )
         CHECKIN_LIVENESS = "head_turn"
 
+    # Face stack: "facenet512" (DeepFace, default) or "arcface" (InsightFace
+    # buffalo_l). With arcface, FACE_CLAHE and the three thresholds below must be
+    # set (values come from scripts/compare_models.py); the app refuses to start
+    # without them (face_engine.validate_config). They have no defaults on purpose.
+    FACE_ENGINE = os.getenv("FACE_ENGINE", "facenet512").strip().lower()
+    FACE_CLAHE = os.getenv("FACE_CLAHE")
+    ARCFACE_MATCH_THRESHOLD = os.getenv("ARCFACE_MATCH_THRESHOLD")
+    ARCFACE_DUP_THRESHOLD = os.getenv("ARCFACE_DUP_THRESHOLD")
+    ENROLL_SELF_SIM_MIN = os.getenv("ENROLL_SELF_SIM_MIN")
+    # Fasnet anti-spoof runtime: "deepface" (torch) or "onnx" (same weights,
+    # app/services/fasnet_onnx.py; parity in docs/face-stack-v2/phase3-liveness-antispoof.md).
+    ANTISPOOF_FASNET = os.getenv("ANTISPOOF_FASNET", "deepface").strip().lower()
+    # Load and run the face models once while the app starts (1) or on first use (0).
+    FACE_ENGINE_WARMUP = os.getenv("FACE_ENGINE_WARMUP", "1") == "1"
+
     # ── Flask-Session: server-side SQLAlchemy sessions (Railway deployment) ──
     SESSION_TYPE               = "sqlalchemy"
     SESSION_SQLALCHEMY_TABLE   = "flask_sessions"

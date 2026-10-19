@@ -127,6 +127,40 @@ def verify_embedding_integrity(
     return hmac.compare_digest(expected, stored_hash)
 
 
+def compute_template_integrity_hash(
+    user_id: str,
+    model_version: str,
+    embeddings: list,
+    integrity_salt: str,
+) -> str:
+    """HMAC-SHA256 over user_id + model_version + embeddings (face_enrollments, v2).
+
+    Values are taken as float32 first: pgvector stores float4, so what is read
+    back is the same float32 and hashes identically. Then rounded to 6 d.p. and
+    sorted, as in compute_embedding_integrity_hash. Binding model_version means a
+    row cannot be relabelled to another model without breaking the hash.
+    """
+    import numpy as np
+
+    normalized = sorted(
+        [round(float(v), 6) for v in np.asarray(emb, dtype=np.float32).ravel()]
+        for emb in embeddings
+    )
+    payload = json.dumps(
+        {"uid": user_id, "model": model_version, "emb": normalized},
+        separators=(",", ":"),
+    )
+    return hmac.new(integrity_salt.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def verify_template_integrity(user_id, model_version, embeddings, stored_hash, integrity_salt) -> bool:
+    """Constant-time check of a face_enrollments row; no hash means unverifiable (False)."""
+    if not stored_hash or not embeddings:
+        return False
+    expected = compute_template_integrity_hash(user_id, model_version, embeddings, integrity_salt)
+    return hmac.compare_digest(expected, stored_hash)
+
+
 # ─── CSRF Protection Decorator ────────────────────────────────────────────────
 
 def csrf_protect(f):

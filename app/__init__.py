@@ -119,6 +119,13 @@ def create_app():
     )
     _log.setLevel(logging.INFO)
     _log.info("[SmartCheck] proximity method: %s", app.config["CHECKIN_PROXIMITY_METHOD"])
+    _log.info("[SmartCheck] check-in liveness: %s", app.config["CHECKIN_LIVENESS"])
+    from app.services import face_engine
+    face_engine.validate_config(app.config)   # fail fast: arcface without its thresholds
+    _log.info("[SmartCheck] face engine: %s (model_version=%s)",
+              face_engine.active_engine(app.config), face_engine.model_version(face_engine.active_engine(app.config)))
+    if face_engine.active_engine(app.config) == "arcface" and app.config.get("FACE_ENGINE_WARMUP", True):
+        face_engine.warm_up()
     # Suppress noisy third-party loggers
     logging.getLogger("apscheduler").setLevel(logging.WARNING)
     logging.getLogger("deepface").setLevel(logging.WARNING)

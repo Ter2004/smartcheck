@@ -173,21 +173,26 @@ Clearing to NULL or `[]` stays allowed.
 **Pipeline timing** (`python scripts/bench_face_pipeline.py --runs 10`;
 the raw result is in `bench-phase0-legacy.json`):
 - in process, on the same service calls the routes make;
-- 640×480 JPEG frames made from `test_images/real_*_sharp_*_ok.jpg`;
+- 640×480 JPEG frames made from `test_images/real_01/03/05/07/09/11`;
 - no HTTP and no Supabase, so these are not end-to-end times;
 - laptop CPU, Ryzen 7 8845HS.
 
 | | median | p90 | min | max |
 |---|---|---|---|---|
-| enrollment (liveness verify 2 gestures + 5× spoof_check + /api/enroll) | 8181 ms | 8516 ms | 7945 | 8875 |
-| check-in (head_turn: spoof + 3 liveness frames + embedding + match) | 1600 ms | 1744 ms | 1569 | 1746 |
+| enrollment (liveness verify 2 gestures + 5× spoof_check + /api/enroll) | 8499 ms | 8937 ms | 8184 | 9307 |
+| check-in (head_turn: spoof + 3 liveness frames + embedding + match) | 1688 ms | 1824 ms | 1545 | 1834 |
 
 Memory (Windows working set):
 - 96 MB at start;
-- **1211 MB after warm-up**;
-- 1266 MB after 20 runs.
+- **1213 MB after warm-up**;
+- 1268 MB after 20 runs.
 
-Warm-up, i.e. the first calls that load every model, took 40.3 s.
+Warm-up, i.e. the first calls that load every model, took 36.7 s.
+
+A first run used the `*_ok` close-ups instead and measured enrollment
+8181/8516 ms and check-in 1600/1744 ms. It was re-run on the frames above
+because SCRFD finds no face in the `*_ok` close-ups (the face fills the frame),
+and the v2 benchmark must use frames that both stacks can process.
 
 The end-to-end timing of 10 enrollments and 10 check-ins with test accounts
 needs Supabase, which is paused, so it was not run.

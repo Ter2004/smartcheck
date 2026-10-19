@@ -71,13 +71,16 @@ def summary(samples):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--runs", type=int, default=10)
-    parser.add_argument("--images", default=os.path.join(ROOT, "test_images", "real_*_sharp_*_ok.jpg"))
+    # Frames both stacks find a face in (the *_ok close-ups are too tight for SCRFD).
+    parser.add_argument("--images", default=",".join(os.path.join(ROOT, "test_images", g) for g in (
+        "real_0[13579]_sharp_face?.jpg", "real_0[37]_sharp_face?_r.jpg", "real_11_sharp_face3_r.jpg")),
+        help="comma-separated globs")
     parser.add_argument("--json", help="write the result to this file")
     args = parser.parse_args()
 
     from scripts.face_pipelines import PIPELINE_NAME, warm_up, enrollment, checkin
 
-    paths = sorted(glob.glob(args.images))
+    paths = sorted({p for pattern in args.images.split(",") for p in glob.glob(pattern)})
     if len(paths) < 2:
         raise SystemExit(f"need at least 2 images matching {args.images}")
     frames = [browser_frame(p) for p in paths]

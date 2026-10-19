@@ -231,6 +231,12 @@ def _enrollment_photos(student_ids):
         rows = (supabase_admin.table("student_biometrics").select("user_id, face_image_url")
                 .in_("user_id", student_ids).execute().data or [])
         owners = {r["face_image_url"]: r["user_id"] for r in rows if r.get("face_image_url")}
+        try:   # v2 enrollments (face_enrollments.thumbnail_path); absent before the migration
+            v2 = (supabase_admin.table("face_enrollments").select("student_id, thumbnail_path")
+                  .in_("student_id", student_ids).eq("status", "completed").execute().data or [])
+            owners.update({r["thumbnail_path"]: r["student_id"] for r in v2 if r.get("thumbnail_path")})
+        except Exception:
+            pass
         if not owners:
             return {}
         signed = supabase_admin.storage.from_("face-images").create_signed_urls(

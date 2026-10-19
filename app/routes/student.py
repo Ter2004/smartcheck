@@ -54,7 +54,13 @@ def _load_enrollment_status():
     use_cache = current_app.config.get("ENROLLMENT_STATUS_CACHE", True)
     if use_cache and user_id in cache:
         return cache[user_id]
-    if current_app.config.get("ENROLLMENT_STATUS_RPC", False):
+    from app.services import face_engine
+    if face_engine.active_engine() == "arcface":
+        # v2: enrolled means a completed face_enrollments row for the active model.
+        from app.services import face_store
+        status = {"is_enrolled": face_store.is_enrolled(
+            supabase_admin, user_id, face_engine.model_version()), "baseline_ear": None}
+    elif current_app.config.get("ENROLLMENT_STATUS_RPC", False):
         result = execute_status_query(supabase_admin.rpc(
             "get_enrollment_status", {"p_user_id": user_id}))
         rows = result.data if result else None
@@ -82,6 +88,7 @@ def prevent_completed_enrollment():
         "student.enroll_face", "student.record_consent", "student.api_enroll",
         "student.api_spoof_check", "student.api_reset_liveness",
         "student.api_liveness_challenge", "student.api_liveness_verify",
+        "student.api_enroll_challenge",
     } or session.get("user_role") != "student" or not session.get("user_id"):
         return None
     try:
@@ -108,6 +115,7 @@ def enrollment_navigation():
 
 # ─── Enrollment thresholds ────────────────────────────────────────────────────
 MAX_RETRY             = 3      # max outlier-retry rounds (server-enforced — A4)
+CONSENT_VERSION_V2    = "1.2"  # v2 notice: templates + thumbnail, teacher can see the photo
 LIVENESS_MAX_AGE_S    = 15 * 60  # a passed head-turn challenge is valid this long
 
 
@@ -157,8 +165,20 @@ def enroll_face():
     # Reset server-side retry counters when page is (re)loaded
     session.pop("enroll_retry", None)
     session.pop("consent_given_at", None)
+    from app.services import face_engine
+    if face_engine.active_engine() == "arcface":
+        session.pop("enroll_v2_challenge", None)
+        return render_template("student/enroll_face_v2.html", already_enrolled=already_enrolled)
     return render_template("student/enroll_face.html",
                            already_enrolled=already_enrolled)
+
+
+@student_bp.route("/pdpa")
+@login_required
+@role_required("student")
+def pdpa_notice():
+    """Full PDPA notice for face enrollment (linked from the v2 consent screen)."""
+    return render_template("student/pdpa.html", consent_version=CONSENT_VERSION_V2)
 
 
 @student_bp.route("/checkin")
@@ -296,15 +316,21 @@ def record_consent():
     _log(user_id, "consent", "recorded", f"at={now_iso}")
 
     # PDPA: persist consent record to DB (audit trail — never deleted)
+    from app.services import face_engine
+    version = CONSENT_VERSION_V2 if face_engine.active_engine() == "arcface" else "1.1"
+    session.pop("consent_id", None)
     try:
-        supabase_admin.table("consent_logs").insert({
+        res = supabase_admin.table("consent_logs").insert({
             "user_id":          user_id,
             "consent_type":     "biometric_enrollment",
             "consent_given":    True,
-            "consent_version":  "1.1",
+            "consent_version":  version,
             "ip_address":       _safe_ip(),
             "user_agent":       request.headers.get("User-Agent", "")[:500],
         }).execute()
+        rows = getattr(res, "data", None) or []
+        if rows and isinstance(rows, list) and rows[0].get("id"):
+            session["consent_id"] = rows[0]["id"]   # linked to the v2 enrollment row
     except Exception as consent_err:
         _log(user_id, "consent_db", "error", str(consent_err)[:80])
         # Non-fatal — session flag is backup; enrollment still allowed
@@ -363,6 +389,10 @@ def api_enroll():
 
     user_id = session["user_id"]
     data    = request.get_json()
+
+    from app.services import face_engine
+    if face_engine.active_engine() == "arcface":
+        return _api_enroll_v2(user_id, request.get_json(silent=True))
 
     # ── 1. Validate ───────────────────────────────────────────────────────────
     # A5: consent must be recorded server-side via /api/consent before enrolling
@@ -836,6 +866,148 @@ def api_enroll():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Enrollment v2 (FACE_ENGINE=arcface): one camera session, server-issued turn
+# ─────────────────────────────────────────────────────────────────────────────
+
+@student_bp.route("/api/enroll/challenge", methods=["POST"])
+@login_required
+@role_required("student")
+@_limiter.limit("10 per minute")
+@csrf_protect
+def api_enroll_challenge():
+    """Issue the turn direction for one v2 camera session (one /api/enroll attempt)."""
+    from app.services import face_engine
+    from app.services.enroll_v2 import new_challenge
+    from app.services.liveness_challenge import CHALLENGE_TTL_S
+    if face_engine.active_engine() != "arcface":
+        return jsonify(status="error", message="ไม่รองรับในโหมดนี้"), 404
+    challenge = new_challenge()
+    session["enroll_v2_challenge"] = challenge
+    _log(session["user_id"], "enroll_v2_challenge", "issued", f"direction={challenge['direction']}")
+    return jsonify(challenge_id=challenge["nonce"], direction=challenge["direction"],
+                   expires_in=CHALLENGE_TTL_S)
+
+
+def _consent_id_or_error(user_id):
+    """(consent_id, None) when the latest consent row is a grant; (None, response) otherwise. Fail-closed."""
+    if not session.get("consent_given_at"):
+        return None, (jsonify(status="error", message="ต้องยินยอม PDPA ก่อน"), 400)
+    try:
+        rows = (supabase_admin.table("consent_logs")
+                .select("id, consent_given")
+                .eq("user_id", user_id)
+                .eq("consent_type", "biometric_enrollment")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()).data
+    except Exception as error:
+        _log(user_id, "enroll_v2_consent", "db_error", type(error).__name__)
+        return None, (jsonify(status="error", message="ไม่สามารถตรวจสอบความยินยอมได้ กรุณาลองใหม่"), 500)
+    if not rows or not rows[0].get("consent_given"):
+        _log(user_id, "enroll_v2_consent", "missing_or_withdrawn")
+        return None, (jsonify(status="error", message="กรุณายอมรับข้อตกลงก่อนลงทะเบียน"), 400)
+    return rows[0].get("id") or session.get("consent_id"), None
+
+
+def _enroll_v2_fail(user_id, fail):
+    """Answer one failed attempt; three retryable failures in a session send the student to staff."""
+    _log(user_id, "enroll_v2", "fail", f"code={fail.code} detail={fail.detail}")
+    if not fail.retry:
+        return jsonify(status="blocked" if fail.code == "duplicate" else "error",
+                       message=fail.fix, contact_staff=fail.code == "duplicate"), fail.http
+    failures = session.get("enroll_retry", 0) + 1
+    session["enroll_retry"] = failures
+    if failures >= MAX_RETRY:
+        session.pop("enroll_retry", None)
+        return jsonify(status="error", contact_staff=True,
+                       message=f"ลงทะเบียนไม่สำเร็จ {MAX_RETRY} ครั้ง กรุณาลงทะเบียนกับอาจารย์หรือผู้ช่วยสอน (TA)",
+                       fix=fail.fix), fail.http
+    return jsonify(status="retry", fix=fail.fix, attempts_left=MAX_RETRY - failures), fail.http
+
+
+def _api_enroll_v2(user_id, data):
+    """POST /student/api/enroll under FACE_ENGINE=arcface. See app/services/enroll_v2.py."""
+    import base64 as _b64
+    from app.services import enroll_v2, face_engine, face_store
+    from app.services.face_service import (
+        server_validate_frame, _decode_image, combined_spoof_score, is_system_failure,
+    )
+    from app.services.security_service import compute_template_integrity_hash, log_audit_event
+
+    consent_id, error = _consent_id_or_error(user_id)
+    if error:
+        return error
+    challenge = session.pop("enroll_v2_challenge", None)   # one attempt per challenge
+    try:
+        frames = enroll_v2.parse_frames(data, challenge)
+    except enroll_v2.EnrollFail as fail:
+        return _enroll_v2_fail(user_id, fail)
+
+    try:
+        rpc_res = supabase_admin.rpc(
+            "atomic_enroll_attempt", {"p_user_id": user_id, "p_max": 5, "p_window_h": 24}).execute()
+        if not rpc_res.data:
+            raise RuntimeError("atomic_enroll_attempt returned no rows")
+        if not rpc_res.data[0]["allowed"]:
+            _log(user_id, "enroll_attempt", "db_blocked", f"db_attempts={rpc_res.data[0]['current_attempts']}")
+            return jsonify(status="blocked", contact_staff=True,
+                           message="ลงทะเบียนเกินจำนวนครั้งที่กำหนด กรุณาติดต่ออาจารย์"), 403
+    except Exception as db_err:
+        _log(user_id, "enroll_attempt", "db_error_blocked", type(db_err).__name__)
+        return jsonify(status="error", message="ไม่สามารถตรวจสอบสิทธิ์ได้ชั่วคราว กรุณาลองใหม่อีกครั้ง"), 500
+
+    model_version = face_engine.model_version()
+    thresholds = {k: face_engine.threshold(k) for k in face_engine.ARCFACE_THRESHOLD_KEYS}
+    deps = {
+        "validate": server_validate_frame, "decode": _decode_image, "analyze": face_engine.analyze,
+        "spoof": combined_spoof_score, "is_system_failure": is_system_failure,
+        "match": lambda emb: face_store.match_duplicates(supabase_admin, emb, model_version, user_id, limit=3),
+    }
+    try:
+        result = enroll_v2.check(frames, challenge, deps, thresholds,
+                                 log=lambda step, details: _log(user_id, step, "measured", details))
+    except enroll_v2.EnrollFail as fail:
+        if fail.code == "duplicate":
+            # The matched account stays server-side: audit row + log, generic message to the client.
+            log_audit_event(supabase_admin, actor_id=user_id, actor_role="student",
+                            event_type="face_duplicate_blocked", target_id=user_id,
+                            metadata={**(fail.detail or {}), "model_version": model_version})
+        return _enroll_v2_fail(user_id, fail)
+
+    kept = result["kept"]
+    embeddings = [f["face"]["embedding"] for f in kept]
+    integrity_hash = compute_template_integrity_hash(
+        user_id, model_version, embeddings, current_app.config["EMBEDDING_INTEGRITY_SALT"])
+    templates = [{"embedding": f["face"]["embedding"], "det_score": round(f["face"]["det_score"], 4),
+                  "face_px": f["face"]["face_px"], "yaw_deg": round(f["face"]["yaw_deg"], 1),
+                  "pose": "frontal" if f["pose"] == "frontal" else "turn"} for f in kept]
+    try:
+        face_store.complete_enrollment(supabase_admin, user_id, model_version, consent_id,
+                                       integrity_hash, None, templates)
+    except Exception as save_err:
+        if "already_enrolled" in str(save_err):
+            return jsonify(status="already_enrolled", message="คุณลงทะเบียนใบหน้าสำเร็จแล้ว"), 409
+        _log(user_id, "enroll_v2_save", "error", type(save_err).__name__)
+        return jsonify(status="error", message="บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่"), 500
+
+    # Best frontal frame as the private thumbnail (teacher view). Non-fatal, like the v1 photo.
+    face_path = f"{user_id}.jpg"
+    try:
+        thumb = result["thumbnail"]["image"]
+        raw = thumb.split(",", 1)[1] if "," in thumb else thumb
+        supabase_admin.storage.from_("face-images").upload(
+            face_path, _b64.b64decode(raw), file_options={"content-type": "image/jpeg", "upsert": "true"})
+        supabase_admin.table("face_enrollments").update({"thumbnail_path": face_path}) \
+            .eq("student_id", user_id).execute()
+    except Exception as upload_err:
+        _log(user_id, "image_upload", "warning", type(upload_err).__name__)
+
+    session.pop("enroll_retry", None)
+    _log(user_id, "enroll_v2", "success", f"model_version={model_version} templates={len(kept)}")
+    return jsonify(status="enrolled", message="ลงทะเบียนใบหน้าสำเร็จ!")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Inline Spoof Check API (Step 2, 3, 4 of enrollment)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1133,12 +1305,25 @@ def api_withdraw_consent():
             "message": "ไม่สามารถลบข้อมูลได้ กรุณาติดต่อผู้ดูแลระบบ",
         }), 500
 
+    # ── 2b. v2 face enrollment (face_enrollments + templates, cascade) ───────
+    # A missing table only means the v2 migration was never applied: nothing to delete.
+    try:
+        from app.services import face_store
+        face_store.delete_enrollment(supabase_admin, user_id)
+    except Exception as e:
+        if not any(m in str(e) for m in ("42P01", "PGRST205", "does not exist", "Could not find the table")):
+            current_app.logger.error(f"CRITICAL: Failed to delete v2 face enrollment user={user_id} error={type(e).__name__}")
+            _log(user_id, "withdraw_consent", "v2_delete_failed", type(e).__name__)
+            return jsonify({"status": "error", "message": "ไม่สามารถลบข้อมูลได้ กรุณาติดต่อผู้ดูแลระบบ"}), 500
+
     # ── 3. Clear session state ────────────────────────────────────────────────
     session.pop("consent_given_at",    None)
     session.pop("consent_ip",          None)
     session.pop("liveness_embeddings", None)
     session.pop("enroll_retry", None)
     session.pop("spoof_check_acc", None)
+    session.pop("consent_id", None)
+    session.pop("enroll_v2_challenge", None)
     _log(user_id, "withdraw_consent", "biometrics_deleted")
 
     # Both enrollment upload paths use this server-derived key. Remove it even
@@ -1172,5 +1357,6 @@ def api_withdraw_consent():
     return jsonify({
         "status":  "ok",
         "message": "ถอนความยินยอมและลบข้อมูลชีวมิติเรียบร้อยแล้ว",
-        "deleted": ["face_embeddings", "baseline_ear", "face_image_url", "integrity_hash", "face_photo"],
+        "deleted": ["face_embeddings", "baseline_ear", "face_image_url", "integrity_hash", "face_photo",
+                    "face_enrollments", "face_templates"],
     })

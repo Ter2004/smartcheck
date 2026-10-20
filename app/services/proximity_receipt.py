@@ -31,14 +31,14 @@ def issue(secret, student, session_id, method, room):
     return serializer(secret).dumps(binding(secret, student, session_id, method, room))
 
 
-def verify(token, secret, student, session_id, method, room):
+def verify(token, secret, student, session_id, method, room, max_age=TTL_SECONDS):
     signer = serializer(secret)
     if not token:
         return 'proximity_receipt_missing'
     if not isinstance(token, str) or not isinstance(room, str):
         return 'proximity_receipt_invalid'
     try:
-        value = signer.loads(token, max_age=TTL_SECONDS)
+        value = signer.loads(token, max_age=max_age)
     except SignatureExpired:
         return 'proximity_receipt_expired'
     except BadData:

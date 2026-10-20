@@ -158,10 +158,12 @@ def import_csv():
 @login_required
 @role_required("admin")
 def beacons():
+    from flask import current_app
+    line_col = ", line_hwid" if current_app.config.get("LINE_BEACON_ENABLED") else ""
     beacons_data = (
         supabase_admin.table("beacons")
         .select("id, uuid, major, minor, room_name, "
-                "ble_room_code, is_active, ble_secret")
+                "ble_room_code, is_active, ble_secret" + line_col)
         .order("room_name").execute().data or []
     )
     # Rows are embedded as JSON for the edit modal: never send the key itself.
@@ -200,6 +202,17 @@ def beacon_ble_secret(beacon_id):
     return response
 
 
+def _line_hwid_field():
+    """{"line_hwid": ...} from the form when LINE Beacon is on (10 hex chars from LINE OA Manager)."""
+    from flask import current_app
+    if not current_app.config.get("LINE_BEACON_ENABLED"):
+        return {}
+    value = (request.form.get("line_hwid") or "").strip().lower() or None
+    if value is not None and not (len(value) == 10 and all(c in "0123456789abcdef" for c in value)):
+        raise ValueError("LINE HWID ต้องเป็นเลขฐานสิบหก 10 ตัว")
+    return {"line_hwid": value}
+
+
 @admin_bp.route("/beacons/add", methods=["POST"])
 @login_required
 @role_required("admin")
@@ -213,6 +226,7 @@ def beacon_add():
             "room_name": request.form["room_name"].strip(),
             "ble_room_code": (request.form.get("ble_room_code") or "").strip() or None,
             "is_active": True,
+            **_line_hwid_field(),
         }).execute()
         flash("เพิ่ม Beacon สำเร็จ", "success")
     except Exception as e:
@@ -233,6 +247,7 @@ def beacon_edit(beacon_id):
             "room_name": request.form["room_name"].strip(),
             "ble_room_code": (request.form.get("ble_room_code") or "").strip() or None,
             "is_active": request.form.get("is_active") == "on",
+            **_line_hwid_field(),
         }).eq("id", beacon_id).execute()
         flash("แก้ไข Beacon สำเร็จ", "success")
     except Exception as e:

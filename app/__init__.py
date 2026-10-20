@@ -126,6 +126,14 @@ def create_app():
               face_engine.active_engine(app.config), face_engine.model_version(face_engine.active_engine(app.config)))
     if face_engine.active_engine(app.config) == "arcface" and app.config.get("FACE_ENGINE_WARMUP", True):
         face_engine.warm_up()
+    if app.config.get("LINE_BEACON_ENABLED"):
+        missing = [k for k in ("LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "PUBLIC_BASE_URL")
+                   if not app.config.get(k)]
+        if missing:
+            raise RuntimeError("[SmartCheck] LINE_BEACON_ENABLED=1 needs " + ", ".join(missing))
+        if not app.config["PUBLIC_BASE_URL"].startswith("https://"):
+            raise RuntimeError("[SmartCheck] PUBLIC_BASE_URL must be an https URL (LINE opens it on phones)")
+    _log.info("[SmartCheck] LINE Beacon proximity: %s", "on" if app.config.get("LINE_BEACON_ENABLED") else "off")
     # Suppress noisy third-party loggers
     logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
@@ -161,6 +169,8 @@ def create_app():
     app.register_blueprint(teacher_bp, url_prefix="/teacher")
     app.register_blueprint(student_bp, url_prefix="/student")
     app.register_blueprint(api_checkin_bp)
+    from app.routes.line import line_bp
+    app.register_blueprint(line_bp)
 
     # --- Jinja2 filter: แปลง UTC → Thai time (UTC+7) ---
     from datetime import datetime, timedelta

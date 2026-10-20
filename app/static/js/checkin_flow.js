@@ -47,6 +47,8 @@ class CheckinFlow {
         // 'head_turn': one server-chosen turn, re-checked by the server; 'passive': legacy.
         this.livenessMode  = opts.livenessMode === 'passive' ? 'passive' : 'head_turn';
         this.livenessChallengeUrl = opts.livenessChallengeUrl || '/api/checkin/liveness/challenge';
+        this.lineReceipt = typeof opts.lineReceipt === 'string' && opts.lineReceipt ? opts.lineReceipt : null;
+        this.lineRoom    = typeof opts.lineRoom === 'string' ? opts.lineRoom : '';
         this._liveness     = null;
 
         this._camStream  = null;
@@ -56,6 +58,15 @@ class CheckinFlow {
 
     async start() {
         if (!document.getElementById('stepRoomCode')) return;
+        if (this.lineReceipt) {
+            // LINE Beacon already proved the room (server-issued receipt in the link):
+            // skip the Bluetooth/room-code step and open the camera. 300 s matches
+            // line_beacon.RECEIPT_TTL_SECONDS; the server enforces the real limit.
+            this._proximity = {room: this.lineRoom, receipt: this.lineReceipt, via: 'line',
+                deadline: performance.now() + 300 * 1000, captureStarted: performance.now()};
+            await this._startVerify();
+            return;
+        }
         // Proximity (room code or BLE room read) always gates the camera.
         await StepGuide.show('📍', 'ยืนยันห้องเรียนก่อนเช็คชื่อ',
             this.proximityMethod === 'ble'
@@ -641,6 +652,7 @@ class CheckinFlow {
                     session_id:      this.sessionId,
                     room_code:       this._proximity.room,
                     proximity_receipt: this._proximity.receipt,
+                    ...(this._proximity.via ? {proximity_via: this._proximity.via} : {}),
                     liveness_action: livenessAction,
                     liveness_pass:   true,
                     face_image:      faceImage,

@@ -255,6 +255,9 @@
         proximityMethod: "{{ config.CHECKIN_PROXIMITY_METHOD }}",
         livenessMode:  "{{ config.CHECKIN_LIVENESS | default('head_turn') }}",
         livenessChallengeUrl: "{{ url_for('api_checkin.checkin_liveness_challenge') }}",
+        // Opened from the LINE Beacon message: the room was already confirmed by LINE.
+        lineReceipt: {{ (request.args.get('r') if request.args.get('via') == 'line' and config.LINE_BEACON_ENABLED else None) | tojson }},
+        lineRoom:    {{ (request.args.get('room', '') if request.args.get('via') == 'line' else '') | tojson }},
     });
     document.addEventListener('DOMContentLoaded', () => flow.start());
 </script>

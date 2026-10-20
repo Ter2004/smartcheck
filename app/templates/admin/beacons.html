@@ -131,6 +131,14 @@
                        class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                        placeholder="เช่น TEST-101 — ต้องตรงกับค่าที่ ESP32 อ่านได้">
             </div>
+            {% if config.LINE_BEACON_ENABLED %}
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">LINE Beacon HWID (ไม่บังคับ)</label>
+                <input type="text" name="line_hwid"
+                       class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       placeholder="10 ตัวอักษรฐานสิบหก จาก LINE OA Manager" pattern="[0-9a-fA-F]{10}">
+            </div>
+            {% endif %}
             <div class="flex gap-2.5 pt-1">
                 <button type="button" onclick="hideModal('addModal')"
                         class="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium rounded-xl transition-colors">
@@ -180,6 +188,14 @@
                        class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                        placeholder="เช่น TEST-101 — ต้องตรงกับค่าที่ ESP32 อ่านได้">
             </div>
+            {% if config.LINE_BEACON_ENABLED %}
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1.5">LINE Beacon HWID (ไม่บังคับ)</label>
+                <input type="text" name="line_hwid" id="edit_line_hwid"
+                       class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       placeholder="10 ตัวอักษรฐานสิบหก จาก LINE OA Manager" pattern="[0-9a-fA-F]{10}">
+            </div>
+            {% endif %}
             <label class="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" name="is_active" id="edit_is_active" class="w-4 h-4 accent-indigo-600">
                 <span class="text-sm text-slate-700">เปิดใช้งาน</span>
@@ -217,6 +233,8 @@ function openEditModal(b) {
     document.getElementById('edit_major').value = b.major;
     document.getElementById('edit_minor').value = b.minor;
     document.getElementById('edit_ble_room_code').value = b.ble_room_code || '';
+    const hwid = document.getElementById('edit_line_hwid');
+    if (hwid) hwid.value = b.line_hwid || '';
     document.getElementById('edit_is_active').checked = b.is_active;
     document.getElementById('editForm').action = '/admin/beacons/' + b.id + '/edit';
     showModal('editModal');

@@ -86,6 +86,12 @@ class Config:
     ARCFACE_MATCH_THRESHOLD = os.getenv("ARCFACE_MATCH_THRESHOLD")
     ARCFACE_DUP_THRESHOLD = os.getenv("ARCFACE_DUP_THRESHOLD")
     ENROLL_SELF_SIM_MIN = os.getenv("ENROLL_SELF_SIM_MIN")
+    # LINE Beacon proximity (optional): the LINE app detects the room board and LINE
+    # posts a webhook to /line/webhook. Needs migration 20261020_line_beacon.sql.
+    LINE_BEACON_ENABLED = os.getenv("LINE_BEACON_ENABLED", "0") == "1"
+    LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
+    LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+    PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")   # fixed https URL students open from LINE
     # Load and run the face models once while the app starts (1) or on first use (0).
     FACE_ENGINE_WARMUP = os.getenv("FACE_ENGINE_WARMUP", "1") == "1"
 

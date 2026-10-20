@@ -26,3 +26,4 @@ firmware/smartcheck_ble/secret.h
 # Face photos for scripts/compare_models.py and its output (biometric data, never commit)
 /dataset/
 /compare-out/
+firmware/line_beacon/secret.h

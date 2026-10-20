@@ -507,12 +507,20 @@ def _receipt_message(reason):
     return "กรุณายืนยันตำแหน่งห้องเรียนใหม่ก่อนเช็คชื่อ"
 
 
+def _receipt_method(data):
+    """(method, max_age): LINE-issued receipts when LINE Beacon is on, else the configured method."""
+    if data.get("proximity_via") == "line" and current_app.config.get("LINE_BEACON_ENABLED"):
+        from app.services.line_beacon import RECEIPT_TTL_SECONDS
+        return "line", RECEIPT_TTL_SECONDS
+    return current_app.config.get("CHECKIN_PROXIMITY_METHOD", "ble"), proximity_receipt.TTL_SECONDS
+
+
 def _verify_receipt(data):
     try:
+        method, max_age = _receipt_method(data)
         reason = proximity_receipt.verify(data.get("proximity_receipt"),
             current_app.config["PROXIMITY_RECEIPT_SECRET"], session["user_id"],
-            data.get("session_id"), current_app.config.get("CHECKIN_PROXIMITY_METHOD", "ble"),
-            data.get("room_code"))
+            data.get("session_id"), method, data.get("room_code"), max_age=max_age)
     except Exception:
         reason = "proximity_verifier_error"
     if reason:

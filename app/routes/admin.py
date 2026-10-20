@@ -20,18 +20,38 @@ _log = logging.getLogger("smartcheck.admin")
 def dashboard():
     users_res = supabase_admin.table("users").select("*", count="exact").execute()
     beacons_res = supabase_admin.table("beacons").select("*", count="exact").execute()
-    bio_res = (
-        supabase_admin.table("student_biometrics")
-        .select("*", count="exact")
-        .not_.is_("face_embeddings", "null")
-        .execute()
-    )
     stats = {
         "total_users": users_res.count or 0,
         "total_beacons": beacons_res.count or 0,
-        "enrolled_biometrics": bio_res.count or 0,
+        "enrolled_biometrics": _enrolled_face_count(),
     }
     return render_template("admin/dashboard.html", stats=stats)
+
+
+def _enrolled_face_count():
+    """Completed v2 face enrollments of the active model; legacy rows if the v2 table is absent."""
+    from app.services import face_engine
+    try:
+        res = (supabase_admin.table("face_enrollments").select("id", count="exact")
+               .eq("status", "completed").eq("model_version", face_engine.model_version()).execute())
+        return res.count or 0
+    except Exception:
+        res = (supabase_admin.table("student_biometrics").select("*", count="exact")
+               .not_.is_("face_embeddings", "null").execute())
+        return res.count or 0
+
+
+def _v2_enrollments(user_ids):
+    """student_id -> face_enrollments row (status, model_version, thumbnail, dates); {} before the migration."""
+    if not user_ids:
+        return {}
+    try:
+        rows = (supabase_admin.table("face_enrollments")
+                .select("student_id, model_version, status, thumbnail_path, completed_at")
+                .in_("student_id", user_ids).execute().data or [])
+        return {r["student_id"]: r for r in rows}
+    except Exception:
+        return {}
 
 
 # ─── User List ────────────────────────────────────────────────
@@ -747,6 +767,22 @@ def biometrics():
             except Exception:
                 r["face_image_url"] = None
 
+    # Face stack v2 enrollments (the ones check-in uses) and their thumbnails.
+    from app.services import face_engine
+    active_model = face_engine.model_version()
+    v2_map = _v2_enrollments([r["user_id"] for r in records if r.get("user_id")])
+    for r in records:
+        v2 = v2_map.get(r.get("user_id"))
+        r["v2"] = v2
+        r["v2_current"] = bool(v2 and v2.get("status") == "completed" and v2.get("model_version") == active_model)
+        if v2 and v2.get("thumbnail_path"):
+            try:
+                signed = supabase_admin.storage.from_("face-images").create_signed_url(
+                    v2["thumbnail_path"], expires_in=3600)
+                r["face_image_url"] = signed.get("signedURL") or signed.get("signed_url") or r.get("face_image_url")
+            except Exception:
+                pass
+
     # Fetch latest consent_logs entry per student for PDPA status column
     consent_map = {}
     try:
@@ -769,6 +805,29 @@ def biometrics():
         pass  # Non-fatal — table may not exist yet in older envs
 
     return render_template("admin/biometrics.html", records=records, consent_map=consent_map)
+
+
+@admin_bp.route("/api/withdraw-biometrics/<student_id>", methods=["POST"])
+@login_required
+@role_required("admin")
+@csrf_protect
+def api_withdraw_biometrics(student_id):
+    """PDPA withdrawal on a student's behalf: consent row, all face data and photos deleted."""
+    from app.services.biometric_wipe import WipeError, wipe_on_behalf
+    admin_id = session["user_id"]
+    target = (supabase_admin.table("users").select("id, role").eq("id", student_id)
+              .maybe_single().execute())
+    if not (target and target.data and target.data.get("role") == "student"):
+        return jsonify({"status": "error", "message": "ไม่พบนักศึกษา"}), 404
+    try:
+        deleted = wipe_on_behalf(supabase_admin, student_id, admin_id, consent_version="admin",
+                                 ip=request.remote_addr or "unknown",
+                                 user_agent=request.headers.get("User-Agent", ""))
+    except WipeError as error:
+        _log.error("withdraw_biometrics failed at %s for %s", error.step, student_id)
+        return jsonify({"status": "error",
+                        "message": f"ลบข้อมูลไม่สำเร็จ (ขั้น {error.step}) กรุณาลองใหม่"}), 500
+    return jsonify({"status": "ok", "message": "ถอนความยินยอมและลบข้อมูลใบหน้าแล้ว", "deleted": deleted})
 
 
 @admin_bp.route("/api/reset-enrollment/<student_id>", methods=["POST"])

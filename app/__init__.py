@@ -131,6 +131,10 @@ def create_app():
 
     # --- SQLAlchemy (Flask-Session backend) ---
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
+    # Supabase closes idle connections (e.g. while the server PC sleeps); the next
+    # request then failed with a 500 after login (iPad test, 2026-10-04). Check a
+    # pooled connection before use and replace connections older than 5 minutes.
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 300}
     db.init_app(app)
     app.config["SESSION_SQLALCHEMY"] = db
 

@@ -444,6 +444,11 @@ class IntegratedTOTPTests(unittest.TestCase):
             self.assertIsNotNone(match, errors)
             self.payload['room_code'] = match[2]
             with patch.object(totp.time, 'time', return_value=int(match[1])):
+                # The simulator runs on the real clock while setUp signed the session
+                # cookie at the fixed NOW; once they drift past the session lifetime the
+                # request is anonymous. Sign it again under the simulator's clock.
+                with self.client.session_transaction() as session:
+                    session.update(user_id='student', user_role='student', csrf_token='csrf')
                 response = self.post()
             self.assertEqual(response.status_code, 200, response.json)
             self.assertEqual(len(self.db.records), 1)

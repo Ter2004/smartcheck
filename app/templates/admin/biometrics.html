@@ -2,7 +2,7 @@
 {% block title %}ข้อมูลใบหน้า — SmartCheck{% endblock %}
 
 {% block content %}
-{% set enrolled = records | selectattr('face_embeddings') | list | length %}
+{% set enrolled = records | selectattr('v2_current') | list | length %}
 
 <div class="flex items-center justify-between mb-8">
     <div>
@@ -33,6 +33,7 @@
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">Face</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">PDPA Consent</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden lg:table-cell">ลงทะเบียนเมื่อ</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">จัดการ</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -59,10 +60,12 @@
                         <span class="text-xs text-slate-400">{{ r.users.email if r.users else '—' }}</span>
                     </td>
                     <td class="px-4 py-3.5">
-                        {% if r.face_embeddings %}
+                        {% if r.v2_current %}
                         <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
                             <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>ลงทะเบียนแล้ว
                         </span>
+                        {% elif r.face_embeddings or r.v2 %}
+                        <span class="text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full" title="ข้อมูลจากโมเดลรุ่นเก่า เช็คชื่อไม่ได้จนกว่าจะลงทะเบียนใหม่">ต้องลงทะเบียนใหม่</span>
                         {% else %}
                         <span class="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">ยังไม่ได้ลง</span>
                         {% endif %}
@@ -81,12 +84,20 @@
                         {% endif %}
                     </td>
                     <td class="px-4 py-3.5 hidden lg:table-cell">
-                        <span class="text-xs text-slate-400 font-mono">{{ r.enrolled_at[:10] if r.enrolled_at else '—' }}</span>
+                        {% set when = (r.v2.completed_at if r.v2 and r.v2.completed_at else r.enrolled_at) %}
+                        <span class="text-xs text-slate-400 font-mono">{{ when[:10] if when else '—' }}</span>
+                    </td>
+                    <td class="px-4 py-3.5">
+                        {% if r.face_embeddings or r.v2 %}
+                        <button type="button" class="text-xs text-rose-600 hover:text-rose-800 hover:underline"
+                                data-student="{{ r.user_id }}" data-name="{{ r.users.full_name if r.users else '' }}"
+                                onclick="withdrawBiometrics(this)">ถอนความยินยอม / ลบข้อมูลใบหน้า</button>
+                        {% endif %}
                     </td>
                 </tr>
             {% else %}
                 <tr>
-                    <td colspan="6" class="px-5 py-12 text-center text-sm text-slate-400">ไม่พบข้อมูล</td>
+                    <td colspan="7" class="px-5 py-12 text-center text-sm text-slate-400">ไม่พบข้อมูล</td>
                 </tr>
             {% endfor %}
             </tbody>
@@ -114,6 +125,19 @@ function openFaceModal(src) {
     const modal = document.getElementById('faceModal');
     modal.classList.remove('hidden');
     modal.classList.add('flex');
+}
+async function withdrawBiometrics(btn) {
+    const name = btn.dataset.name || 'นักศึกษาคนนี้';
+    if (!confirm(`ถอนความยินยอมและลบข้อมูลใบหน้าทั้งหมดของ ${name}?\nนักศึกษาต้องยินยอมและลงทะเบียนใหม่จึงจะเช็คชื่อได้`)) return;
+    btn.disabled = true;
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    try {
+        const res = await fetch(`{{ url_for('admin.api_withdraw_biometrics', student_id='__ID__') }}`.replace('__ID__', btn.dataset.student), {
+            method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf}, body: '{}'});
+        const json = await res.json().catch(() => ({}));
+        alert(json.message || (res.ok ? 'เรียบร้อย' : 'ไม่สำเร็จ'));
+        if (res.ok) location.reload(); else btn.disabled = false;
+    } catch (_) { alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'); btn.disabled = false; }
 }
 function closeFaceModal() {
     const modal = document.getElementById('faceModal');

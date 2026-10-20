@@ -991,7 +991,8 @@ def _api_enroll_v2(user_id, data):
         return jsonify(status="error", message="บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่"), 500
 
     # Best frontal frame as the private thumbnail (teacher view). Non-fatal, like the v1 photo.
-    face_path = f"{user_id}.jpg"
+    # Own path, so the legacy photo ({user_id}.jpg) is not overwritten.
+    face_path = f"v2/{user_id}.jpg"
     try:
         thumb = result["thumbnail"]["image"]
         raw = thumb.split(",", 1)[1] if "," in thumb else thumb
@@ -1330,7 +1331,7 @@ def api_withdraw_consent():
     # when face_image_url was already cleared, so failed cleanup can be retried
     # and orphaned uploads are covered. Never accept a deletion path from input.
     try:
-        supabase_admin.storage.from_("face-images").remove([f"{user_id}.jpg"])
+        supabase_admin.storage.from_("face-images").remove([f"{user_id}.jpg", f"v2/{user_id}.jpg"])
     except Exception as error:
         _log(user_id, "withdraw_consent", "photo_delete_failed", type(error).__name__)
         return jsonify({

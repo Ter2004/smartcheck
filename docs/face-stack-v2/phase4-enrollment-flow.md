@@ -1,5 +1,10 @@
 # Face stack v2: Phase 4, new enrollment flow (2026-10-19)
 
+> **Changed on 2026-10-26.** The single head turn became five poses: frontal, then
+> left, right, up and down in a server-issued random order; 7 templates; notice
+> version 1.3. See [phase4b-five-poses.md](phase4b-five-poses.md). The parts below
+> about screens, gates, anti-spoof, duplicates and storage still apply.
+
 The flow below applies only with `FACE_ENGINE=arcface`. With facenet512 the
 v1 page and `/api/enroll` run exactly as before (checked: `/student/enroll`
 still renders `enrollment_flow.js`). `/api/enroll` was changed with your

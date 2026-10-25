@@ -1,0 +1,59 @@
+{
+  "faces_used": 1500,
+  "lfw_sample": 1500,
+  "seed": 20261026,
+  "mediapipe": "0.10.14",
+  "server_pitch": "landmark_3d_68 pitch_deg, positive = looking up",
+  "pitch_deg_percentiles": {
+    "5": -14.3,
+    "50": -3.1,
+    "95": 10.7
+  },
+  "frontal_yaw_gate": {
+    "browser_frontal": 968,
+    "of_those_server_frontal": 958,
+    "share": 0.9897
+  },
+  "nose_ratio": {
+    "corr_with_pitch": -0.8081,
+    "ratio_per_deg_ols": -0.00525,
+    "ratio_per_deg_inverse_ols": -0.00803,
+    "ratio_percentiles": {
+      "5": 0.454,
+      "50": 0.55,
+      "95": 0.615
+    },
+    "steps_in_deg": {
+      "nod_down_min": {
+        "ratio": 0.02,
+        "deg_low": 2.5,
+        "deg_high": 3.8
+      },
+      "nod_down_mid": {
+        "ratio": 0.045,
+        "deg_low": 5.6,
+        "deg_high": 8.6
+      },
+      "nod_down_max": {
+        "ratio": 0.07,
+        "deg_low": 8.7,
+        "deg_high": 13.3
+      },
+      "frontal_window_15": {
+        "ratio": 0.1667,
+        "deg_low": 20.8,
+        "deg_high": 31.8
+      }
+    }
+  },
+  "eye_mouth_ratio": {
+    "corr_with_pitch": -0.7695,
+    "ratio_per_deg_ols": -0.01065,
+    "ratio_per_deg_inverse_ols": -0.01798,
+    "ratio_percentiles": {
+      "5": 0.414,
+      "50": 0.593,
+      "95": 0.757
+    }
+  }
+}

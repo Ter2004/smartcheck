@@ -59,11 +59,13 @@ class FaceStackV2SqlTests(unittest.TestCase):
             cur.execute("INSERT INTO public.consent_logs (user_id) VALUES (%s) RETURNING id", (uid,))
             return uid, cur.fetchone()[0]
 
-    def _complete(self, uid, consent, seeds, model="buffalo_l/w600k_r50", hash_="h"):
+    def _complete(self, uid, consent, seeds, model="buffalo_l/w600k_r50", hash_="h", poses=None):
         from app.services.face_store import vector_literal
         import json
+        seeds = list(seeds)
+        poses = poses or ["frontal"] * len(seeds)
         templates = [{"embedding": json.loads(vector_literal(_unit(s))), "det_score": 0.8,
-                      "face_px": 200, "yaw_deg": 0.0, "pose": "frontal"} for s in seeds]
+                      "face_px": 200, "yaw_deg": 0.0, "pose": pose} for s, pose in zip(seeds, poses)]
         with self.conn.cursor() as cur:
             cur.execute("SELECT public.complete_face_enrollment(%s, %s, %s, %s, %s, %s::jsonb)",
                         (uid, model, consent, hash_, f"{uid}.jpg", json.dumps(templates)))
@@ -105,6 +107,57 @@ class FaceStackV2SqlTests(unittest.TestCase):
             cur.execute("DELETE FROM public.face_enrollments WHERE student_id = %s", (uid,))
             cur.execute("SELECT count(*) FROM public.face_templates WHERE enrollment_id = %s", (enrollment,))
             self.assertEqual(cur.fetchone()[0], 0)
+
+    def test_five_pose_labels_and_nothing_else(self):
+        import psycopg2
+        uid, consent = self._student()
+        enrollment = self._complete(uid, consent, range(41, 48),
+                                    poses=["frontal"] * 3 + ["left", "right", "up", "down"])
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT pose, count(*) FROM public.face_templates WHERE enrollment_id = %s "
+                        "GROUP BY pose ORDER BY pose", (enrollment,))
+            self.assertEqual(cur.fetchall(), [("down", 1), ("frontal", 3), ("left", 1), ("right", 1), ("up", 1)])
+        uid2, consent2 = self._student()
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._complete(uid2, consent2, [51], poses=["turn"])       # the old single-turn label
+        self.assertIn("face_templates_pose_check", str(ctx.exception))
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM public.face_enrollments WHERE student_id = %s", (uid2,))
+            self.assertEqual(cur.fetchone()[0], 0)                    # one transaction: nothing half-saved
+
+    def test_rerun_over_the_two_pose_version_updates_the_check(self):
+        # The earlier file created the column check as ('frontal', 'turn'); CREATE TABLE IF NOT
+        # EXISTS alone would keep it, and every five-pose save would fail.
+        import psycopg2
+        migration = MIGRATION.read_text(encoding="utf-8")
+        old_check = ("ALTER TABLE public.face_templates DROP CONSTRAINT face_templates_pose_check; "
+                     "ALTER TABLE public.face_templates ADD CONSTRAINT face_templates_pose_check "
+                     "CHECK (pose IN ('frontal', 'turn'))")
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM public.face_enrollments")   # a database that only had the old file
+            cur.execute(old_check)
+        uid, consent = self._student()
+        self._complete(uid, consent, [61], poses=["frontal"])
+        with self.conn.cursor() as cur:
+            cur.execute(migration)                                  # applied again, as an upgrade
+            cur.execute("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'face_templates_pose_check'")
+            definition = cur.fetchone()[0]
+        for pose in ("left", "right", "up", "down"):
+            self.assertIn(f"'{pose}'", definition)
+        self.assertNotIn("'turn'", definition)
+        uid, consent = self._student()
+        self._complete(uid, consent, [62, 63], poses=["frontal", "up"])
+        # An old 'turn' row stops the upgrade instead of being kept under the new check.
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM public.face_enrollments")
+            cur.execute(old_check)
+        uid, consent = self._student()
+        self._complete(uid, consent, [64, 65], poses=["frontal", "turn"])
+        with self.conn.cursor() as cur, self.assertRaises(psycopg2.errors.CheckViolation):
+            cur.execute(migration)
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM public.face_enrollments")
+            cur.execute(migration)                                  # current check for the other tests
 
     def test_match_excludes_self_and_other_models(self):
         uid_a, consent_a = self._student()

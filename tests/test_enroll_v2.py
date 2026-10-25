@@ -1,5 +1,6 @@
 """POST /student/api/enroll under FACE_ENGINE=arcface (v2), with the face model mocked per frame."""
 import json
+import random
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -11,6 +12,7 @@ from flask import Flask
 import app
 from app.routes import student
 from app.services import enroll_v2, face_engine, face_service, face_store, security_service
+from scripts import report_turn_yaw
 
 HEADERS = {"X-CSRF-Token": "csrf"}
 CONFIG = {"FACE_ENGINE": "arcface", "FACE_CLAHE": "off", "ARCFACE_MATCH_THRESHOLD": "0.4",
@@ -28,6 +30,10 @@ def unit(seed, base=None, noise=0.15):
 
 PERSON_A = unit(1)
 PERSON_B = unit(2)
+ORDER = ("up", "left", "down", "right")      # the order the mocked challenge issues
+# Server angles per pose (yaw_deg + = turn_left; pitch_deg + = up) and what the page reports.
+ANGLES = {"frontal": (2.0, 0.0), "left": (28.0, 0.0), "right": (-28.0, 0.0), "up": (2.0, 10.0), "down": (2.0, -10.0)}
+CLIENT = {"frontal": (0.02, None), "left": (0.41, None), "right": (-0.41, None), "up": (0.02, 0.08), "down": (0.02, -0.08)}
 
 
 def table_mock(data):
@@ -87,76 +93,107 @@ class EnrollV2RouteTests(unittest.TestCase):
                                integrity_hash=integrity_hash, templates=templates))
         return "enrollment-1"
 
-    def face(self, name, yaw, emb, det=0.85):
+    def face(self, name, yaw, emb, pitch=0.0, det=0.85):
         code = self.codes.setdefault(name, len(self.codes) + 1)
         self.faces[code] = {"embedding": emb, "det_score": det, "face_px": 300, "yaw_deg": yaw,
-                            "pitch_deg": 0.0, "roll_deg": 0.0, "eye_roll_deg": 0.0}
+                            "pitch_deg": pitch, "roll_deg": 0.0, "eye_roll_deg": 0.0}
         return name
 
-    def challenge(self, direction="turn_left"):
-        with patch.object(enroll_v2.secrets.SystemRandom, "choice", return_value=direction):
+    def challenge(self, order=ORDER):
+        with patch.object(enroll_v2.secrets.SystemRandom, "sample", return_value=list(order)):
             r = self.client.post("/student/api/enroll/challenge", headers=HEADERS)
         self.assertEqual(r.status_code, 200, r.json)
-        self.assertEqual(r.json["direction"], direction)
+        self.assertEqual(r.json["order"], list(order))
         return r.json["challenge_id"]
 
-    def frames(self, turn_yaw=28.0, turn_emb=None, frontal_yaw=2.0, n_frontal=4, n_turn=3):
-        out = []
-        for i in range(n_frontal):
-            out.append({"image": self.face(f"f{i}", frontal_yaw, unit(10 + i, PERSON_A)), "t": 500 + 200 * i,
-                        "pose": "frontal", "client_yaw": 0.02})
-        for i in range(n_turn):
-            emb = turn_emb if turn_emb is not None else unit(20 + i, PERSON_A)
-            out.append({"image": self.face(f"t{i}", turn_yaw, emb), "t": 3000 + 200 * i,
-                        "pose": "turn", "client_yaw": 0.41})
+    def frames(self, order=ORDER, angles=None, emb=None, n=None):
+        """4 frontal frames, then 2 per pose in `order`, as the page captures them; overrides per pose."""
+        angles = {**ANGLES, **(angles or {})}
+        n = {"frontal": 4, **{pose: 2 for pose in enroll_v2.POSES}, **(n or {})}
+        out, t = [], 500
+        for k, pose in enumerate(["frontal"] + list(order)):
+            for i in range(n[pose]):
+                e = (emb or {}).get(pose)
+                e = unit(10 + 10 * k + i, PERSON_A) if e is None else e
+                yaw, pitch = angles[pose]
+                out.append({"image": self.face(f"{pose}{i}", yaw, e, pitch), "t": t, "pose": pose,
+                            "client_yaw": CLIENT[pose][0], "client_pitch": CLIENT[pose][1]})
+                t += 200
+            t += 1000
         return out
 
     def enroll(self, challenge_id, frames):
         return self.client.post("/student/api/enroll", json={"challenge_id": challenge_id, "frames": frames},
                                 headers=HEADERS)
 
+    def reset_retries(self):
+        with self.client.session_transaction() as s:
+            s.pop("enroll_retry", None)
+
     # ── scenarios ─────────────────────────────────────────────────────────────
-    def test_correct_turn_enrolls_3_frontal_2_turned(self):
+    def test_five_poses_enroll_7_templates_in_challenge_order(self):
         r = self.enroll(self.challenge(), self.frames())
         self.assertEqual(r.status_code, 200, r.json)
         self.assertEqual(r.json["status"], "enrolled")
         saved = self.saved[0]
         self.assertEqual(saved["model_version"], "buffalo_l/w600k_r50")
         self.assertEqual(saved["consent_id"], "consent-9")
-        self.assertEqual([t["pose"] for t in saved["templates"]], ["frontal"] * 3 + ["turn"] * 2)
+        self.assertEqual([t["pose"] for t in saved["templates"]], ["frontal"] * 3 + list(ORDER))
         expected = security_service.compute_template_integrity_hash(
             "student-1", "buffalo_l/w600k_r50", [t["embedding"] for t in saved["templates"]], "salt")
         self.assertEqual(saved["integrity_hash"], expected)
         self.db.storage.from_.assert_called_with("face-images")
 
     def test_wrong_turn_direction(self):
-        r = self.enroll(self.challenge("turn_left"), self.frames(turn_yaw=-28.0))
+        r = self.enroll(self.challenge(), self.frames(angles={"left": (-28.0, 0.0)}))
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.json["status"], "retry")
-        self.assertIn("หันผิดทาง", r.json["fix"])
+        self.assertEqual(r.json["fix"], "หันผิดทาง — กรุณาหันซ้ายตามลูกศร")
         self.assertEqual(self.saved, [])
 
-    def test_static_photo_has_no_turn(self):
-        # The same still face in every frame: the "turn" frames read frontal.
-        r = self.enroll(self.challenge(), self.frames(turn_yaw=2.0, turn_emb=unit(10, PERSON_A)))
+    def test_up_and_down_need_the_right_pitch_direction(self):
+        r = self.enroll(self.challenge(), self.frames(angles={"up": (2.0, -10.0)}))      # looked down instead
+        self.assertEqual(r.json["fix"], "เงยหน้าอีกนิดตามลูกศร")
+        r = self.enroll(self.challenge(), self.frames(angles={"down": (2.0, 10.0)}))     # looked up instead
+        self.assertEqual(r.json["fix"], "ก้มหน้าอีกนิดตามลูกศร")
+        self.assertEqual(self.saved, [])
+
+    def test_up_down_with_a_turned_head_do_not_count(self):
+        r = self.enroll(self.challenge(), self.frames(angles={"up": (28.0, 10.0)}))
+        self.assertEqual(r.json["fix"], "เงยหน้าอีกนิดตามลูกศร")
+        self.assertEqual(self.saved, [])
+
+    def test_static_photo_has_no_poses(self):
+        # The same still face in every frame: no pose reads as turned, raised or lowered.
+        still = unit(10, PERSON_A)
+        r = self.enroll(self.challenge(), self.frames(angles={p: (2.0, 0.0) for p in enroll_v2.POSES},
+                                                      emb={p: still for p in ("frontal",) + enroll_v2.POSES}))
         self.assertEqual(r.json["status"], "retry")
-        self.assertIn("ให้มากขึ้น", r.json["fix"])
+        self.assertEqual(r.json["fix"], "เงยหน้าอีกนิดตามลูกศร")      # ORDER starts with up
         self.assertEqual(self.saved, [])
 
-    def test_replay_is_refused(self):
-        # Unknown challenge id, turn captured before the frontal frames, and a reused challenge.
-        self.assertEqual(self.enroll("not-the-challenge", self.frames()).json["status"], "retry")
-        bad_order = self.frames()
-        bad_order[0]["t"] = 9000
-        self.assertEqual(self.enroll(self.challenge(), bad_order).json["fix"], enroll_v2.FIX["order"])
+    def test_unknown_or_reused_challenge(self):
+        self.assertEqual(self.enroll("not-the-challenge", self.frames()).json["fix"], enroll_v2.FIX["challenge"])
         cid = self.challenge()
         self.assertEqual(self.enroll(cid, self.frames()).status_code, 200)
         self.enrollment = None
         self.assertEqual(self.enroll(cid, self.frames()).json["fix"], enroll_v2.FIX["challenge"])
         self.assertEqual(len(self.saved), 1)
 
+    def test_capture_order_must_follow_the_challenge(self):
+        late_frontal = self.frames()
+        late_frontal[0]["t"] = 60000                     # a frontal frame after the poses
+        self.assertEqual(self.enroll(self.challenge(), late_frontal).json["fix"], enroll_v2.FIX["order"])
+        self.reset_retries()
+        swapped = ("left", "up", "down", "right")         # captured in another order than issued
+        self.assertEqual(self.enroll(self.challenge(), self.frames(order=swapped)).json["fix"], enroll_v2.FIX["order"])
+        self.reset_retries()
+        no_down = self.frames(n={"down": 0})
+        self.assertEqual(self.enroll(self.challenge(), no_down).json["fix"], enroll_v2.FIX["order"])
+        self.assertEqual(self.saved, [])
+
     def test_person_swap_mid_capture(self):
-        r = self.enroll(self.challenge(), self.frames(turn_emb=unit(30, PERSON_B)))
+        r = self.enroll(self.challenge(), self.frames(emb={"down": unit(30, PERSON_B)}))
         self.assertEqual(r.json["fix"], enroll_v2.FIX["inconsistent"])
         self.assertEqual(self.saved, [])
 
@@ -197,9 +234,19 @@ class EnrollV2RouteTests(unittest.TestCase):
 
     def test_three_failures_send_student_to_staff(self):
         for attempt in range(3):
-            r = self.enroll(self.challenge(), self.frames(turn_yaw=-28.0))
+            r = self.enroll(self.challenge(), self.frames(angles={"left": (-28.0, 0.0)}))
         self.assertTrue(r.json["contact_staff"])
         self.assertIn("ผู้ช่วยสอน", r.json["message"])
+
+    def test_pose_angles_are_logged_for_the_report(self):
+        with self.assertLogs(student._audit, "INFO") as logs:
+            self.assertEqual(self.enroll(self.challenge(), self.frames()).status_code, 200)
+        rows = report_turn_yaw.parse(logs.output)
+        self.assertEqual(sorted({r["pose"] for r in rows}), sorted(enroll_v2.POSES))
+        up = next(r for r in rows if r["pose"] == "up")
+        self.assertEqual((up["client_pitch"], up["server_pitch"], up["seen"]), (0.08, 10.0, "frontal"))
+        left = next(r for r in rows if r["pose"] == "left")
+        self.assertEqual((left["client_yaw"], left["server_yaw"], left["seen"]), (0.41, 28.0, "turn_left"))
 
     def test_withdrawn_consent_blocks(self):
         self.tables["consent_logs"] = table_mock([{"id": "c", "consent_given": False}])
@@ -213,6 +260,14 @@ class EnrollV2RouteTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.json)
         self.tables["face_enrollments"].delete.assert_called_once()
         self.assertIn("face_templates", r.json["deleted"])
+
+
+class ChallengeTests(unittest.TestCase):
+    def test_orders_are_random_permutations_of_the_four_poses(self):
+        challenges = [enroll_v2.new_challenge(now=0, rng=random.Random(seed)) for seed in range(60)]
+        self.assertTrue(all(sorted(c["order"]) == sorted(enroll_v2.POSES) for c in challenges))
+        self.assertGreater(len({tuple(c["order"]) for c in challenges}), 10)
+        self.assertEqual(len({c["nonce"] for c in challenges}), 60)
 
 
 class QualityGateTests(unittest.TestCase):

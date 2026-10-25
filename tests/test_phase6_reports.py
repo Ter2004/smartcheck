@@ -1,7 +1,7 @@
-"""scripts/spoof_report.py and scripts/realclass_report.py on small synthetic sheets."""
+"""scripts/spoof_report.py, scripts/realclass_report.py and scripts/report_turn_yaw.py on small synthetic input."""
 import unittest
 
-from scripts import realclass_report, spoof_report
+from scripts import realclass_report, report_turn_yaw, spoof_report
 
 
 class SpoofReportTests(unittest.TestCase):
@@ -61,6 +61,37 @@ class RealclassReportTests(unittest.TestCase):
             os.unlink(f.name)
         self.assertEqual((s["n"], s["below_threshold"], s["min"]), (3, 1, 0.39))
         self.assertEqual(s["lowest_margins"][0], -0.01)
+
+
+class PoseAngleReportTests(unittest.TestCase):
+    """scripts/report_turn_yaw.py on synthetic step=pose_angle lines."""
+
+    @staticmethod
+    def line(pose, client_yaw, client_pitch, server_yaw, server_pitch, seen):
+        return (f"student=s step=pose_angle result=measured details=pose={pose} client_yaw={client_yaw} "
+                f"client_pitch={client_pitch} server_yaw_deg={server_yaw} server_pitch_delta={server_pitch} "
+                f"seen={seen} ip=127.0.0.1 ua=test")
+
+    def test_turns_and_up_down(self):
+        lines = ([self.line("left", 0.4, None, 30.0, 0.5, "turn_left")] * 10
+                 + [self.line("right", -0.35, None, -26.0, -0.3, "turn_right")] * 10
+                 + [self.line("up", 0.01, 0.08, 1.0, 9.0, "frontal")] * 10
+                 + [self.line("down", -0.02, -0.075, -1.5, -8.0, "frontal")] * 9
+                 + [self.line("down", 0.02, -0.07, 25.0, -7.0, "turn_left")])
+        r = report_turn_yaw.report(report_turn_yaw.parse(lines))
+        self.assertEqual((r["turn_frames"], r["up_down_frames"]), (20, 20))
+        self.assertEqual(r["turns"]["sign_agreement"], 1.0)
+        self.assertEqual(r["turns"]["server_below_turn_limit"], 0)
+        self.assertEqual(r["up_down"]["sign_agreement"], 1.0)
+        self.assertEqual(r["up_down"]["server_yaw_not_frontal"], 1)
+        self.assertGreater(r["up_down"]["client_at_0.07_reads_deg"], 0)
+
+    def test_old_turn_lines_count_and_small_samples_have_no_verdict(self):
+        old = "step=turn_yaw result=measured details=pose=turn client_yaw=0.41 server_yaw_deg=27.3 seen=turn_left"
+        r = report_turn_yaw.report(report_turn_yaw.parse([old] * 3))
+        self.assertEqual(r["turn_frames"], 3)
+        self.assertIn("need >=", r["turns"])
+        self.assertIn("need >=", r["up_down"])
 
 
 if __name__ == "__main__":

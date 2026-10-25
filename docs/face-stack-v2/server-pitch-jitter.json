@@ -1,0 +1,13 @@
+{
+  "faces_used": 300,
+  "copies_per_face": 6,
+  "pitch_std_deg": {
+    "50": 0.18,
+    "95": 0.48
+  },
+  "max_abs_change_deg": {
+    "50": 0.4,
+    "95": 1.26,
+    "99": 7.21
+  }
+}

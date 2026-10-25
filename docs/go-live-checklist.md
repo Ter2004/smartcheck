@@ -7,7 +7,7 @@ the project folder `smartcheck_project/` and its `venv`.
 
 | # | Do | Check |
 |---|---|---|
-| 1.1 | Run `database/migrations/20261019_face_stack_v2.sql` | Run the verification query at the end of the file. You should see `extension` 0.8.x, RLS `true` on both tables, 2 triggers, 3 indexes, and `END` as the last row. |
+| 1.1 | Run `database/migrations/20261019_face_stack_v2.sql` (the current file: since 2026-10-26 it stores five poses; running it again over an earlier copy updates the pose check) | Run the verification query at the end of the file. You should see `extension` 0.8.x, RLS `true` on both tables, 2 triggers, 3 indexes, a `pose_check` row listing frontal, left, right, up and down, and `END` as the last row. |
 | 1.2 | Optional, only if you use LINE Beacon: run `database/migrations/20261020_line_beacon.sql` | Run its verification query; `END` is the last row. |
 
 ## 2. Face settings (`.env`)
@@ -47,7 +47,7 @@ the project folder `smartcheck_project/` and its `venv`.
 |---|---|---|
 | 6.1 | Real class, 20-30 people, timed against a stopwatch roll call | `docs/realclass_test.md` + `scripts/realclass_report.py` |
 | 6.2 | Fake faces (printed photo, phone screen, laptop screen), ≥ 20 attempts each | `docs/spoof_test.md` + `scripts/spoof_report.py` |
-| 6.3 | ≥ 20 head turns on phones, comparing browser and server yaw | `scripts/report_turn_yaw.py` on the server log |
+| 6.3 | Enroll on Android and iPhone until the log has ≥ 20 turned and ≥ 20 up/down frames; compare browser and server angles and look for `up_missing` / `down_missing` failures | `scripts/report_turn_yaw.py` on the server log; `docs/face-stack-v2/phase4b-five-poses.md` |
 
 ## 7. After the tests pass
 

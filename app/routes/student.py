@@ -115,7 +115,7 @@ def enrollment_navigation():
 
 # ─── Enrollment thresholds ────────────────────────────────────────────────────
 MAX_RETRY             = 3      # max outlier-retry rounds (server-enforced — A4)
-CONSENT_VERSION_V2    = "1.2"  # v2 notice: templates + thumbnail, teacher can see the photo
+CONSENT_VERSION_V2    = "1.3"  # v2 notice: 7 templates (5 poses) + thumbnail, teacher can see the photo
 LIVENESS_MAX_AGE_S    = 15 * 60  # a passed head-turn challenge is valid this long
 
 
@@ -890,7 +890,7 @@ def api_enroll():
 @_limiter.limit("10 per minute")
 @csrf_protect
 def api_enroll_challenge():
-    """Issue the turn direction for one v2 camera session (one /api/enroll attempt)."""
+    """Issue the random pose order for one v2 camera session (one /api/enroll attempt)."""
     from app.services import face_engine
     from app.services.enroll_v2 import new_challenge
     from app.services.liveness_challenge import CHALLENGE_TTL_S
@@ -898,8 +898,8 @@ def api_enroll_challenge():
         return jsonify(status="error", message="ไม่รองรับในโหมดนี้"), 404
     challenge = new_challenge()
     session["enroll_v2_challenge"] = challenge
-    _log(session["user_id"], "enroll_v2_challenge", "issued", f"direction={challenge['direction']}")
-    return jsonify(challenge_id=challenge["nonce"], direction=challenge["direction"],
+    _log(session["user_id"], "enroll_v2_challenge", "issued", f"order={challenge['order']}")
+    return jsonify(challenge_id=challenge["nonce"], order=challenge["order"],
                    expires_in=CHALLENGE_TTL_S)
 
 
@@ -995,7 +995,7 @@ def _api_enroll_v2(user_id, data):
         user_id, model_version, embeddings, current_app.config["EMBEDDING_INTEGRITY_SALT"])
     templates = [{"embedding": f["face"]["embedding"], "det_score": round(f["face"]["det_score"], 4),
                   "face_px": f["face"]["face_px"], "yaw_deg": round(f["face"]["yaw_deg"], 1),
-                  "pose": "frontal" if f["pose"] == "frontal" else "turn"} for f in kept]
+                  "pose": f["pose"]} for f in kept]
     try:
         face_store.complete_enrollment(supabase_admin, user_id, model_version, consent_id,
                                        integrity_hash, None, templates)

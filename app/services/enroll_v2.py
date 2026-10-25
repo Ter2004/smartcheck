@@ -1,14 +1,25 @@
 """Server checks of the v2 enrollment (FACE_ENGINE=arcface), in the order the route runs them.
 
 frame validation → one face per frame → quality gates → anti-spoof on >= K of N
-→ head turn matches the challenge → embeddings → pairwise self-consistency →
-1:N duplicate check → keep 5 (3 frontal + 2 turned).
+→ poses match the challenge → embeddings → pairwise self-consistency →
+1:N duplicate check → keep 7 (3 frontal + left, right, up, down).
 
-The browser sends up to 8 frames it scored itself (pose bucket, capture time
-since it received the challenge, its own yaw reading). Nothing the browser says
-decides anything: every frame is re-checked here. A frame that fails a quality
-gate is dropped; the attempt fails when too few usable frames remain, with the
-one fix that would have helped most.
+Five poses, captured automatically by the page: frontal first, then the four
+others in an order the server picks at random for each session (24 orders), so
+a recording made in advance does not fit. The browser sends up to 12 frames it
+scored itself (pose, capture time since it received the challenge, its own yaw
+and pitch readings). Nothing the browser says decides anything: every frame is
+re-checked here. A frame that fails a gate is dropped; the attempt fails when a
+pose has no usable frame left, with the one fix that would have helped most.
+
+Pose checks (InsightFace landmark_3d_68 angles):
+  left/right  yaw past the calibrated turn limit (liveness_challenge, 20.4 deg)
+              in that direction; the opposite turn fails the attempt
+  up/down     yaw still frontal and pitch moved the right way from the same
+              person's frontal frames. Direction only: pitch has no calibrated
+              magnitude yet (scripts/calibrate_arcface_pitch.py found the sign:
+              positive pitch = looking up). Every frame's angles are logged
+              (step=pose_angle) so a magnitude can be calibrated later.
 
 Gate values are the ones the existing enrollment page already enforces
 (enrollment_flow.js): face height >= 0.30 of the frame, brightness >= 55,
@@ -26,15 +37,19 @@ import numpy as np
 
 from app.services import liveness_challenge as lc
 
-MIN_FRAMES, MAX_FRAMES = 5, 8
-KEEP_FRONTAL, KEEP_TURN = 3, 2
+POSES = ("left", "right", "up", "down")
+KEEP_FRONTAL = 3
+MIN_FRAMES, MAX_FRAMES = KEEP_FRONTAL + len(POSES), 12
 MIN_FACE_FRAC = 0.30        # enrollment_flow.js face-size gate (landmark span >= 0.30)
 MIN_BRIGHTNESS = 55         # enrollment_flow.js _checkCameraConditions
 MAX_BACKLIGHT = 2.2         # enrollment_flow.js _checkCameraConditions (edge / centre)
 MIN_BLUR = 20               # enrollment_flow.js _checkBlur, Laplacian variance at 640x480
 SPOOF_PASS_RATIO = 0.8      # the facenet512 flow's MIN_SPOOF_PASS = 4 of 5
-TURNS = ("turn_left", "turn_right")
-TURN_LABELS = {"turn_left": "ซ้าย", "turn_right": "ขวา"}
+# landmark_3d_68 pitch: positive = looking up (corr -0.79 with the nose-to-mouth
+# ratio on 1,500 LFW faces, docs/face-stack-v2/arcface-pitch-sign.json).
+PITCH_UP_SIGN = 1.0
+YAW_POSE = {"left": "turn_left", "right": "turn_right"}
+POSE_LABELS = {"left": "หันซ้าย", "right": "หันขวา", "up": "เงยหน้า", "down": "ก้มหน้า"}
 
 FIX = {
     "challenge":      "หมดเวลาหรือคำขอไม่ถูกต้อง — กรุณาเริ่มถ่ายใหม่",
@@ -64,16 +79,24 @@ class EnrollFail(Exception):
 
 
 def new_challenge(now=None, rng=None):
-    """One random turn direction, bound to a nonce, for the v2 camera session."""
+    """A random order of the four poses, bound to a nonce, for one v2 camera session."""
     rng = rng or secrets.SystemRandom()
-    return {"nonce": secrets.token_urlsafe(16), "direction": rng.choice(TURNS),
+    return {"nonce": secrets.token_urlsafe(16), "order": rng.sample(POSES, len(POSES)),
             "issued_at": time.time() if now is None else now}
 
 
+def _number(value):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) else None
+
+
 def parse_frames(data, challenge, now=None):
-    """Validate the request shape and the challenge; return [{image, t, pose, client_yaw}]."""
+    """Validate the request shape, the challenge and the capture order; return the frames."""
     now = time.time() if now is None else now
-    if not challenge:
+    if not challenge or not isinstance(challenge.get("order"), list):
         raise EnrollFail("challenge")
     if not isinstance(data, dict) or not isinstance(data.get("challenge_id"), str) \
             or not secrets.compare_digest(data["challenge_id"], challenge["nonce"]):
@@ -85,24 +108,22 @@ def parse_frames(data, challenge, now=None):
         raise EnrollFail("bad_request")
     frames = []
     for f in raw:
-        if not isinstance(f, dict) or not isinstance(f.get("image"), str) or f.get("pose") not in ("frontal", "turn"):
+        if not isinstance(f, dict) or not isinstance(f.get("image"), str) \
+                or f.get("pose") not in ("frontal",) + POSES:
             raise EnrollFail("bad_request")
-        try:
-            t = float(f.get("t"))
-        except (TypeError, ValueError):
-            raise EnrollFail("bad_request") from None
-        if not math.isfinite(t) or not 0 <= t <= lc.CHALLENGE_TTL_S * 1000:
+        t = _number(f.get("t"))
+        if t is None or not 0 <= t <= lc.CHALLENGE_TTL_S * 1000:
             raise EnrollFail("order")
-        try:
-            client_yaw = float(f["client_yaw"]) if f.get("client_yaw") is not None else None
-        except (TypeError, ValueError):
-            client_yaw = None
-        frames.append({"image": f["image"], "t": t, "pose": f["pose"], "client_yaw": client_yaw})
-    # Capture order: all frontal frames are taken before the turn starts.
-    frontal_t = [f["t"] for f in frames if f["pose"] == "frontal"]
-    turn_t = [f["t"] for f in frames if f["pose"] == "turn"]
-    if not frontal_t or not turn_t or max(frontal_t) > min(turn_t):
+        frames.append({"image": f["image"], "t": t, "pose": f["pose"],
+                       "client_yaw": _number(f.get("client_yaw")), "client_pitch": _number(f.get("client_pitch"))})
+    # Capture order: frontal first, then each pose in the challenge's order.
+    sequence = ["frontal"] + list(challenge["order"])
+    times = {pose: [f["t"] for f in frames if f["pose"] == pose] for pose in sequence}
+    if any(not times[pose] for pose in sequence):
         raise EnrollFail("order")
+    for earlier, later in zip(sequence, sequence[1:]):
+        if max(times[earlier]) > min(times[later]):
+            raise EnrollFail("order")
     return frames
 
 
@@ -130,8 +151,17 @@ def _most_common(reasons, default):
     return Counter(reasons).most_common(1)[0][0] if reasons else default
 
 
+def _pose_ok(pose, seen, pitch_delta):
+    """Does a frame labelled `pose` show it? left/right: calibrated yaw; up/down: frontal yaw, pitch sign."""
+    if pose in YAW_POSE:
+        return seen == YAW_POSE[pose]
+    if seen != "frontal":
+        return False
+    return pitch_delta * PITCH_UP_SIGN * (1 if pose == "up" else -1) > 0
+
+
 def check(frames, challenge, deps, thresholds, log=lambda *a: None):
-    """Run every server check. Returns {"kept": [5 frames], "thumbnail": frame}; raises EnrollFail.
+    """Run every server check. Returns {"kept": [7 frames], "thumbnail": frame}; raises EnrollFail.
 
     deps: validate(b64)->{"valid"}, decode(b64)->BGR, analyze(BGR)->face dict,
           spoof(BGR)->combined_spoof_score dict, is_system_failure(dict)->bool,
@@ -139,7 +169,7 @@ def check(frames, challenge, deps, thresholds, log=lambda *a: None):
     """
     from app.services import face_engine
 
-    direction_wanted = challenge["direction"]
+    order = list(challenge["order"])
     dropped = []
 
     # 1. Frame validation
@@ -175,7 +205,7 @@ def check(frames, challenge, deps, thresholds, log=lambda *a: None):
         if failed:
             dropped.append(failed); continue
         good.append(f)
-    if len(good) < KEEP_FRONTAL + KEEP_TURN:
+    if len(good) < MIN_FRAMES:
         raise EnrollFail(_most_common(dropped, "no_face"), detail={"dropped": dropped})
 
     # 4. Anti-spoof on >= K of N
@@ -199,40 +229,44 @@ def check(frames, challenge, deps, thresholds, log=lambda *a: None):
         raise EnrollFail("spoof")
     good = [f for f in good if f.get("spoof_ok")]
 
-    # 5. Head turn matches the challenge (yaw in degrees, calibrated limits)
-    frontal, turned = [], []
+    # 5. Poses match the challenge
     for f in good:
-        seen = lc.direction(lc.ARCFACE_YAW_SIGN * f["face"]["yaw_deg"], "deg")
-        f["seen"] = seen
-        log("turn_yaw", f"pose={f['pose']} client_yaw={f['client_yaw']} server_yaw_deg={f['face']['yaw_deg']:.1f} seen={seen}")
-        if f["pose"] == "frontal" and seen == "frontal":
-            frontal.append(f)
-        elif f["pose"] == "turn":
-            if seen in TURNS and seen != direction_wanted:
-                raise EnrollFail("wrong_direction", f"หันผิดทาง — กรุณาหันหน้าไปทาง{TURN_LABELS[direction_wanted]}")
-            if seen == direction_wanted:
-                turned.append(f)
+        f["seen"] = lc.direction(lc.ARCFACE_YAW_SIGN * f["face"]["yaw_deg"], "deg")
+    frontal = [f for f in good if f["pose"] == "frontal" and f["seen"] == "frontal"]
     if len(frontal) < KEEP_FRONTAL:
         raise EnrollFail("not_frontal")
-    if len(turned) < KEEP_TURN:
-        raise EnrollFail("turn_missing", f"หันหน้าไปทาง{TURN_LABELS[direction_wanted]}ให้มากขึ้นตามคำสั่ง")
+    frontal_pitch = float(np.mean([f["face"]["pitch_deg"] for f in frontal]))
+    accepted = {pose: [] for pose in order}
+    for f in good:
+        if f["pose"] == "frontal":
+            continue
+        delta = f["face"]["pitch_deg"] - frontal_pitch
+        log("pose_angle", f"pose={f['pose']} client_yaw={f['client_yaw']} client_pitch={f['client_pitch']} "
+                          f"server_yaw_deg={f['face']['yaw_deg']:.1f} server_pitch_delta={delta:.1f} seen={f['seen']}")
+        if f["pose"] in YAW_POSE and f["seen"] in YAW_POSE.values() and f["seen"] != YAW_POSE[f["pose"]]:
+            raise EnrollFail("wrong_direction", f"หันผิดทาง — กรุณา{POSE_LABELS[f['pose']]}ตามลูกศร")
+        if _pose_ok(f["pose"], f["seen"], delta):
+            accepted[f["pose"]].append(f)
+    for pose in order:
+        if not accepted[pose]:
+            raise EnrollFail(f"{pose}_missing", f"{POSE_LABELS[pose]}อีกนิดตามลูกศร")
 
     # 6-7. Embeddings and self-consistency on the best frames
     rank = lambda f: (f["face"]["det_score"], f["face"]["face_px"], f["quality"]["blur"])
     frontal = sorted(frontal, key=rank, reverse=True)[:KEEP_FRONTAL]
-    turned = sorted(turned, key=rank, reverse=True)[:KEEP_TURN]
+    posed = [sorted(accepted[pose], key=rank, reverse=True)[0] for pose in order]
     fe = [f["face"]["embedding"] for f in frontal]
     pair_scores = [float(fe[a] @ fe[b]) for a in range(len(fe)) for b in range(a + 1, len(fe))]
     log("self_consistency", f"frontal_pairs={[round(s, 4) for s in pair_scores]} min={thresholds['ENROLL_SELF_SIM_MIN']}")
     if min(pair_scores) < thresholds["ENROLL_SELF_SIM_MIN"]:
         raise EnrollFail("inconsistent")
-    for f in turned:
+    for f in posed:
         best = max(float(f["face"]["embedding"] @ e) for e in fe)
-        log("turn_identity", f"best={best:.4f} min={thresholds['ARCFACE_MATCH_THRESHOLD']}")
+        log("pose_identity", f"pose={f['pose']} best={best:.4f} min={thresholds['ARCFACE_MATCH_THRESHOLD']}")
         if best < thresholds["ARCFACE_MATCH_THRESHOLD"]:
             raise EnrollFail("inconsistent")
 
-    kept = frontal + turned
+    kept = frontal + posed
 
     # 8. 1:N duplicate check (other students, same model)
     for f in kept:

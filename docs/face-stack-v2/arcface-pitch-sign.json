@@ -1,0 +1,18 @@
+{
+  "faces_used": 1500,
+  "sample": 1500,
+  "seed": 20261026,
+  "corr_pitch_vs_nose_ratio": -0.7908,
+  "down_sign": -1.0,
+  "meaning": "pitch_deg * down_sign grows as the head pitches down (nose toward the mouth)",
+  "pitch_deg_percentiles": {
+    "1": -19.2,
+    "5": -14.3,
+    "25": -7.6,
+    "50": -3.1,
+    "75": 1.9,
+    "95": 10.7,
+    "99": 17.3
+  },
+  "corr_pitch_vs_yaw": -0.0119
+}

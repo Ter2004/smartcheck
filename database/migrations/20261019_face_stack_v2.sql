@@ -28,9 +28,15 @@ CREATE TABLE IF NOT EXISTS public.face_templates (
     det_score      real,
     face_px        integer,
     yaw_deg        real,
-    pose           text    CHECK (pose IN ('frontal', 'turn')),
+    pose           text    CHECK (pose IN ('frontal', 'left', 'right', 'up', 'down')),
     created_at     timestamptz NOT NULL DEFAULT now()
 );
+
+-- Re-running this file over the earlier version (pose 'frontal' | 'turn') updates the check;
+-- it fails if old 'turn' rows exist (delete those test enrollments first).
+ALTER TABLE public.face_templates DROP CONSTRAINT IF EXISTS face_templates_pose_check;
+ALTER TABLE public.face_templates ADD CONSTRAINT face_templates_pose_check
+    CHECK (pose IN ('frontal', 'left', 'right', 'up', 'down'));
 
 CREATE INDEX IF NOT EXISTS idx_face_templates_enrollment ON public.face_templates (enrollment_id);
 -- 1:N duplicate check at enrollment (cosine distance).
@@ -40,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_face_templates_embedding_hnsw
 COMMENT ON TABLE  public.face_enrollments IS 'One face enrollment per student (face stack v2). Service role only.';
 COMMENT ON COLUMN public.face_enrollments.integrity_hash IS 'HMAC-SHA256(user_id + model_version + embeddings, EMBEDDING_INTEGRITY_SALT).';
 COMMENT ON COLUMN public.face_enrollments.thumbnail_path IS 'Private "face-images" bucket path of the best frontal frame — NOT a public URL.';
-COMMENT ON TABLE  public.face_templates   IS 'Embeddings of one enrollment (3 frontal + 2 turned), unit length.';
+COMMENT ON TABLE  public.face_templates   IS 'Embeddings of one enrollment (3 frontal + left, right, up, down), unit length.';
 
 ALTER TABLE public.face_enrollments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.face_templates   ENABLE ROW LEVEL SECURITY;
@@ -91,6 +97,7 @@ FOR EACH ROW EXECUTE FUNCTION public.prevent_completed_face_enrollment_replaceme
 -- One transaction: enrollment row + its templates + HMAC. A leftover pending
 -- row (an attempt that died mid-way) is replaced; a completed one is not.
 -- p_templates: [{"embedding": [512 floats], "det_score", "face_px", "yaw_deg", "pose"}, ...]
+--   pose: frontal | left | right | up | down
 CREATE OR REPLACE FUNCTION public.complete_face_enrollment(
     p_student_id     uuid,
     p_model_version  text,
@@ -161,4 +168,5 @@ GRANT EXECUTE ON FUNCTION public.match_face_templates(text, text, uuid, integer)
 -- UNION ALL SELECT 'rls_' || relname, relrowsecurity::text FROM pg_class WHERE relname IN ('face_enrollments', 'face_templates')
 -- UNION ALL SELECT 'trigger', tgname::text FROM pg_trigger WHERE tgname LIKE 'prevent_completed_face_%'
 -- UNION ALL SELECT 'index', indexname::text FROM pg_indexes WHERE tablename = 'face_templates'
+-- UNION ALL SELECT 'pose_check', pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'face_templates_pose_check'
 -- UNION ALL SELECT 'END', 'END';

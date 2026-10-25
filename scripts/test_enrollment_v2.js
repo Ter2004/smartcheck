@@ -6,15 +6,15 @@ const vm = require('node:vm');
 
 const src = fs.readFileSync(path.join(__dirname, '../app/static/js/enrollment_v2.js'), 'utf8');
 const ctx = vm.createContext({ console, Math, performance: { now: () => 0 } });
-vm.runInContext(src + '\nglobalThis.api = {EV2, ev2EyeYaw, ev2Frontal, ev2FaceBox, ev2InOval, ev2Ear, ev2Mar, ev2Lighting, ev2Blur, Ev2BlinkDetector, Ev2Keeper};', ctx);
+vm.runInContext(src + '\nglobalThis.api = {EV2, ev2EyeYaw, ev2YawProxy, ev2NoseRatio, ev2PoseReached, ev2Frontal, ev2FaceBox, ev2InOval, ev2Ear, ev2Mar, ev2Lighting, ev2Blur, Ev2BlinkDetector, Ev2Keeper};', ctx);
 const A = ctx.api;
 
 // A synthetic frontal face: eye corners, nose, ears, forehead, chin, lids and lips.
-function face({ noseX = 0.5, earOpen = 0.30, top = 0.25, bottom = 0.75 } = {}) {
+function face({ noseX = 0.5, noseY = 0.55, earOpen = 0.30, top = 0.25, bottom = 0.75 } = {}) {
     const lm = Array.from({ length: 468 }, () => ({ x: 0.5, y: 0.5 }));
     const set = (i, x, y) => { lm[i] = { x, y }; };
     set(33, 0.40, 0.45); set(133, 0.46, 0.45); set(362, 0.54, 0.45); set(263, 0.60, 0.45);
-    set(1, noseX, 0.55); set(234, 0.35, 0.5); set(454, 0.65, 0.5); set(10, 0.5, top); set(152, 0.5, bottom);
+    set(1, noseX, noseY); set(234, 0.35, 0.5); set(454, 0.65, 0.5); set(10, 0.5, top); set(152, 0.5, bottom);
     // eyelids: vertical gap = earOpen x eye width (0.06 wide in x at 640 px, scale y to 480)
     const gap = earOpen * 0.06 * 640 / 480;
     for (const [p1, p2, p4, p5, cx] of [[160, 158, 153, 144, 0.43], [385, 387, 373, 380, 0.57]]) {
@@ -35,6 +35,29 @@ assert.ok(A.ev2EyeYaw(face({ noseX: 0.44 }), 640, 480) < -A.EV2.TURN_YAW, 'nose 
 assert.equal(A.ev2Frontal(face()), true);
 assert.equal(A.ev2Frontal(face({ noseX: 0.62 })), false);
 assert.equal(A.ev2InOval(A.ev2FaceBox(face())), true);
+
+// Pitch: v1 nose ratio (nose between forehead and chin); looking up moves the nose up = smaller ratio.
+assert.ok(near(A.ev2NoseRatio(face()), 0.6), 'nose ratio');
+const base = A.ev2NoseRatio(face());
+const upBy = (noseY) => base - A.ev2NoseRatio(face({ noseY }));
+assert.ok(upBy(0.51) > 0, 'nose higher in the image = looking up = positive');
+assert.ok(upBy(0.59) < 0, 'nose lower = looking down = negative');
+
+// Pose reached: left/right by eyeYaw beyond 0.30; up/down by 0.07 of nose ratio with a frontal yaw.
+const P = (pose, m) => A.ev2PoseReached(pose, { eyeYaw: 0, yawProxy: 0, up: 0, ...m });
+assert.equal(P('left', { eyeYaw: 0.31 }), true);
+assert.equal(P('left', { eyeYaw: -0.31 }), false, 'left needs the turn_left sign');
+assert.equal(P('right', { eyeYaw: -0.31 }), true);
+assert.equal(P('right', { eyeYaw: 0.29 }), false);
+assert.equal(P('up', { up: 0.07 }), true);
+assert.equal(P('up', { up: 0.069 }), false, 'not far enough');
+assert.equal(P('up', { up: -0.1 }), false, 'looking down is not up');
+assert.equal(P('down', { up: -0.07 }), true);
+assert.equal(P('down', { up: 0.1 }), false);
+assert.equal(P('up', { up: 0.1, yawProxy: 16 }), false, 'up/down must keep a frontal yaw (server checks them as frontal)');
+assert.equal(P('down', { up: -0.1, yawProxy: -16 }), false);
+assert.equal(P('frontal', { up: 0.1 }), false, 'only the four challenge poses');
+assert.equal(P('up', { up: upBy(0.55 - 0.07 * 0.5 - 0.001) }), true, 'nose 0.036 higher on a 0.5-tall face = 0.072');
 assert.equal(A.ev2InOval(A.ev2FaceBox(face({ top: 0.45, bottom: 0.70 }))), false, 'too small');
 
 // EAR: open eyes read the configured ratio; blink = drop below 0.70 x baseline, then back.

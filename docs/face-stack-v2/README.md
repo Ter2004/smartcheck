@@ -12,6 +12,7 @@ Each phase has its own report with the commands and real output.
 | 2 engine and storage | 8d3c058 | [phase2-engine-storage.md](phase2-engine-storage.md) |
 | 3 liveness and anti-spoof | 1f5991b | [phase3-liveness-antispoof.md](phase3-liveness-antispoof.md) |
 | 4 enrollment flow | f666cd3 (last commit that can still run facenet512) | [phase4-enrollment-flow.md](phase4-enrollment-flow.md) |
+| 4b five poses (frontal + left/right/up/down in random order), 2026-10-26 | see `git log -- docs/face-stack-v2/phase4b-five-poses.md` | [phase4b-five-poses.md](phase4b-five-poses.md) |
 | 5 check-in cutover, TF removal | a0a6e04, 68e4ef9 | [phase5-cutover.md](phase5-cutover.md) |
 | 6 test kits | 7b981af | [../spoof_test.md](../spoof_test.md), [../realclass_test.md](../realclass_test.md) |
 
@@ -39,13 +40,14 @@ calibrated ratio limits on 1,461 LFW faces (corr 0.953).
 - the 1:N duplicate search excludes the student's own rows.
 - Tested on Postgres 17 + pgvector 0.8.7.
 
-**Enrollment v2:**
+**Enrollment v2** (five poses since Phase 4b):
 - three screens and a camera session with no buttons;
-- the server issues the turn direction;
-- 3 frontal + 2 turned templates are kept;
+- the server issues a random order of left, right, up and down;
+- 3 frontal + 4 posed templates are kept (7);
 - a duplicate is blocked with a generic message plus a server-side audit row.
-- 13 route tests cover: wrong turn, static photo, replay, person swap, second
-  account, second person in frame, overwrite, spoof, and 3 failures.
+- 18 route tests cover: wrong turn, up/down sign, static photo, replay,
+  capture order, person swap, second account, second person in frame,
+  overwrite, spoof, and 3 failures.
 
 **Check-in:**
 - passive liveness;
@@ -106,8 +108,8 @@ These need you, a camera, or a running database.
    - The end-to-end timing of 10 enrollments and 10 check-ins with test
      accounts was not possible.
 3. **Real devices.** The v2 enrollment page has not run on a phone or laptop
-   camera, including iPhone Safari. The browser-vs-server yaw comparison (≥ 20
-   turns) needs those logs; use `scripts/report_turn_yaw.py`.
+   camera, including iPhone Safari. The browser-vs-server comparison (≥ 20
+   turned and ≥ 20 up/down frames) needs those logs; use `scripts/report_turn_yaw.py`.
 4. **Approvals still yours:** the Fasnet ONNX tolerance (Phase 3) and the
    turn-bucket deviation (Phase 4: turned frames must pass 20.4°, not "≤ 15°").
 5. **Re-enrollment.** Every student re-enrolls. `student_biometrics` and its

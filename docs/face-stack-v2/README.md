@@ -1,5 +1,7 @@
 # Face stack v2: final report (2026-10-20)
 
+Go-live steps in order: [../go-live-checklist.md](../go-live-checklist.md).
+
 Branch `feat/face-stack-v2`, made from 43f5f7b. It is not merged and not pushed.
 Each phase has its own report with the commands and real output.
 

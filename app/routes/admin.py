@@ -845,6 +845,23 @@ def api_withdraw_biometrics(student_id):
     return jsonify({"status": "ok", "message": "ถอนความยินยอมและลบข้อมูลใบหน้าแล้ว", "deleted": deleted})
 
 
+@admin_bp.route("/api/line-unlink/<user_id>", methods=["POST"])
+@login_required
+@role_required("admin")
+@csrf_protect
+def api_line_unlink(user_id):
+    """Remove a student's LINE link (new phone or LINE account); pending link codes go too."""
+    try:
+        supabase_admin.table("users").update({"line_user_id": None}).eq("id", user_id).execute()
+        supabase_admin.table("line_link_codes").delete().eq("user_id", user_id).execute()
+    except Exception as error:
+        _log.error("line_unlink failed: %s", type(error).__name__)
+        return jsonify({"status": "error", "message": "ยกเลิกไม่สำเร็จ (ยังไม่ได้รัน migration LINE?) กรุณาลองใหม่"}), 500
+    log_audit_event(supabase_admin, actor_id=session["user_id"], actor_role="admin",
+                    event_type="line_unlinked", target_id=user_id)
+    return jsonify({"status": "ok", "message": "ยกเลิกการเชื่อม LINE แล้ว"})
+
+
 @admin_bp.route("/api/reset-enrollment/<student_id>", methods=["POST"])
 @login_required
 @role_required("admin")

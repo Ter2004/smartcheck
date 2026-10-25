@@ -154,7 +154,22 @@ def _log(student_id, step, result, details=""):
 @role_required("student")
 def dashboard():
     enrolled = _enrollment_status()["is_enrolled"]
-    return render_template("student/dashboard.html", enrolled=enrolled)
+    return render_template("student/dashboard.html", enrolled=enrolled,
+                           needs_reenroll=not enrolled and _has_legacy_enrollment(session["user_id"]))
+
+
+def _has_legacy_enrollment(user_id):
+    """A completed FaceNet512 enrollment exists, but the active engine (arcface) cannot use it."""
+    from app.services import face_engine
+    if face_engine.active_engine() != "arcface":
+        return False
+    try:
+        res = (supabase_admin.table("student_biometrics").select("enrolled_at, consent_given")
+               .eq("user_id", user_id).maybe_single().execute())
+        row = (res.data if res else None) or {}
+        return bool(row.get("enrolled_at") and row.get("consent_given"))
+    except Exception:
+        return False
 
 
 @student_bp.route("/enroll")

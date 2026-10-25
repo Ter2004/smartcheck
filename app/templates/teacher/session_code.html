@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}รหัสเช็คชื่อ — {{ sess.title }}{% endblock %}
+
+{% block head %}
+<style>#qrBox svg { width: 100%; height: 100%; display: block; }</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto text-center">
+    <a href="{{ url_for('teacher.session_view', session_id=sess.id) }}"
+       class="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 mb-4">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        กลับหน้าคาบเรียน
+    </a>
+    <h1 class="text-2xl font-semibold text-slate-900">{{ sess.title }}</h1>
+    <p class="text-sm text-slate-500 mb-6">
+        {{ sess.courses.code }} · ห้อง {{ sess.beacons.room_name if sess.beacons else '—' }}
+    </p>
+
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-10">
+        <p class="text-base text-slate-600 mb-2">สำหรับมือถือที่ใช้ Bluetooth หรือ LINE ไม่ได้: สแกน QR หรือกรอกรหัสในหน้าเช็คชื่อ</p>
+        <div id="codeLive">
+            <div id="qrBox" class="mx-auto my-4 w-64 h-64 sm:w-80 sm:h-80" aria-hidden="true"></div>
+            <p id="codeDigits" class="font-mono font-bold tracking-[0.3em] text-6xl sm:text-8xl text-slate-900 select-all"
+               aria-live="polite">------</p>
+            <div class="h-2 bg-slate-100 rounded-full overflow-hidden mt-6 max-w-md mx-auto">
+                <div id="codeBar" class="h-full bg-indigo-500 rounded-full" style="width:100%; transition: width 1s linear"></div>
+            </div>
+            <p id="codeLeft" class="text-sm text-slate-500 mt-2">&nbsp;</p>
+        </div>
+        <p id="codeClosed" class="text-lg text-rose-600 my-8" hidden>คาบนี้ปิดการเช็คชื่อแล้ว</p>
+    </div>
+
+    <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mt-4 text-left">
+        รหัสนี้ถูกส่งต่อให้คนนอกห้องได้ภายในเวลาราว 1 นาที จึงอ่อนกว่าการยืนยันด้วยบอร์ดในห้อง —
+        เปิดหน้านี้เฉพาะตอนที่มีนักศึกษาเช็คชื่อด้วยวิธีอื่นไม่ได้ และตรวจรายชื่อกับคนในห้อง
+        (ทุกคนยังต้องสแกนหน้า)
+    </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const url = "{{ url_for('teacher.session_code_json', session_id=sess.id) }}";
+    let timer = null, tick = null;
+    async function refresh() {
+        clearTimeout(timer); clearInterval(tick);
+        let json = {};
+        try {
+            const res = await fetch(url, {cache: 'no-store'});
+            json = await res.json();
+        } catch (_) {
+            document.getElementById('codeLeft').textContent = 'เชื่อมต่อไม่ได้ กำลังลองใหม่...';
+            timer = setTimeout(refresh, 3000);
+            return;
+        }
+        if (!json.ok) {
+            document.getElementById('codeLive').hidden = true;
+            const closed = document.getElementById('codeClosed');
+            closed.textContent = json.error || 'แสดงรหัสไม่ได้';
+            closed.hidden = false;
+            return;
+        }
+        document.getElementById('qrBox').innerHTML = json.qr_svg;   // server-generated SVG
+        document.getElementById('codeDigits').textContent = json.code;
+        let left = json.expires_in;
+        const bar = document.getElementById('codeBar'), label = document.getElementById('codeLeft');
+        const show = () => {
+            bar.style.width = `${Math.max(0, left) / 30 * 100}%`;
+            label.textContent = `รหัสใหม่ใน ${Math.max(0, left)} วินาที`;
+        };
+        show();
+        tick = setInterval(() => { left -= 1; show(); }, 1000);
+        timer = setTimeout(refresh, Math.max(1, left) * 1000 + 300);
+    }
+    refresh();
+})();
+</script>
+{% endblock %}

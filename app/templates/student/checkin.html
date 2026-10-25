@@ -213,6 +213,20 @@
         <p id="bleRoomStatus" class="text-sm text-slate-500 mt-3 min-h-[1.4em]"></p>
     </div>
 
+    {% if config.CHECKIN_SESSION_CODE %}
+    <!-- Fallback: the 6-digit code / QR on the teacher's screen (no BLE or LINE needed) -->
+    <form id="stepSessionCode" onsubmit="flow.submitSessionCode(event)" style="display:none"
+          class="bg-white rounded-xl border border-slate-200 p-6 mt-3">
+        <label for="sessionCode" class="block font-semibold mb-1">ใช้ Bluetooth ไม่ได้?</label>
+        <p id="sessionCodeHelp" class="text-sm text-slate-500 mb-3">กรอกรหัส 6 หลักจากจอของอาจารย์ หรือสแกน QR บนจอด้วยกล้องมือถือ</p>
+        <input id="sessionCode" name="session_code" type="text" inputmode="numeric"
+               autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required
+               aria-describedby="sessionCodeHelp" title="กรุณากรอกรหัสเป็นตัวเลข 6 หลัก"
+               class="w-full border rounded-xl p-3 text-center text-2xl tracking-widest">
+        <button type="submit" class="w-full bg-slate-800 hover:bg-slate-900 text-white rounded-xl p-3 mt-3">ยืนยันรหัสและเริ่มถ่ายภาพ</button>
+    </form>
+    {% endif %}
+
     <!-- ─── Step 3: Result ─── -->
     <div id="stepDone" class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center" style="display:none">
         <div id="doneLoadingView">
@@ -258,6 +272,9 @@
         // Opened from the LINE Beacon message: the room was already confirmed by LINE.
         lineReceipt: {{ (request.args.get('r') if request.args.get('via') == 'line' and config.LINE_BEACON_ENABLED else None) | tojson }},
         lineRoom:    {{ (request.args.get('room', '') if request.args.get('via') == 'line' else '') | tojson }},
+        // Room code on the teacher's screen (QR opens this page with ?via=code&c=123456).
+        sessionCodeEnabled: {{ config.CHECKIN_SESSION_CODE | tojson }},
+        sessionCodeFromUrl: {{ (request.args.get('c') if request.args.get('via') == 'code' else None) | tojson }},
     });
     document.addEventListener('DOMContentLoaded', () => flow.start());
 </script>

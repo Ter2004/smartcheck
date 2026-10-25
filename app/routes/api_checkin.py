@@ -423,6 +423,11 @@ def checkin_liveness_challenge():
                     "expires_in": LIVENESS_CHALLENGE_TTL_S})
 
 
+def _via_code(data):
+    """The student proved the room with the code on the teacher's screen (CHECKIN_SESSION_CODE)."""
+    return data.get("proximity_via") == "code" and bool(current_app.config.get("CHECKIN_SESSION_CODE"))
+
+
 def _eligible(data):
     student_id = session["user_id"]
     session_id = data.get("session_id")
@@ -445,7 +450,9 @@ def _eligible(data):
         return None, (jsonify({"ok": False, "error": "คาบเรียนนี้ปิดการเช็คชื่อแล้ว"}), 400)
 
     # ─── 1c. BLE room proximity check (replaces TOTP when enabled) ───────────
-    if proximity_method == "ble":
+    # Skipped for the teacher's session code: that code is bound to this session,
+    # and /api/checkin accepts it only through a receipt issued for method "code".
+    if proximity_method == "ble" and not _via_code(data):
         beacon = sess.get("beacons") or {}
         configured_room = (beacon.get("ble_room_code") or "").strip()
         if not configured_room:
@@ -508,10 +515,12 @@ def _receipt_message(reason):
 
 
 def _receipt_method(data):
-    """(method, max_age): LINE-issued receipts when LINE Beacon is on, else the configured method."""
+    """(method, max_age): LINE or teacher-code receipts when enabled, else the configured method."""
     if data.get("proximity_via") == "line" and current_app.config.get("LINE_BEACON_ENABLED"):
         from app.services.line_beacon import RECEIPT_TTL_SECONDS
         return "line", RECEIPT_TTL_SECONDS
+    if _via_code(data):
+        return "code", proximity_receipt.TTL_SECONDS
     return current_app.config.get("CHECKIN_PROXIMITY_METHOD", "ble"), proximity_receipt.TTL_SECONDS
 
 
@@ -542,10 +551,12 @@ def checkin_proximity():
         reject("payload_empty")
         return jsonify(ok=False, error="ไม่พบข้อมูล"), 400
     proximity_method = current_app.config.get("CHECKIN_PROXIMITY_METHOD", "ble")
+    via_code = _via_code(data)
     # Room possession factor. TOTP: cheap, checked before any DB/costly work,
     # exactly as before. BLE: needs the session's beacon, so the room code is
     # compared in _eligible (§1c) and the board's signed nonce right after it.
-    if proximity_method == "totp":
+    # Teacher's session code: checked after _eligible, against this session.
+    if proximity_method == "totp" and not via_code:
         # Configuration is validated at boot; unexpected verifier failures are F-16 503.
         try:
             room_code_valid = verify_code(data.get("room_code"), current_app.config["ESP32_TOTP_SECRET"])
@@ -568,12 +579,24 @@ def checkin_proximity():
         sess, error = _eligible(data)
         if error is not None:
             return error
-        if proximity_method == "ble":
+        method, room = proximity_method, data.get("room_code")
+        if via_code:
+            from app.services import session_code
+            code = data.get("session_code")
+            ok = session_code.verify(current_app.config["PROXIMITY_RECEIPT_SECRET"], data.get("session_id"),
+                                     code.strip() if isinstance(code, str) else code)
+            event("session_code", "pass" if ok else "wrong_or_stale")
+            if not ok:
+                reject("session_code_invalid")
+                return jsonify(ok=False, error_code="room_code_invalid", retry_room_code=True,
+                               error="รหัสไม่ถูกต้องหรือหมดอายุ — ดูรหัสล่าสุดจากจอของอาจารย์แล้วกรอกใหม่"), 400
+            method, room = "code", ""
+        elif proximity_method == "ble":
             ble_error = _verify_ble_response(sess, data)
             if ble_error is not None:
                 return ble_error
         token = proximity_receipt.issue(current_app.config["PROXIMITY_RECEIPT_SECRET"],
-            session["user_id"], data.get("session_id"), proximity_method, data.get("room_code"))
+            session["user_id"], data.get("session_id"), method, room)
     except Exception as error:
         reject("proximity_verifier_error", exception_type=type(error).__name__)
         return jsonify(ok=False, error=_receipt_message("proximity_verifier_error")), 503

@@ -86,6 +86,10 @@ class Config:
     ARCFACE_MATCH_THRESHOLD = os.getenv("ARCFACE_MATCH_THRESHOLD")
     ARCFACE_DUP_THRESHOLD = os.getenv("ARCFACE_DUP_THRESHOLD")
     ENROLL_SELF_SIM_MIN = os.getenv("ENROLL_SELF_SIM_MIN")
+    # Room code on the teacher's screen (app/services/session_code.py): fallback for
+    # phones without BLE or LINE (e.g. iPhone Safari). Off by default: a code read
+    # off the screen can be forwarded within its minute, weaker than BLE/LINE.
+    CHECKIN_SESSION_CODE = os.getenv("CHECKIN_SESSION_CODE", "0") == "1"
     # LINE Beacon proximity (optional): the LINE app detects the room board and LINE
     # posts a webhook to /line/webhook. Needs migration 20261020_line_beacon.sql.
     LINE_BEACON_ENABLED = os.getenv("LINE_BEACON_ENABLED", "0") == "1"

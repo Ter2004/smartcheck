@@ -2,7 +2,7 @@ import logging
 import re
 from datetime import date, datetime, timezone, timedelta
 from flask import (Blueprint, render_template, request, redirect,
-                   url_for, flash, session, jsonify, Response)
+                   url_for, flash, session, jsonify, Response, abort, current_app)
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
 from app.services import attendance_export
@@ -214,6 +214,56 @@ def session_view(session_id):
         att_map=att_map,
         photos=_enrollment_photos([s["student_id"] for s in all_students]),
     )
+
+
+def _owned_session(session_id, teacher_id):
+    """The session row if this teacher owns its course, else None."""
+    res = (supabase_admin.table("sessions")
+           .select("id, title, is_open, course_id, courses(code, name, teacher_id), beacons(room_name)")
+           .eq("id", session_id).maybe_single().execute())
+    sess = res.data if res else None
+    if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
+        return None
+    return sess
+
+
+def _checkin_url(session_id, code):
+    from urllib.parse import quote
+    base = (current_app.config.get("PUBLIC_BASE_URL") or request.host_url).rstrip("/")
+    return f"{base}/student/checkin?session_id={quote(session_id)}&via=code&c={code}"
+
+
+@teacher_bp.route("/session/<session_id>/code")
+@login_required
+@role_required("teacher")
+def session_code_screen(session_id):
+    """Full-screen room code + QR for students who cannot use BLE or LINE."""
+    if not current_app.config.get("CHECKIN_SESSION_CODE"):
+        abort(404)
+    sess = _owned_session(session_id, session["user_id"])
+    if not sess:
+        flash("ไม่พบ session หรือไม่มีสิทธิ์", "danger")
+        return redirect(url_for("teacher.dashboard"))
+    return render_template("teacher/session_code.html", sess=sess)
+
+
+@teacher_bp.route("/session/<session_id>/code.json")
+@login_required
+@role_required("teacher")
+def session_code_json(session_id):
+    if not current_app.config.get("CHECKIN_SESSION_CODE"):
+        abort(404)
+    sess = _owned_session(session_id, session["user_id"])
+    if not sess:
+        return jsonify(ok=False, error="ไม่พบ session หรือไม่มีสิทธิ์"), 403
+    if not sess.get("is_open"):
+        return jsonify(ok=False, closed=True, error="คาบนี้ปิดการเช็คชื่อแล้ว")
+    from app.services import session_code
+    code, expires_in = session_code.current(current_app.config["PROXIMITY_RECEIPT_SECRET"], session_id)
+    url = _checkin_url(session_id, code)
+    response = jsonify(ok=True, code=code, expires_in=expires_in, qr_svg=session_code.qr_svg(url))
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 PHOTO_URL_TTL_S = 600

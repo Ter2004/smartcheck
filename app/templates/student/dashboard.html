@@ -15,12 +15,17 @@
         <svg class="w-4 h-4 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     </div>
     <div class="flex-1">
+        {% if needs_reenroll %}
+        <p class="text-sm font-medium text-amber-800">ระบบจดจำใบหน้าได้รับการปรับปรุง — ต้องลงทะเบียนใหม่</p>
+        <p class="text-xs text-amber-600 mt-0.5">ข้อมูลใบหน้าเดิมใช้กับระบบใหม่ไม่ได้ กรุณาลงทะเบียนใหม่ครั้งเดียวก่อนเช็คชื่อครั้งถัดไป</p>
+        {% else %}
         <p class="text-sm font-medium text-amber-800">ยังไม่ได้ลงทะเบียนใบหน้า</p>
         <p class="text-xs text-amber-600 mt-0.5">ลงทะเบียนใบหน้าเพื่อเริ่มใช้งานระบบเช็คชื่อ</p>
+        {% endif %}
     </div>
     <a href="{{ url_for('student.enroll_face') }}"
        class="flex-shrink-0 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg transition-colors">
-        เริ่มลงทะเบียน
+        {{ 'ลงทะเบียนใหม่' if needs_reenroll else 'เริ่มลงทะเบียน' }}
     </a>
 </div>
 {% endif %}

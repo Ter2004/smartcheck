@@ -49,6 +49,9 @@ class CheckinFlow {
         this.livenessChallengeUrl = opts.livenessChallengeUrl || '/api/checkin/liveness/challenge';
         this.lineReceipt = typeof opts.lineReceipt === 'string' && opts.lineReceipt ? opts.lineReceipt : null;
         this.lineRoom    = typeof opts.lineRoom === 'string' ? opts.lineRoom : '';
+        this.sessionCodeEnabled = opts.sessionCodeEnabled === true;
+        this.sessionCodeFromUrl = this.sessionCodeEnabled && /^[0-9]{6}$/.test(opts.sessionCodeFromUrl || '')
+            ? opts.sessionCodeFromUrl : null;
         this._liveness     = null;
 
         this._camStream  = null;
@@ -65,6 +68,17 @@ class CheckinFlow {
             this._proximity = {room: this.lineRoom, receipt: this.lineReceipt, via: 'line',
                 deadline: performance.now() + 300 * 1000, captureStarted: performance.now()};
             await this._startVerify();
+            return;
+        }
+        if (this.sessionCodeFromUrl) {
+            // Opened from the QR on the teacher's screen: confirm that code right away.
+            this._requestRoomCode();
+            this._submitting = true;
+            try {
+                await this._verifyProximity('', null, 'code', {session_code: this.sessionCodeFromUrl});
+            } finally {
+                this._submitting = false;
+            }
             return;
         }
         // Proximity (room code or BLE room read) always gates the camera.
@@ -89,6 +103,9 @@ class CheckinFlow {
             const el = document.getElementById(id);
             if (el) el.style.display = (i + 1 === n) ? 'block' : 'none';
         });
+        // The teacher-code fallback belongs to step 1 only.
+        const codeForm = document.getElementById('stepSessionCode');
+        if (codeForm && n !== 1) codeForm.style.display = 'none';
         for (let i = 1; i <= 3; i++) {
             const dot = document.getElementById('dot' + i);
             if (dot) {
@@ -479,7 +496,9 @@ class CheckinFlow {
             if (!navigator.bluetooth) {
                 // Covers any unsupported browser, not just the iOS UA sniff
                 // that may already have shown a warning server-side.
-                warn.textContent = 'เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth — กรุณาใช้ Chrome หรือ Edge บนคอมพิวเตอร์ Windows เพื่อเช็คชื่อ';
+                warn.textContent = this.sessionCodeEnabled
+                    ? 'เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth — ใช้รหัสจากจอของอาจารย์ด้านล่างแทน'
+                    : 'เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth — กรุณาใช้ Chrome หรือ Edge บนคอมพิวเตอร์ Windows เพื่อเช็คชื่อ';
                 warn.style.display = 'block';
                 btn.disabled = true;
                 btn.textContent = 'ไม่รองรับ Bluetooth';
@@ -492,6 +511,23 @@ class CheckinFlow {
             document.getElementById('stepRoomCode').style.display = 'block';
             document.getElementById('roomCode').value = '';
             document.getElementById('roomCode').focus();
+        }
+        const codeForm = document.getElementById('stepSessionCode');
+        if (codeForm && this.sessionCodeEnabled) {
+            codeForm.style.display = 'block';
+            document.getElementById('sessionCode').value = '';
+        }
+    }
+
+    async submitSessionCode(event) {
+        event.preventDefault();
+        const input = document.getElementById('sessionCode');
+        if (!input.reportValidity() || this._submitting) return;
+        this._submitting = true;
+        try {
+            await this._verifyProximity('', null, 'code', {session_code: input.value});
+        } finally {
+            this._submitting = false;
         }
     }
 
@@ -559,7 +595,7 @@ class CheckinFlow {
         }
     }
 
-    async _verifyProximity(room, bleResponse) {
+    async _verifyProximity(room, bleResponse, via = null, extra = {}) {
         const status = document.getElementById('proximityStatus');
         status.textContent = 'กำลังตรวจสอบตำแหน่งห้องเรียน...';
         const started = performance.now();
@@ -571,7 +607,8 @@ class CheckinFlow {
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
                 },
                 body: JSON.stringify({session_id: this.sessionId, room_code: room,
-                                      ...(bleResponse ? {ble_response: bleResponse} : {})}),
+                                      ...(bleResponse ? {ble_response: bleResponse} : {}),
+                                      ...(via ? {proximity_via: via} : {}), ...extra}),
             });
             const result = await response.json();
             if (!response.ok || !result.ok) {
@@ -579,7 +616,7 @@ class CheckinFlow {
                 status.textContent = result.error || 'ตรวจสอบตำแหน่งไม่สำเร็จ กรุณาลองใหม่';
                 return;
             }
-            this._proximity = {room, receipt: result.proximity_receipt,
+            this._proximity = {room, receipt: result.proximity_receipt, ...(via ? {via} : {}),
                 deadline: started + result.expires_in * 1000, captureStarted: performance.now()};
             if (this._debug) {
                 this._debug.receiptDue = this._proximity.deadline;

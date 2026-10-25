@@ -88,6 +88,14 @@
                     <span class="inline-flex items-center text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200 px-2.5 py-1 rounded-full">Teacher</span>
                     {% else %}
                     <span class="inline-flex items-center text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-full">Student</span>
+                    {% if u.line_user_id %}
+                    <span class="inline-flex items-center gap-1 ml-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        LINE
+                        <button type="button" class="text-emerald-800 hover:text-rose-600" title="ยกเลิกการเชื่อม LINE"
+                                aria-label="ยกเลิกการเชื่อม LINE ของ {{ u.full_name }}"
+                                data-user="{{ u.id }}" data-name="{{ u.full_name }}" onclick="unlinkLine(this)">✕</button>
+                    </span>
+                    {% endif %}
                     {% endif %}
                 </td>
                 <td class="px-4 py-3.5 hidden lg:table-cell">
@@ -112,6 +120,19 @@
 
 {% block scripts %}
 <script>
+async function unlinkLine(btn) {
+    if (!confirm(`ยกเลิกการเชื่อม LINE ของ ${btn.dataset.name}?
+นักศึกษาต้องเชื่อมบัญชี LINE ใหม่จึงจะได้รับปุ่มเช็คชื่อจาก LINE`)) return;
+    btn.disabled = true;
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    try {
+        const res = await fetch(`{{ url_for('admin.api_line_unlink', user_id='__ID__') }}`.replace('__ID__', btn.dataset.user), {
+            method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf}, body: '{}'});
+        const json = await res.json().catch(() => ({}));
+        alert(json.message || (res.ok ? 'เรียบร้อย' : 'ไม่สำเร็จ'));
+        if (res.ok) location.reload(); else btn.disabled = false;
+    } catch (_) { alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'); btn.disabled = false; }
+}
 function filterUsers(q) {
     const rows = document.querySelectorAll('#userTableBody tr[data-search]');
     q = q.toLowerCase();

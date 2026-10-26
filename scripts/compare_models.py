@@ -1,25 +1,33 @@
-"""Compare face stacks on your own photos: go/no-go input for the migration.
+"""Compare face configs on your own photos: the input for choosing the face settings.
 
     python scripts/compare_models.py --dataset dataset --out compare-out
 
-Dataset layout: dataset/<person_id>/<name>_<lighting>.jpg, e.g. 6501_01_bright.jpg.
-The lighting tag is the text after the last underscore. Mirrors production:
-per person, the first 5 images (sorted by file name) are the enrollment, the
-rest are probes, and a probe's score against a person is the max cosine over
-that person's 5 enrollment embeddings.
+Dataset layout: dataset/<person_id>/<NN>_<pose>_<lighting>.jpg, e.g. 01_frontal_normal.jpg.
+The lighting tag is the text after the last underscore. Mirrors production
+(app/services/enroll_v2.py keeps 3 frontal + left, right, up, down; check-in
+takes the max cosine over all of them). Per person, sorted by file name:
+  images 1-3  frontal enrollment shots  -> pairwise scores, for ENROLL_SELF_SIM_MIN
+  images 4-7  left, right, up, down     -> each vs the best frontal, which must
+                                           pass ARCFACE_MATCH_THRESHOLD at enrollment
+  images 8-   check-in probes           -> max over the 7 templates of each person:
+                                           genuine vs impostor, for ARCFACE_MATCH_THRESHOLD
+                                           and ARCFACE_DUP_THRESHOLD
+A file name whose pose word does not fit its place is reported before the run.
 
-Configs: facenet512 (current pipeline, CLAHE as today), arcface with CLAHE off,
-arcface with CLAHE on. Nothing is written to the database.
+Configs: arcface with CLAHE off and on (FACE_CLAHE). The facenet512 baseline was
+removed with DeepFace in Phase 5; its LFW proxy numbers stay in
+docs/face-stack-v2/phase1-compare.md. Nothing is written to the database.
 
 Outputs in --out:
   scores.csv          every probe-vs-person score (genuine and impostor)
-  enroll_pairs.csv    pairwise scores within each person's first 5 images
+  enroll_pairs.csv    pairwise scores among each person's 3 frontal enrollment images
+  enroll_poses.csv    each posed enrollment image vs that person's best frontal image
   failures.csv        images where a config found no usable face
   summary.json        all tables below in machine-readable form
   hist_<config>.png   genuine vs impostor histogram per config
 and prints, per config and per lighting tag: min genuine, max impostor, margin,
 EER, FRR at FAR = 0 / 0.1% / 1% (with the threshold that gives it), mean
-per-image latency, and the pairwise enrollment score distribution.
+per-image latency, and the two enrollment score distributions.
 """
 import argparse
 import csv
@@ -35,14 +43,34 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-ENROLL_N = 5
-CONFIGS = ("facenet512", "arcface_clahe_off", "arcface_clahe_on")
+ENROLL_FRONTAL = 3
+ENROLL_POSES = ("left", "right", "up", "down")
+ENROLL_N = ENROLL_FRONTAL + len(ENROLL_POSES)          # 7, as enroll_v2 keeps
+EXPECTED_POSES = ("frontal",) * ENROLL_FRONTAL + ENROLL_POSES
+CONFIGS = ("arcface_clahe_off", "arcface_clahe_on")
 FAR_POINTS = (0.0, 0.001, 0.01)
 
 
 def lighting_tag(path):
     stem = os.path.splitext(os.path.basename(path))[0]
     return stem.rsplit("_", 1)[1].lower() if "_" in stem else "untagged"
+
+
+def pose_word(path):
+    """The word before the lighting tag when it names a pose, else None."""
+    parts = os.path.splitext(os.path.basename(path))[0].lower().split("_")
+    return parts[-2] if len(parts) >= 3 and parts[-2] in EXPECTED_POSES else None
+
+
+def name_warnings(people):
+    """Enrollment files whose pose word does not match their place (1-3 frontal, then left, right, up, down)."""
+    out = []
+    for person, files in people.items():
+        for place, (path, expected) in enumerate(zip(files, EXPECTED_POSES), start=1):
+            word = pose_word(path)
+            if word is not None and word != expected:
+                out.append(f"{person}/{os.path.basename(path)}: image {place} should be {expected}")
+    return out
 
 
 def load_dataset(folder):
@@ -57,18 +85,9 @@ def load_dataset(folder):
 
 def embedder(config):
     """config -> function(BGR image) -> unit-length float32 embedding (raises without a face)."""
-    if config == "facenet512":
-        from app.services import face_service as fs
-
-        def run(img):
-            emb, _ = fs._face_embedding(fs.normalize_illumination(img))
-            v = np.asarray(emb, dtype=np.float32)
-            return v / (np.linalg.norm(v) + 1e-12)
-        return run
     from app.services import face_engine
     clahe = config.endswith("_on")
-    # Largest face, like the facenet512 path, so both see the same face. Frames
-    # with a second large face (rejected in production) are counted separately.
+    # Largest face. Frames with a second large face (rejected in production) are counted separately.
     def run(img):
         face = face_engine.analyze(img, clahe=clahe, reject_multiple=False)
         run.second_large += face["second_large_face"]
@@ -144,15 +163,22 @@ def histogram_png(path, title, genuine, impostor, bins=60):
 
 
 def evaluate(config, people, embeddings):
-    templates, probes, pairs = {}, [], []
+    """(probe rows, frontal pairs, pose-vs-frontal rows), the way enroll_v2 and check-in score them."""
+    templates, probes, pairs, poses = {}, [], [], []
     for person, files in people.items():
-        enrolled = [embeddings[p] for p in files[:ENROLL_N] if p in embeddings]
-        if len(enrolled) == ENROLL_N:
-            templates[person] = np.stack(enrolled)
-            for a in range(ENROLL_N):
-                for b in range(a + 1, ENROLL_N):
-                    pairs.append({"config": config, "person": person, "i": a, "j": b,
-                                  "score": round(float(enrolled[a] @ enrolled[b]), 4)})
+        enrolled = [embeddings.get(p) for p in files[:ENROLL_N]]
+        if any(e is None for e in enrolled):
+            continue                                   # an enrollment image without a face: person skipped
+        templates[person] = np.stack(enrolled)
+        frontal = templates[person][:ENROLL_FRONTAL]
+        for a in range(ENROLL_FRONTAL):
+            for b in range(a + 1, ENROLL_FRONTAL):
+                pairs.append({"config": config, "person": person, "i": a, "j": b,
+                              "score": round(float(frontal[a] @ frontal[b]), 4)})
+        for k, pose in enumerate(ENROLL_POSES):
+            path = files[ENROLL_FRONTAL + k]
+            poses.append({"config": config, "person": person, "pose": pose, "file": os.path.basename(path),
+                          "score": round(float((frontal @ embeddings[path]).max()), 4)})
         probes += [(person, p) for p in files[ENROLL_N:] if p in embeddings]
     rows = []
     for person, path in probes:
@@ -163,10 +189,24 @@ def evaluate(config, people, embeddings):
             rows.append({"config": config, "probe_person": person, "probe_file": os.path.basename(path),
                          "lighting": lighting_tag(path), "target_person": target,
                          "score": round(float((tpl @ v).max()), 4), "genuine": int(target == person)})
-    return rows, pairs
+    return rows, pairs, poses
 
 
-def summarize(rows, pairs, latencies, failures, n_images):
+def spread(items):
+    """min / p1 / p5 / median of item scores and the 5 lowest per-person minimums."""
+    scores = np.asarray([x["score"] for x in items]) if items else np.zeros(0)
+    if not scores.size:
+        return {}
+    per_person = {}
+    for x in items:
+        per_person[x["person"]] = min(per_person.get(x["person"], 1.0), x["score"])
+    return {"n": int(scores.size), "min": round(float(scores.min()), 4),
+            "p1": round(float(np.percentile(scores, 1)), 4), "p5": round(float(np.percentile(scores, 5)), 4),
+            "median": round(float(np.median(scores)), 4),
+            "lowest_person_minimums": sorted(per_person.items(), key=lambda kv: kv[1])[:5]}
+
+
+def summarize(rows, pairs, poses, latencies, failures, n_images):
     out = {"overall": operating_points([r["score"] for r in rows if r["genuine"]],
                                        [r["score"] for r in rows if not r["genuine"]])}
     out["by_lighting"] = {}
@@ -174,16 +214,11 @@ def summarize(rows, pairs, latencies, failures, n_images):
         sub = [r for r in rows if r["lighting"] == tag]
         out["by_lighting"][tag] = operating_points([r["score"] for r in sub if r["genuine"]],
                                                    [r["score"] for r in sub if not r["genuine"]])
-    scores = np.asarray([p["score"] for p in pairs]) if pairs else np.zeros(0)
-    per_person_min = {}
-    for p in pairs:
-        per_person_min[p["person"]] = min(per_person_min.get(p["person"], 1.0), p["score"])
-    out["enroll_pairwise"] = {} if not scores.size else {
-        "n_pairs": int(scores.size), "min": round(float(scores.min()), 4),
-        "p1": round(float(np.percentile(scores, 1)), 4), "p5": round(float(np.percentile(scores, 5)), 4),
-        "median": round(float(np.median(scores)), 4),
-        "lowest_person_minimums": sorted(per_person_min.items(), key=lambda kv: kv[1])[:5],
-    }
+    out["enroll_frontal_pairwise"] = spread(pairs)
+    out["enroll_pose_vs_frontal"] = spread(poses)
+    out["enroll_pose_vs_frontal_min_by_pose"] = {
+        pose: round(min(x["score"] for x in poses if x["pose"] == pose), 4)
+        for pose in ENROLL_POSES if any(x["pose"] == pose for x in poses)}
     out["latency_ms_per_image"] = {"mean": round(float(np.mean(latencies)), 1),
                                    "median": round(float(np.median(latencies)), 1)} if latencies else {}
     out["no_face"] = {"count": len(failures), "of_images": n_images}
@@ -202,7 +237,9 @@ def print_table(config, summary):
     print(line("overall", summary["overall"]))
     for tag, s in summary["by_lighting"].items():
         print(line(f"light={tag}", s))
-    print(f"  enroll pairwise (first {ENROLL_N} per person): {summary['enroll_pairwise']}")
+    print(f"  enrollment, frontal pairwise (images 1-{ENROLL_FRONTAL}): {summary['enroll_frontal_pairwise']}")
+    print(f"  enrollment, pose vs best frontal (images {ENROLL_FRONTAL + 1}-{ENROLL_N}): {summary['enroll_pose_vs_frontal']}")
+    print(f"  enrollment, lowest pose vs frontal per pose: {summary['enroll_pose_vs_frontal_min_by_pose']}")
 
 
 def main():
@@ -215,27 +252,31 @@ def main():
     people = load_dataset(args.dataset)
     if len(people) < 2:
         raise SystemExit(f"need at least 2 people with more than {ENROLL_N} images in {args.dataset}")
+    for warning in name_warnings(people):
+        print("WARNING", warning)
     n_images = sum(len(f) for f in people.values())
     os.makedirs(args.out, exist_ok=True)
-    print(f"dataset: {len(people)} people, {n_images} images (first {ENROLL_N} per person enrolled)")
+    print(f"dataset: {len(people)} people, {n_images} images (per person: images 1-{ENROLL_FRONTAL} frontal, "
+          f"{ENROLL_FRONTAL + 1}-{ENROLL_N} {'/'.join(ENROLL_POSES)}, the rest check-in probes)")
 
-    all_rows, all_pairs, all_failures, summaries = [], [], [], {}
+    all_rows, all_pairs, all_poses, all_failures, summaries = [], [], [], [], {}
     for config in [c.strip() for c in args.configs.split(",") if c.strip()]:
         if config not in CONFIGS:
             raise SystemExit(f"unknown config {config!r}; choose from {CONFIGS}")
         embeddings, latencies, failures, second_large = embed_all(config, people)
-        rows, pairs = evaluate(config, people, embeddings)
-        summaries[config] = summarize(rows, pairs, latencies, failures, n_images)
+        rows, pairs, poses = evaluate(config, people, embeddings)
+        summaries[config] = summarize(rows, pairs, poses, latencies, failures, n_images)
         if second_large is not None:
             summaries[config]["second_large_face_frames"] = second_large
         print_table(config, summaries[config])
         histogram_png(os.path.join(args.out, f"hist_{config}.png"), f"{config}: max-of-{ENROLL_N} cosine",
                       [r["score"] for r in rows if r["genuine"]], [r["score"] for r in rows if not r["genuine"]])
-        all_rows += rows; all_pairs += pairs; all_failures += failures
+        all_rows += rows; all_pairs += pairs; all_poses += poses; all_failures += failures
 
     for name, data, fields in (
             ("scores.csv", all_rows, ["config", "probe_person", "probe_file", "lighting", "target_person", "score", "genuine"]),
             ("enroll_pairs.csv", all_pairs, ["config", "person", "i", "j", "score"]),
+            ("enroll_poses.csv", all_poses, ["config", "person", "pose", "file", "score"]),
             ("failures.csv", all_failures, ["config", "person", "file", "error"])):
         with open(os.path.join(args.out, name), "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fields)
@@ -243,7 +284,7 @@ def main():
     with open(os.path.join(args.out, "summary.json"), "w", encoding="utf-8") as f:
         json.dump({"dataset": os.path.abspath(args.dataset), "people": len(people), "images": n_images,
                    "configs": summaries}, f, indent=2)
-    print(f"\nwrote {args.out}/scores.csv, enroll_pairs.csv, failures.csv, summary.json, hist_*.png")
+    print(f"\nwrote {args.out}/scores.csv, enroll_pairs.csv, enroll_poses.csv, failures.csv, summary.json, hist_*.png")
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ the project folder `smartcheck_project/` and its `venv`.
 
 | # | Do | Check |
 |---|---|---|
-| 2.1 | Collect photos: `dataset/<student>/<name>_<lighting>.jpg`, more than 5 per person, several people and lighting conditions. The folder is git-ignored. | — |
+| 2.1 | Collect photos with each person's permission, in `dataset/<student>/` (git-ignored), named `<NN>_<pose>_<lighting>.jpg`. Per person: `01`–`03` frontal, `04` left, `05` right, `06` up, `07` down (the enrollment), then `08`+ frontal check-in photos in different lighting, e.g. `08_frontal_dark.jpg`. Use the phone front camera at arm's length. Several people. | The script prints a WARNING for a pose word in the wrong place. |
 | 2.2 | Run `python scripts/compare_models.py --dataset dataset --out compare-out` | The tables print per config and per lighting. Read `docs/face-stack-v2/phase1-compare.md` on how to read them. |
 | 2.3 | Set `FACE_CLAHE` (on/off), `ARCFACE_MATCH_THRESHOLD`, `ARCFACE_DUP_THRESHOLD` and `ENROLL_SELF_SIM_MIN` from those tables | `python run.py` logs `face engine: arcface` and a warm-up time. If a value is missing, startup stops and names it. |
 | 2.4 | Keep `CHECKIN_LIVENESS=passive` (already set) | The startup log shows `check-in liveness: passive`. |

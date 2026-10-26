@@ -61,6 +61,15 @@ challenge order (7 rows). The pose `CHECK` in
   those test enrollments first.
 - The verification query now prints a `pose_check` row.
 
+**Threshold harness.** `scripts/compare_models.py` now scores the same
+structure as production:
+- frontal pairs, for `ENROLL_SELF_SIM_MIN`;
+- each pose vs frontal, which must pass `ARCFACE_MATCH_THRESHOLD`;
+- check-in photos vs the max over 7 templates.
+
+Its dead `facenet512` config was removed. Photo naming:
+[phase1-compare.md](phase1-compare.md).
+
 ## Evidence for the up/down numbers
 
 | question | how | result | file |

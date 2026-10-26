@@ -442,7 +442,8 @@ async function ev2Submit() {
         return;
     }
     if (r.status === 429) { ev2Fail({ fix: 'ลองบ่อยเกินไป — รอสักครู่แล้วลองใหม่' }); return; }
-    ev2Fail({ fix: r.json.fix || r.json.message || 'ลงทะเบียนไม่สำเร็จ', final: !!r.json.contact_staff,
+    const left = Number.isInteger(r.json.attempts_left) ? ` (ลองได้อีก ${r.json.attempts_left} ครั้ง)` : '';
+    ev2Fail({ fix: (r.json.fix || r.json.message || 'ลงทะเบียนไม่สำเร็จ') + left, final: !!r.json.contact_staff,
               message: r.json.contact_staff ? r.json.message : '' });
 }
 

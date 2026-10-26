@@ -44,7 +44,9 @@ calibrated ratio limits on 1,461 LFW faces (corr 0.953).
 - three screens and a camera session with no buttons;
 - the server issues a random order of left, right, up and down;
 - 3 frontal + 4 posed templates are kept (7);
-- a duplicate is blocked with a generic message plus a server-side audit row.
+- a duplicate is blocked with a message saying the face is on another account
+  (never which one) plus a server-side audit row (allowed by migration
+  `20261027_audit_event_types.sql`).
 - 18 route tests cover: wrong turn, up/down sign, static photo, replay,
   capture order, person swap, second account, second person in frame,
   overwrite, spoof, and 3 failures.

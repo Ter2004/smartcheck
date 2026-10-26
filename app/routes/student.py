@@ -958,15 +958,16 @@ def _api_enroll_v2(user_id, data):
     except enroll_v2.EnrollFail as fail:
         return _enroll_v2_fail(user_id, fail)
 
+    daily_max = current_app.config.get("ENROLL_DAILY_MAX", 5)
     try:
         rpc_res = supabase_admin.rpc(
-            "atomic_enroll_attempt", {"p_user_id": user_id, "p_max": 5, "p_window_h": 24}).execute()
+            "atomic_enroll_attempt", {"p_user_id": user_id, "p_max": daily_max, "p_window_h": 24}).execute()
         if not rpc_res.data:
             raise RuntimeError("atomic_enroll_attempt returned no rows")
         if not rpc_res.data[0]["allowed"]:
             _log(user_id, "enroll_attempt", "db_blocked", f"db_attempts={rpc_res.data[0]['current_attempts']}")
             return jsonify(status="blocked", contact_staff=True,
-                           message="วันนี้ลองลงทะเบียนครบจำนวนแล้ว (ได้ 5 ครั้งใน 24 ชั่วโมง) — ลองใหม่พรุ่งนี้ หรือติดต่ออาจารย์"), 403
+                           message=f"วันนี้ลองลงทะเบียนครบจำนวนแล้ว (ได้ {daily_max} ครั้งใน 24 ชั่วโมง) — ลองใหม่พรุ่งนี้ หรือติดต่ออาจารย์"), 403
     except Exception as db_err:
         _log(user_id, "enroll_attempt", "db_error_blocked", type(db_err).__name__)
         return jsonify(status="error", message="ตรวจสิทธิ์การลงทะเบียนไม่ได้ (ติดต่อฐานข้อมูลไม่ได้ชั่วคราว) — รอสักครู่แล้วกดลองใหม่"), 500

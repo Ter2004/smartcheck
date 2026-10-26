@@ -35,6 +35,8 @@ class Config:
     ENROLLMENT_STATUS_CACHE = os.getenv("ENROLLMENT_STATUS_CACHE", "true").lower() == "true"
     # Enable only after applying 20260919_enrollment_status.sql.
     ENROLLMENT_STATUS_RPC = os.getenv("ENROLLMENT_STATUS_RPC", "false").lower() == "true"
+    # v2 enrollment attempts per student per 24 h (atomic_enroll_attempt). Raise only while testing.
+    ENROLL_DAILY_MAX = int(os.getenv("ENROLL_DAILY_MAX", "5"))
     SECRET_KEY = _require_env("FLASK_SECRET_KEY", "dev-fallback-key-not-for-production")
     # Flask answers 413 before a route reads a larger body. The largest real
     # payload is check-in: 7 frames, each accepted only up to 500 KB

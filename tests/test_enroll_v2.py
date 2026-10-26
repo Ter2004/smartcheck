@@ -144,6 +144,17 @@ class EnrollV2RouteTests(unittest.TestCase):
         self.assertEqual(saved["integrity_hash"], expected)
         self.db.storage.from_.assert_called_with("face-images")
 
+    def test_daily_limit_comes_from_config(self):
+        self.web.config["ENROLL_DAILY_MAX"] = 1000
+        self.enroll(self.challenge(), self.frames())
+        args = self.db.rpc.call_args_list[0].args
+        self.assertEqual(args[0], "atomic_enroll_attempt")
+        self.assertEqual(args[1]["p_max"], 1000)
+        self.db.rpc.return_value.execute.return_value = SimpleNamespace(data=[{"allowed": False, "current_attempts": 1000}])
+        r = self.enroll(self.challenge(), self.frames())
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("1000 ครั้ง", r.json["message"])
+
     def test_wrong_turn_direction(self):
         r = self.enroll(self.challenge(), self.frames(angles={"left": (-28.0, 0.0)}))
         self.assertEqual(r.status_code, 400)

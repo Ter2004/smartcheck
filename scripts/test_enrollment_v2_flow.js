@@ -31,6 +31,7 @@ function page(order) {
     const posts = [];
     let vibrations = 0;
     let clock = 1000;
+    const timers = new Set();
     const document = {
         getElementById: (id) => id === 'ev2Consent' ? null      // skip the button wiring
             : byId.get(id) || byId.set(id, element(id)).get(id),
@@ -40,6 +41,7 @@ function page(order) {
     class FaceMesh { setOptions() {} onResults() {} send() { return Promise.resolve(); } }
     const ctx = vm.createContext({
         console, Math, JSON, Promise, Object, Array, Number,
+        setInterval: (fn) => { timers.add(fn); return fn; }, clearInterval: (id) => { timers.delete(id); },
         document, FaceMesh, window: { addEventListener() {} },
         navigator: { vibrate: () => { vibrations++; return true; } },
         performance: { now: () => clock },
@@ -56,7 +58,7 @@ function page(order) {
     const api = vm.runInContext('({ ev2, ev2NewSession, ev2OnResults, EV2 })', ctx);
     return {
         api, posts, segs, arrows, el: (id) => document.getElementById(id),
-        vibrations: () => vibrations,
+        vibrations: () => vibrations, timers,
         feed(lm, frames = 1, ms = 100) {
             for (let i = 0; i < frames; i++) { clock += ms; api.ev2OnResults({ multiFaceLandmarks: lm ? [lm] : [] }); }
         },
@@ -120,6 +122,8 @@ async function lookDone(p) {
         assert.ok(by('frontal').every(f => f.client_pitch === undefined), 'frontal frames carry no pitch');
         assert.equal(p.vibrations(), 5, 'one buzz per completed pose');
         assert.equal(p.el('ev2Success').hidden, false, 'success screen');
+        assert.equal(p.el('ev2Bar').style.width, '100%', 'bar completes on success');
+        assert.equal(p.timers.size, 0, 'bar timer stopped');
         assert.equal(p.segs.map(s => s.attrs.class).join(), Array(5).fill('ev2-seg done').join());
     }
 
@@ -137,6 +141,7 @@ async function lookDone(p) {
         assert.equal(p.api.ev2.poseIdx, 1, 'turned-up frames are not up frames');
         p.feed(FRONTAL, 130);                              // > 12 s without the pose
         assert.equal(p.el('ev2Failure').hidden, false);
+        assert.equal(p.timers.size, 0, 'no bar timer after a failure');
         assert.match(p.el('ev2Fix').textContent, /เงย/);
         assert.equal(p.posts.some(x => x.url === '/enroll'), false, 'nothing submitted');
         assert.equal(p.arrows.some(a => a.classList.contains('show')), false, 'arrows hidden after failure');

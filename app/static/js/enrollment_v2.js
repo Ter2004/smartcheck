@@ -442,6 +442,21 @@ function ev2OnResults(results) {
     }
 }
 
+// Server checks take a few seconds (4-11 s in the first PC test); the bar is an estimate, not real progress.
+const EV2_BAR_TAU_MS = 3000;
+function ev2BarStart() {
+    ev2BarStop();
+    const t0 = performance.now(), bar = $('ev2Bar');
+    bar.style.width = '0%';
+    ev2.barTimer = setInterval(() => {
+        bar.style.width = `${(90 * (1 - Math.exp(-(performance.now() - t0) / EV2_BAR_TAU_MS))).toFixed(1)}%`;
+    }, 200);
+}
+function ev2BarStop(done = false) {
+    if (ev2.barTimer) { clearInterval(ev2.barTimer); ev2.barTimer = null; }
+    if (done) $('ev2Bar').style.width = '100%';
+}
+
 async function ev2Submit() {
     ev2.sending = true;
     ev2.phase = 'submit';
@@ -449,6 +464,7 @@ async function ev2Submit() {
     ev2Say('🎉 เสร็จแล้ว!');
     ev2Show('ev2Result');
     $('ev2Checking').hidden = false; $('ev2Success').hidden = true; $('ev2Failure').hidden = true;
+    ev2BarStart();
     const frames = [...ev2.frontal.items, ...ev2.order.flatMap(p => ev2.poses[p].items)]
         .map(x => x.frame).sort((a, b) => a.t - b.t);
     let r;
@@ -459,6 +475,7 @@ async function ev2Submit() {
         return;
     }
     if (r.json.status === 'enrolled' || r.json.status === 'already_enrolled') {
+        ev2BarStop(true);
         ev2Stop();
         $('ev2Checking').hidden = true; $('ev2Success').hidden = false;
         return;
@@ -474,6 +491,7 @@ async function ev2Submit() {
 }
 
 function ev2Fail({ fix, final = false, message = '' }) {
+    ev2BarStop();
     ev2.phase = 'idle';
     ev2.sending = false;
     ev2Arrow(null);

@@ -71,14 +71,21 @@ def phase_report(rows):
     return out
 
 
+def read_text_lines(path):
+    """Lines of a log saved as UTF-8 or UTF-16 (Windows PowerShell 5.1 Tee-Object and > write UTF-16)."""
+    with open(path, "rb") as f:
+        raw = f.read()
+    encoding = "utf-16" if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig"
+    return raw.decode(encoding, errors="replace").splitlines()
+
+
 def scores(paths, lowest=5):
     found = []
     for path in paths or []:
-        with open(path, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                m = SCORE.search(line)
-                if m:
-                    found.append((float(m.group(1)), float(m.group(2)), m.group(3) == "True"))
+        for line in read_text_lines(path):
+            m = SCORE.search(line)
+            if m:
+                found.append((float(m.group(1)), float(m.group(2)), m.group(3) == "True"))
     if not found:
         return {}
     values = sorted(s for s, _, _ in found)

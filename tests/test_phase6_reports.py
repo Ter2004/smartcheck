@@ -86,6 +86,24 @@ class PoseAngleReportTests(unittest.TestCase):
         self.assertEqual(r["up_down"]["server_yaw_not_frontal"], 1)
         self.assertGreater(r["up_down"]["client_at_0.07_reads_deg"], 0)
 
+    def test_reads_utf16_logs_from_windows_powershell(self):
+        # `python run.py 2>&1 | Tee-Object -FilePath server.log` in Windows PowerShell 5.1 writes UTF-16 LE.
+        import os
+        import tempfile
+        lines = [self.line("left", 0.41, None, 27.3, 0.4, "turn_left"),
+                 "x [FACE] engine=arcface best=0.6123 threshold=0.4 pass=True"]
+        with tempfile.NamedTemporaryFile("wb", suffix=".log", delete=False) as f:
+            f.write("\r\n".join(lines).encode("utf-16"))       # with the FF FE byte-order mark
+        try:
+            self.assertEqual(len(report_turn_yaw.parse(report_turn_yaw.read_text_lines(f.name))), 1)
+            self.assertEqual(realclass_report.scores([f.name])["n"], 1)
+        finally:
+            os.unlink(f.name)
+
+    def test_identical_values_give_no_correlation(self):
+        lines = [self.line("left", 0.4, None, 30.0, 0.5, "turn_left")] * 20
+        self.assertIsNone(report_turn_yaw.report(report_turn_yaw.parse(lines))["turns"]["corr"])
+
     def test_old_turn_lines_count_and_small_samples_have_no_verdict(self):
         old = "step=turn_yaw result=measured details=pose=turn client_yaw=0.41 server_yaw_deg=27.3 seen=turn_left"
         r = report_turn_yaw.report(report_turn_yaw.parse([old] * 3))

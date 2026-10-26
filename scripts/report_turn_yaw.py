@@ -31,6 +31,14 @@ MIN_FRAMES = 20
 TURN_YAW, PITCH_STEP = 0.30, 0.07      # enrollment_v2.js EV2
 
 
+def read_text_lines(path):
+    """Lines of a log saved as UTF-8 or UTF-16 (Windows PowerShell 5.1 Tee-Object and > write UTF-16)."""
+    with open(path, "rb") as f:
+        raw = f.read()
+    encoding = "utf-16" if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig"
+    return raw.decode(encoding, errors="replace").splitlines()
+
+
 def _num(text):
     return None if text == "None" else float(text)
 
@@ -53,9 +61,10 @@ def parse(lines):
 def _compare(c, s):
     """Sign agreement, server units per browser unit (least squares through 0), correlation."""
     c, s = np.array(c), np.array(s)
+    varies = len(c) > 2 and c.std() > 0 and s.std() > 0
     return {"sign_agreement": round(float(np.mean(np.sign(c) == np.sign(s))), 4),
             "server_per_client_unit": round(float(np.dot(c, s) / np.dot(c, c)), 1),
-            "corr": round(float(np.corrcoef(c, s)[0, 1]), 4) if len(c) > 2 else None}
+            "corr": round(float(np.corrcoef(c, s)[0, 1]), 4) if varies else None}
 
 
 def report(rows):
@@ -84,8 +93,7 @@ def main():
     lines = []
     if len(sys.argv) > 1:
         for path in sys.argv[1:]:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                lines += f.readlines()
+            lines += read_text_lines(path)
     else:
         lines = sys.stdin.readlines()
     print(json.dumps(report(parse(lines)), indent=2))

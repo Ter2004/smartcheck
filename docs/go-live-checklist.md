@@ -43,6 +43,11 @@ the project folder `smartcheck_project/` and its `venv`.
 
 ## 6. Tests with people (the committee's request)
 
+Keep the server log of every test session:
+`.\venv\Scripts\python.exe run.py 2>&1 | Tee-Object -FilePath server.log`.
+Windows PowerShell 5.1 writes this file as UTF-16; the report scripts read
+both UTF-8 and UTF-16.
+
 | # | Do | Kit |
 |---|---|---|
 | 6.1 | Real class, 20-30 people, timed against a stopwatch roll call | `docs/realclass_test.md` + `scripts/realclass_report.py` |

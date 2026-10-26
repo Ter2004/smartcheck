@@ -7,7 +7,7 @@ the project folder `smartcheck_project/` and its `venv`.
 
 | # | Do | Check |
 |---|---|---|
-| 1.1 | Run `database/migrations/20261019_face_stack_v2.sql` (the current file: since 2026-10-26 it stores five poses; running it again over an earlier copy updates the pose check) | Run the verification query at the end of the file. You should see `extension` 0.8.x, RLS `true` on both tables, 2 triggers, 3 indexes, a `pose_check` row listing frontal, left, right, up and down, and `END` as the last row. |
+| 1.1 | Run `database/migrations/20261019_face_stack_v2.sql` (the current file: since 2026-10-26 it stores five poses; running it again over an earlier copy updates the pose check). **Done on smartcheck-dev, 2026-10-26.** | Run the verification query at the end of the file. You should see `extension` 0.8.x, RLS `true` on both tables, 2 triggers on `face_enrollments` / `face_templates` (the old `prevent_completed_face_replacement ON student_biometrics` also shows; leave it), 3 indexes, a `pose_check` row listing frontal, left, right, up and down, and `END` as the last row. |
 | 1.2 | Optional, only if you use LINE Beacon: run `database/migrations/20261020_line_beacon.sql` | Run its verification query; `END` is the last row. |
 
 ## 2. Face settings (`.env`)

@@ -103,8 +103,10 @@ These need you, a camera, or a running database.
    - The app refuses to start without them (fail-fast).
    - The LFW proxy run is only a smoke test of the harness.
 2. **Supabase.** The project `smartcheck-dev` was paused for the whole session.
-   - Apply `database/migrations/20261019_face_stack_v2.sql` and run its
-     verification query.
+   - `database/migrations/20261019_face_stack_v2.sql` was applied by the owner
+     on 2026-10-26. The verification output showed pgvector 0.8.0, RLS on
+     both tables, both v2 triggers (plus the untouched legacy one), 3
+     indexes and the five-pose check.
    - The end-to-end timing of 10 enrollments and 10 check-ins with test
      accounts was not possible.
 3. **Real devices.** The v2 enrollment page has not run on a phone or laptop

@@ -166,7 +166,7 @@ GRANT EXECUTE ON FUNCTION public.match_face_templates(text, text, uuid, integer)
 -- ── Verification (run after applying; the last row must read END) ──────────
 -- SELECT 'extension' AS item, extversion AS value FROM pg_extension WHERE extname = 'vector'
 -- UNION ALL SELECT 'rls_' || relname, relrowsecurity::text FROM pg_class WHERE relname IN ('face_enrollments', 'face_templates')
--- UNION ALL SELECT 'trigger', tgname::text FROM pg_trigger WHERE tgname LIKE 'prevent_completed_face_%'
+-- UNION ALL SELECT 'trigger', tgname::text || ' ON ' || tgrelid::regclass::text FROM pg_trigger WHERE tgname LIKE 'prevent_completed_face_%'
 -- UNION ALL SELECT 'index', indexname::text FROM pg_indexes WHERE tablename = 'face_templates'
 -- UNION ALL SELECT 'pose_check', pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'face_templates_pose_check'
 -- UNION ALL SELECT 'END', 'END';

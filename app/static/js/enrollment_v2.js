@@ -263,9 +263,23 @@ async function ev2Start() {
         await ev2NewSession();
     } catch (e) {
         $('ev2Start').disabled = !$('ev2ConsentCheck').checked;
-        $('ev2ConsentError').textContent = e.message && e.message !== 'consent'
-            ? (e.name === 'NotAllowedError' ? 'กรุณาอนุญาตให้ใช้กล้องแล้วลองใหม่' : e.message)
-            : 'บันทึกความยินยอมไม่สำเร็จ กรุณาลองใหม่';
+        $('ev2ConsentError').textContent = e.message === 'consent'
+            ? 'บันทึกการยินยอมไม่สำเร็จ (ติดต่อเซิร์ฟเวอร์ไม่ได้ หรือหลุดจากระบบ) — รีเฟรชหน้าแล้วลองใหม่'
+            : ev2CameraError(e);
+    }
+}
+
+/** What went wrong with the camera, in words a student can act on. */
+function ev2CameraError(e) {
+    switch (e && e.name) {
+        case 'NotAllowedError': case 'SecurityError':
+            return 'เบราว์เซอร์ไม่อนุญาตให้ใช้กล้อง — กดรูปกล้อง/กุญแจที่ช่องที่อยู่เว็บ เลือก "อนุญาต" แล้วลองใหม่';
+        case 'NotFoundError': case 'OverconstrainedError':
+            return 'ไม่พบกล้องในเครื่องนี้ — ใช้เครื่องที่มีกล้องหน้า หรือเสียบกล้องแล้วลองใหม่';
+        case 'NotReadableError': case 'AbortError':
+            return 'กล้องถูกโปรแกรมอื่นใช้อยู่ (เช่น Zoom, Teams, LINE) — ปิดโปรแกรมนั้นแล้วลองใหม่';
+        default:
+            return (e && e.message) || 'เปิดกล้องไม่ได้ — รีเฟรชหน้าแล้วลองใหม่';
     }
 }
 
@@ -275,7 +289,9 @@ async function ev2NewSession() {
     const r = await ev2Post(ENROLL_V2_CONFIG.challengeUrl);
     const order = r.json && Array.isArray(r.json.order) ? r.json.order : null;
     if (r.status !== 200 || !r.json.challenge_id || !order || order.length !== 4) {
-        ev2Fail({ fix: 'เริ่มไม่สำเร็จ กรุณาลองใหม่' });
+        if (r.status === 409) { ev2Fail({ final: true, message: 'บัญชีนี้ลงทะเบียนใบหน้าไว้แล้ว ไม่ต้องลงซ้ำ' }); return; }
+        if (r.status === 429) { ev2Fail({ fix: 'กดเริ่มบ่อยเกินไป — รอประมาณ 1 นาทีแล้วกดลองใหม่' }); return; }
+        ev2Fail({ fix: r.json.message || `เริ่มการถ่ายไม่สำเร็จ (รหัส ${r.status}) — รีเฟรชหน้าแล้วลองใหม่` });
         return;
     }
     Object.assign(ev2, {
@@ -333,7 +349,10 @@ function ev2OnResults(results) {
     if (ev2.sending || ev2.phase === 'idle' || ev2.phase === 'submit') return;
     const video = $('ev2Video');
     const now = performance.now();
-    if (now - ev2.t0 > EV2.SESSION_MAX_MS) { ev2Fail({ fix: 'หมดเวลา — กรุณาลองใหม่' }); return; }
+    if (now - ev2.t0 > EV2.SESSION_MAX_MS) {
+        ev2Fail({ fix: 'หมดเวลา (ใช้เวลาถ่ายเกิน 100 วินาที) — กดลองใหม่ แล้วทำตามลูกศรต่อเนื่องจนจบ' });
+        return;
+    }
     if (now < ev2.flashUntil) return;                        // showing ✅
     const faces = results.multiFaceLandmarks || [];
     if (faces.length !== 1) {
@@ -346,7 +365,7 @@ function ev2OnResults(results) {
     const box = ev2FaceBox(lm);
     if (!ev2InOval(box)) {
         ev2.alignSince = 0;
-        ev2Say(box.h < EV2.FACE_MIN_H ? 'ใกล้อีกนิด' : 'เลื่อนหน้าให้อยู่กลางวง');
+        ev2Say(box.h < EV2.FACE_MIN_H ? 'ขยับเข้าใกล้กล้องอีกนิด' : 'เลื่อนหน้าให้อยู่กลางวงรี');
         return;
     }
     const tooBig = box.h > EV2.FACE_BIG_H ? 'ถอยออกหน่อย' : '';
@@ -417,7 +436,10 @@ function ev2OnResults(results) {
         ev2Segments(ev2SegmentStates());
         return;
     }
-    if (now - ev2.poseSince > EV2.POSE_TIMEOUT_MS) ev2Fail({ fix: `ยังไม่เจอท่า ${EV2_POSE_TEXT[pose]} — ลองใหม่` });
+    if (now - ev2.poseSince > EV2.POSE_TIMEOUT_MS) {
+        const tip = pose === 'up' || pose === 'down' ? ' โดยหน้ายังตรง ไม่หันข้าง' : '';
+        ev2Fail({ fix: `ไม่เห็นท่า "${EV2_POSE_TEXT[pose]}" ภายใน 12 วินาที — กดลองใหม่ แล้วทำท่าให้ชัดขึ้นอีกนิด${tip}` });
+    }
 }
 
 async function ev2Submit() {
@@ -433,7 +455,7 @@ async function ev2Submit() {
     try {
         r = await ev2Post(ENROLL_V2_CONFIG.enrollUrl, { challenge_id: ev2.challenge.challenge_id, frames });
     } catch (_) {
-        ev2Fail({ fix: 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่' });
+        ev2Fail({ fix: 'ส่งรูปไปตรวจไม่สำเร็จ (อินเทอร์เน็ตหลุด หรือเซิร์ฟเวอร์ปิดอยู่) — ตรวจเน็ตแล้วกดลองใหม่' });
         return;
     }
     if (r.json.status === 'enrolled' || r.json.status === 'already_enrolled') {
@@ -441,10 +463,14 @@ async function ev2Submit() {
         $('ev2Checking').hidden = true; $('ev2Success').hidden = false;
         return;
     }
-    if (r.status === 429) { ev2Fail({ fix: 'ลองบ่อยเกินไป — รอสักครู่แล้วลองใหม่' }); return; }
+    if (r.status === 429) { ev2Fail({ fix: 'ส่งบ่อยเกินไป ระบบให้พักก่อน — รอประมาณ 1 นาทีแล้วกดลองใหม่' }); return; }
     const left = Number.isInteger(r.json.attempts_left) ? ` (ลองได้อีก ${r.json.attempts_left} ครั้ง)` : '';
-    ev2Fail({ fix: (r.json.fix || r.json.message || 'ลงทะเบียนไม่สำเร็จ') + left, final: !!r.json.contact_staff,
-              message: r.json.contact_staff ? r.json.message : '' });
+    const reason = r.json.fix || r.json.message
+        || `ลงทะเบียนไม่สำเร็จ (รหัส ${r.status}) — กดลองใหม่ ถ้ายังไม่ได้ให้แจ้งผู้ดูแลระบบพร้อมรหัสนี้`;
+    // After the last allowed try, say both what to do now and what went wrong this time.
+    const final = !!r.json.contact_staff;
+    const last = final && r.json.fix && r.json.fix !== r.json.message ? `\nสาเหตุครั้งล่าสุด: ${r.json.fix}` : '';
+    ev2Fail({ fix: reason + left, final, message: final ? r.json.message + last : '' });
 }
 
 function ev2Fail({ fix, final = false, message = '' }) {
@@ -474,7 +500,7 @@ if (typeof document !== 'undefined' && document.getElementById('ev2Consent')) {
             try {
                 ev2.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 } });
                 $('ev2Video').srcObject = ev2.stream;
-            } catch (_) { ev2Fail({ fix: 'เปิดกล้องไม่ได้ กรุณาอนุญาตการใช้กล้อง' }); return; }
+            } catch (e) { ev2Fail({ fix: ev2CameraError(e) }); return; }
         }
         await ev2NewSession();   // no re-consent: the consent row from screen 1 still stands
     });

@@ -148,19 +148,21 @@ class EnrollV2RouteTests(unittest.TestCase):
         r = self.enroll(self.challenge(), self.frames(angles={"left": (-28.0, 0.0)}))
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.json["status"], "retry")
-        self.assertEqual(r.json["fix"], "หันผิดทาง — กรุณาหันซ้ายตามลูกศร")
+        self.assertIn("หันผิดข้าง", r.json["fix"])
+        self.assertIn("หันซ้าย", r.json["fix"])
         self.assertEqual(self.saved, [])
 
     def test_up_and_down_need_the_right_pitch_direction(self):
         r = self.enroll(self.challenge(), self.frames(angles={"up": (2.0, -10.0)}))      # looked down instead
-        self.assertEqual(r.json["fix"], "เงยหน้าอีกนิดตามลูกศร")
+        self.assertIn("ยังไม่เห็นท่าเงยหน้า", r.json["fix"])
         r = self.enroll(self.challenge(), self.frames(angles={"down": (2.0, 10.0)}))     # looked up instead
-        self.assertEqual(r.json["fix"], "ก้มหน้าอีกนิดตามลูกศร")
+        self.assertIn("ยังไม่เห็นท่าก้มหน้า", r.json["fix"])
         self.assertEqual(self.saved, [])
 
     def test_up_down_with_a_turned_head_do_not_count(self):
         r = self.enroll(self.challenge(), self.frames(angles={"up": (28.0, 10.0)}))
-        self.assertEqual(r.json["fix"], "เงยหน้าอีกนิดตามลูกศร")
+        self.assertIn("ยังไม่เห็นท่าเงยหน้า", r.json["fix"])
+        self.assertIn("ไม่หันข้าง", r.json["fix"])
         self.assertEqual(self.saved, [])
 
     def test_static_photo_has_no_poses(self):
@@ -169,7 +171,7 @@ class EnrollV2RouteTests(unittest.TestCase):
         r = self.enroll(self.challenge(), self.frames(angles={p: (2.0, 0.0) for p in enroll_v2.POSES},
                                                       emb={p: still for p in ("frontal",) + enroll_v2.POSES}))
         self.assertEqual(r.json["status"], "retry")
-        self.assertEqual(r.json["fix"], "เงยหน้าอีกนิดตามลูกศร")      # ORDER starts with up
+        self.assertIn("ยังไม่เห็นท่าเงยหน้า", r.json["fix"])      # ORDER starts with up
         self.assertEqual(self.saved, [])
 
     def test_unknown_or_reused_challenge(self):

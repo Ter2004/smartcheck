@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const src = fs.readFileSync(path.join(__dirname, '../app/static/js/enrollment_v2.js'), 'utf8');
 const ctx = vm.createContext({ console, Math, performance: { now: () => 0 } });
-vm.runInContext(src + '\nglobalThis.api = {EV2, ev2EyeYaw, ev2YawProxy, ev2NoseRatio, ev2PoseReached, ev2Frontal, ev2FaceBox, ev2InOval, ev2Ear, ev2Mar, ev2Lighting, ev2Blur, Ev2BlinkDetector, Ev2Keeper};', ctx);
+vm.runInContext(src + '\nglobalThis.api = {EV2, ev2EyeYaw, ev2YawProxy, ev2NoseRatio, ev2PoseReached, ev2CameraError, ev2Frontal, ev2FaceBox, ev2InOval, ev2Ear, ev2Mar, ev2Lighting, ev2Blur, Ev2BlinkDetector, Ev2Keeper};', ctx);
 const A = ctx.api;
 
 // A synthetic frontal face: eye corners, nose, ears, forehead, chin, lids and lips.
@@ -90,5 +90,11 @@ assert.ok(A.ev2Blur(flat(640, 480, 128)) < A.EV2.BLUR_MIN, 'flat frame is blurry
 const sharp = flat(640, 480, 0);
 for (let y = 0; y < 480; y++) for (let x = 0; x < 640; x++) if ((x + y) % 2) { const i = (y * 640 + x) * 4; sharp[i] = sharp[i + 1] = sharp[i + 2] = 255; }
 assert.ok(A.ev2Blur(sharp) > A.EV2.BLUR_MIN, 'checkerboard is sharp');
+
+// Camera errors name the cause and the fix.
+assert.match(A.ev2CameraError({ name: 'NotAllowedError' }), /อนุญาต/);
+assert.match(A.ev2CameraError({ name: 'NotFoundError' }), /ไม่พบกล้อง/);
+assert.match(A.ev2CameraError({ name: 'NotReadableError' }), /โปรแกรมอื่น/);
+assert.match(A.ev2CameraError({ name: 'X', message: 'virtual' }), /virtual/);
 
 console.log('test_enrollment_v2.js: all assertions passed');

@@ -895,7 +895,7 @@ def api_enroll_challenge():
     from app.services.enroll_v2 import new_challenge
     from app.services.liveness_challenge import CHALLENGE_TTL_S
     if face_engine.active_engine() != "arcface":
-        return jsonify(status="error", message="ไม่รองรับในโหมดนี้"), 404
+        return jsonify(status="error", message="ระบบลงทะเบียนแบบใหม่ยังไม่เปิดใช้ — แจ้งผู้ดูแลระบบ"), 404
     challenge = new_challenge()
     session["enroll_v2_challenge"] = challenge
     _log(session["user_id"], "enroll_v2_challenge", "issued", f"order={challenge['order']}")
@@ -906,7 +906,7 @@ def api_enroll_challenge():
 def _consent_id_or_error(user_id):
     """(consent_id, None) when the latest consent row is a grant; (None, response) otherwise. Fail-closed."""
     if not session.get("consent_given_at"):
-        return None, (jsonify(status="error", message="ต้องยินยอม PDPA ก่อน"), 400)
+        return None, (jsonify(status="error", message="ยังไม่ได้ยินยอม PDPA หรือเปิดหน้านี้ค้างไว้นาน — รีเฟรชหน้า แล้วติ๊กยินยอมก่อนเริ่ม"), 400)
     try:
         rows = (supabase_admin.table("consent_logs")
                 .select("id, consent_given")
@@ -917,10 +917,10 @@ def _consent_id_or_error(user_id):
                 .execute()).data
     except Exception as error:
         _log(user_id, "enroll_v2_consent", "db_error", type(error).__name__)
-        return None, (jsonify(status="error", message="ไม่สามารถตรวจสอบความยินยอมได้ กรุณาลองใหม่"), 500)
+        return None, (jsonify(status="error", message="ตรวจสอบการยินยอมไม่ได้ (ติดต่อฐานข้อมูลไม่ได้ชั่วคราว) — รอสักครู่แล้วกดลองใหม่"), 500)
     if not rows or not rows[0].get("consent_given"):
         _log(user_id, "enroll_v2_consent", "missing_or_withdrawn")
-        return None, (jsonify(status="error", message="กรุณายอมรับข้อตกลงก่อนลงทะเบียน"), 400)
+        return None, (jsonify(status="error", message="ไม่พบการยินยอม PDPA ของคุณ หรือถอนความยินยอมไปแล้ว — รีเฟรชหน้าแล้วติ๊กยินยอมใหม่"), 400)
     return rows[0].get("id") or session.get("consent_id"), None
 
 
@@ -935,7 +935,7 @@ def _enroll_v2_fail(user_id, fail):
     if failures >= MAX_RETRY:
         session.pop("enroll_retry", None)
         return jsonify(status="error", contact_staff=True,
-                       message=f"ลงทะเบียนไม่สำเร็จ {MAX_RETRY} ครั้ง กรุณาลงทะเบียนกับอาจารย์หรือผู้ช่วยสอน (TA)",
+                       message=f"ลงทะเบียนไม่สำเร็จ {MAX_RETRY} ครั้งติดกัน — กรุณาลงทะเบียนต่อหน้าอาจารย์หรือผู้ช่วยสอน (TA)",
                        fix=fail.fix), fail.http
     return jsonify(status="retry", fix=fail.fix, attempts_left=MAX_RETRY - failures), fail.http
 
@@ -966,10 +966,10 @@ def _api_enroll_v2(user_id, data):
         if not rpc_res.data[0]["allowed"]:
             _log(user_id, "enroll_attempt", "db_blocked", f"db_attempts={rpc_res.data[0]['current_attempts']}")
             return jsonify(status="blocked", contact_staff=True,
-                           message="ลงทะเบียนเกินจำนวนครั้งที่กำหนด กรุณาติดต่ออาจารย์"), 403
+                           message="วันนี้ลองลงทะเบียนครบจำนวนแล้ว (ได้ 5 ครั้งใน 24 ชั่วโมง) — ลองใหม่พรุ่งนี้ หรือติดต่ออาจารย์"), 403
     except Exception as db_err:
         _log(user_id, "enroll_attempt", "db_error_blocked", type(db_err).__name__)
-        return jsonify(status="error", message="ไม่สามารถตรวจสอบสิทธิ์ได้ชั่วคราว กรุณาลองใหม่อีกครั้ง"), 500
+        return jsonify(status="error", message="ตรวจสิทธิ์การลงทะเบียนไม่ได้ (ติดต่อฐานข้อมูลไม่ได้ชั่วคราว) — รอสักครู่แล้วกดลองใหม่"), 500
 
     model_version = face_engine.model_version()
     thresholds = {k: face_engine.threshold(k) for k in face_engine.ARCFACE_THRESHOLD_KEYS}
@@ -1003,7 +1003,7 @@ def _api_enroll_v2(user_id, data):
         if "already_enrolled" in str(save_err):
             return jsonify(status="already_enrolled", message="คุณลงทะเบียนใบหน้าสำเร็จแล้ว"), 409
         _log(user_id, "enroll_v2_save", "error", type(save_err).__name__)
-        return jsonify(status="error", message="บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่"), 500
+        return jsonify(status="error", message="ตรวจใบหน้าผ่านแล้ว แต่บันทึกลงฐานข้อมูลไม่สำเร็จ — รอสักครู่แล้วกดลองใหม่ ถ้ายังไม่ได้ให้แจ้งผู้ดูแลระบบ"), 500
 
     # Best frontal frame as the private thumbnail (teacher view). Non-fatal, like the v1 photo.
     # Own path, so the legacy photo ({user_id}.jpg) is not overwritten.

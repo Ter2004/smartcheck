@@ -51,20 +51,23 @@ PITCH_UP_SIGN = 1.0
 YAW_POSE = {"left": "turn_left", "right": "turn_right"}
 POSE_LABELS = {"left": "หันซ้าย", "right": "หันขวา", "up": "เงยหน้า", "down": "ก้มหน้า"}
 
+# Each message: what happened — what to do.
 FIX = {
-    "challenge":      "หมดเวลาหรือคำขอไม่ถูกต้อง — กรุณาเริ่มถ่ายใหม่",
-    "bad_request":    "ข้อมูลไม่ครบ — กรุณาเริ่มถ่ายใหม่",
-    "order":          "ลำดับการถ่ายไม่ถูกต้อง — กรุณาเริ่มถ่ายใหม่",
-    "frame_invalid":  "ภาพเสียหรือไม่ชัด — กรุณาถ่ายใหม่",
-    "no_face":        "ไม่พบใบหน้า — จัดหน้าให้อยู่ในกรอบวงรี",
-    "multiple_faces": "พบใบหน้ามากกว่าหนึ่งคน — ให้มีเพียงคุณคนเดียวในกล้อง",
-    "too_small":      "เข้าใกล้กล้องอีกหน่อย",
-    "too_dark":       "แสงน้อยเกินไป — เปิดไฟหรือหันหน้าเข้าหาแสง",
-    "backlight":      "แสงจ้าด้านหลังมากเกินไป — หันหน้าเข้าหาแสง",
-    "blurry":         "ภาพเบลอ — ถือกล้องให้นิ่ง",
-    "spoof":          "ตรวจพบรูปถ่ายหรือหน้าจอ — กรุณาใช้ใบหน้าจริงเท่านั้น",
-    "not_frontal":    "ช่วงแรกให้มองตรงเข้ากล้อง",
-    "inconsistent":   "ใบหน้าไม่ตรงกันระหว่างการถ่าย — อยู่ในกรอบคนเดียวตลอดแล้วลองใหม่",
+    "challenge":      "การถ่ายรอบนี้หมดอายุแล้ว (เกิน 2 นาที หรือเปิดหน้านี้ไว้หลายแท็บ) — กดลองใหม่เพื่อเริ่มถ่ายใหม่",
+    "bad_request":    "ข้อมูลรูปที่ส่งมาไม่ครบ — กดลองใหม่ ถ้ายังขึ้นอีกให้รีเฟรชหน้า",
+    "order":          "ทำท่าไม่ครบหรือไม่ตามลำดับลูกศร — กดลองใหม่ แล้วทำตามลูกศรทีละท่า",
+    "frame_invalid":  "ภาพจากกล้องเสียหรือส่งมาไม่ครบ — ตรวจอินเทอร์เน็ตแล้วกดลองใหม่",
+    "no_face":        "ระบบหาใบหน้าในภาพไม่เจอ — ให้หน้าอยู่กลางวงรี และไม่มีอะไรบังหน้า (มือ หน้ากาก แว่นดำ)",
+    "multiple_faces": "เจอใบหน้ามากกว่า 1 คนในภาพ — ให้มีคุณคนเดียวในกล้องตลอดการถ่าย",
+    "too_small":      "หน้าอยู่ไกลกล้องเกินไป — ขยับเข้ามาให้หน้าเต็มวงรี",
+    "too_dark":       "ภาพมืดเกินไป — เปิดไฟหรือย้ายไปที่สว่างกว่านี้ แล้วกดลองใหม่",
+    "backlight":      "ย้อนแสง (ด้านหลังสว่างกว่าหน้า) — หันหน้าเข้าหาแสงหรือหน้าต่าง แล้วกดลองใหม่",
+    "blurry":         "ภาพเบลอ — วางกล้องให้นิ่ง และขยับหัวช้า ๆ แล้วกดลองใหม่",
+    "spoof":          "ระบบตรวจว่าอาจเป็นรูปถ่ายหรือหน้าจอ ไม่ใช่หน้าจริง — ใช้หน้าจริงต่อหน้ากล้อง "
+                      "ถ้าเป็นหน้าจริงอยู่แล้ว ให้เพิ่มแสงที่หน้าแล้วลองใหม่",
+    "not_frontal":    "ช่วงมองตรง หน้าเอียงหรือหันอยู่ — มองตรงเข้ากล้องจนวงแหวนช่องแรกเป็นสีเขียว",
+    "inconsistent":   "รูปแต่ละท่าดูไม่ใช่คนเดียวกัน — ให้มีคุณคนเดียวในกรอบตลอดการถ่าย "
+                      "และหัน/เงย/ก้มแค่นิดเดียว ไม่ต้องแรง",
     # Says the face is on another account, never which one (the match stays in the server log and audit row).
     "duplicate":      "ลงทะเบียนไม่ได้: ใบหน้านี้ลงทะเบียนไว้กับบัญชีอื่นแล้ว — ถ้าเป็นบัญชีของคุณเอง "
                       "ให้เข้าสู่ระบบด้วยบัญชีนั้น ถ้าไม่ใช่ กรุณาติดต่ออาจารย์หรือผู้ดูแลระบบ",
@@ -226,7 +229,7 @@ def check(frames, challenge, deps, thresholds, log=lambda *a: None):
     log("antispoof", f"passed={passed}/{len(good)} needed={needed} system_failure={system}")
     if passed < needed:
         if system:
-            raise EnrollFail("system", "ระบบตรวจสอบใบหน้าขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง",
+            raise EnrollFail("system", "ระบบตรวจใบหน้าขัดข้องชั่วคราว (ไม่ใช่ความผิดของคุณ) — รอสักครู่แล้วกดลองใหม่",
                              http=503, retry=False, system=True)
         raise EnrollFail("spoof")
     good = [f for f in good if f.get("spoof_ok")]
@@ -246,12 +249,15 @@ def check(frames, challenge, deps, thresholds, log=lambda *a: None):
         log("pose_angle", f"pose={f['pose']} client_yaw={f['client_yaw']} client_pitch={f['client_pitch']} "
                           f"server_yaw_deg={f['face']['yaw_deg']:.1f} server_pitch_delta={delta:.1f} seen={f['seen']}")
         if f["pose"] in YAW_POSE and f["seen"] in YAW_POSE.values() and f["seen"] != YAW_POSE[f["pose"]]:
-            raise EnrollFail("wrong_direction", f"หันผิดทาง — กรุณา{POSE_LABELS[f['pose']]}ตามลูกศร")
+            raise EnrollFail("wrong_direction", f"หันผิดข้าง — ลูกศรให้{POSE_LABELS[f['pose']]} "
+                                                f"(ฝั่งเดียวกับลูกศรที่เห็นบนจอ) กดลองใหม่แล้วหันตามลูกศร")
         if _pose_ok(f["pose"], f["seen"], delta):
             accepted[f["pose"]].append(f)
     for pose in order:
         if not accepted[pose]:
-            raise EnrollFail(f"{pose}_missing", f"{POSE_LABELS[pose]}อีกนิดตามลูกศร")
+            how = "ให้ชัดขึ้นอีกนิด" if pose in YAW_POSE else "ให้ชัดขึ้นอีกนิด โดยหน้ายังตรง ไม่หันข้าง"
+            raise EnrollFail(f"{pose}_missing", f"ระบบยังไม่เห็นท่า{POSE_LABELS[pose]}ชัดพอ — "
+                                               f"กดลองใหม่ แล้ว{POSE_LABELS[pose]}{how}")
 
     # 6-7. Embeddings and self-consistency on the best frames
     rank = lambda f: (f["face"]["det_score"], f["face"]["face_px"], f["quality"]["blur"])

@@ -27,3 +27,4 @@ firmware/smartcheck_ble/secret.h
 /dataset/
 /compare-out/
 firmware/line_beacon/secret.h
+firmware/smartcheck_broadcast/secret.h

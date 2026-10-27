@@ -60,12 +60,13 @@ class Config:
     TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
 
     # Check-in proximity method: "ble" (default: signed nonce challenge against the
-    # room's ESP32 over Web Bluetooth) or "totp" (6-digit code from a room screen).
+    # room's ESP32 over Web Bluetooth), "totp" (6-digit code from a room screen) or
+    # "broadcast" (signed rolling code the room board advertises; read by the app).
     CHECKIN_PROXIMITY_METHOD = os.getenv("CHECKIN_PROXIMITY_METHOD", "ble").lower()
-    if CHECKIN_PROXIMITY_METHOD not in ("totp", "ble"):
+    if CHECKIN_PROXIMITY_METHOD not in ("totp", "ble", "broadcast"):
         _log.warning(
             f"[SmartCheck] CHECKIN_PROXIMITY_METHOD={CHECKIN_PROXIMITY_METHOD!r} is invalid "
-            f"(expected 'totp' or 'ble') — falling back to 'ble'."
+            f"(expected 'totp', 'ble' or 'broadcast') — falling back to 'ble'."
         )
         CHECKIN_PROXIMITY_METHOD = "ble"
 

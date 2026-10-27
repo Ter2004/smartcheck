@@ -452,7 +452,7 @@ def _eligible(data):
     # ─── 1c. BLE room proximity check (replaces TOTP when enabled) ───────────
     # Skipped for the teacher's session code: that code is bound to this session,
     # and /api/checkin accepts it only through a receipt issued for method "code".
-    if proximity_method == "ble" and not _via_code(data):
+    if proximity_method in ("ble", "broadcast") and not _via_code(data):
         beacon = sess.get("beacons") or {}
         configured_room = (beacon.get("ble_room_code") or "").strip()
         if not configured_room:
@@ -595,6 +595,10 @@ def checkin_proximity():
             ble_error = _verify_ble_response(sess, data)
             if ble_error is not None:
                 return ble_error
+        elif proximity_method == "broadcast":
+            broadcast_error = _verify_broadcast(sess, data)
+            if broadcast_error is not None:
+                return broadcast_error
         token = proximity_receipt.issue(current_app.config["PROXIMITY_RECEIPT_SECRET"],
             session["user_id"], data.get("session_id"), method, room)
     except Exception as error:
@@ -671,3 +675,22 @@ def _verify_ble_response(sess, data):
                        error=message), 400
     event("ble_challenge", "pass")
     return None
+
+
+def _verify_broadcast(sess, data):
+    """The app read the room board's signed rolling code (firmware/smartcheck_broadcast)."""
+    from app.services import broadcast_beacon
+    secret = _ble_secret(sess.get("beacon_id"))
+    if not secret:
+        return _ble_unconfigured()
+    counter = broadcast_beacon.verify(secret, data.get("room_code"), data.get("broadcast_payload"))
+    if counter is None:
+        reason = "broadcast_invalid"
+    elif not broadcast_beacon.fresh(supabase_admin, sess.get("beacon_id"), counter):
+        reason = "broadcast_stale"
+    else:
+        event("broadcast", "pass")
+        return None
+    reject(reason)
+    return jsonify(ok=False, error_code="room_code_invalid", retry_room_code=True,
+                   error="รหัสจากอุปกรณ์ในห้องไม่ถูกต้องหรือหมดอายุ กรุณาสแกนใหม่ในห้องเรียน"), 400

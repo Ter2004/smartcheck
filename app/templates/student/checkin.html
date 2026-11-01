@@ -213,6 +213,17 @@
         <p id="bleRoomStatus" class="text-sm text-slate-500 mt-3 min-h-[1.4em]"></p>
     </div>
 
+    <!-- Broadcast board: the SmartCheck Android app scans by itself, no button or picker -->
+    <div id="stepBroadcastRoom" class="bg-white rounded-xl border border-slate-200 p-8 text-center" style="display:none">
+        <label class="block font-semibold mb-2">ค้นหาสัญญาณห้องเรียน</label>
+        <div id="broadcastUnsupportedWarning"
+             class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 text-sm text-amber-800 text-left"
+             style="display:none"></div>
+        <p id="broadcastStatus" role="status" class="text-sm text-slate-600 min-h-[1.4em]"></p>
+        <button type="button" id="broadcastRetryBtn" onclick="flow.startBroadcastScan()" style="display:none"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl p-3 mt-4">สแกนอีกครั้ง</button>
+    </div>
+
     {% if config.CHECKIN_SESSION_CODE %}
     <!-- Fallback: the 6-digit code / QR on the teacher's screen (no BLE or LINE needed) -->
     <form id="stepSessionCode" onsubmit="flow.submitSessionCode(event)" style="display:none"
@@ -254,6 +265,7 @@
 <script src="{{ url_for('static', filename='js/step_guide.js') }}"></script>
 {% if session_data and not already_checked %}
 <script src="{{ url_for('static', filename='js/ble_room_scanner.js') }}"></script>
+<script src="{{ url_for('static', filename='js/broadcast_room_scanner.js') }}"></script>
 <script src="{{ url_for('static', filename='js/camera_guard.js') }}"></script>
 <script src="{{ url_for('static', filename='js/rt_analyze.js') }}"></script>
 {% if request.args.get('debug') == '1' %}
@@ -267,6 +279,8 @@
         debug:         {{ (request.args.get('debug') == '1') | tojson }},
         apiUrl:        "{{ url_for('api_checkin.checkin') }}",
         proximityMethod: "{{ config.CHECKIN_PROXIMITY_METHOD }}",
+        // Broadcast mode: ignore the board of the room next door.
+        expectedRoom:  {{ ((session_data.beacons or {}).ble_room_code or '') | tojson }},
         livenessMode:  "{{ config.CHECKIN_LIVENESS | default('head_turn') }}",
         livenessChallengeUrl: "{{ url_for('api_checkin.checkin_liveness_challenge') }}",
         // Opened from the LINE Beacon message: the room was already confirmed by LINE.

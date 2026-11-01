@@ -44,6 +44,7 @@ class CheckinFlow {
         this.beaconUUID    = opts.beaconUUID;
         this.apiUrl        = opts.apiUrl || '/api/checkin';
         this.proximityMethod = opts.proximityMethod || 'ble';
+        this.expectedRoom  = typeof opts.expectedRoom === 'string' ? opts.expectedRoom : '';
         // 'head_turn': one server-chosen turn, re-checked by the server; 'passive': legacy.
         this.livenessMode  = opts.livenessMode === 'passive' ? 'passive' : 'head_turn';
         this.livenessChallengeUrl = opts.livenessChallengeUrl || '/api/checkin/liveness/challenge';
@@ -82,6 +83,11 @@ class CheckinFlow {
             return;
         }
         // Proximity (room code or BLE room read) always gates the camera.
+        if (this.proximityMethod === 'broadcast') {
+            // The app scans the room board by itself: no instructions to tap away.
+            this._requestRoomCode();
+            return;
+        }
         await StepGuide.show('📍', 'ยืนยันห้องเรียนก่อนเช็คชื่อ',
             this.proximityMethod === 'ble'
                 ? 'เปิด Bluetooth แล้วกดหาอุปกรณ์ในห้อง เลือกอุปกรณ์ของห้องเรียน เมื่อยืนยันสำเร็จระบบจะเปิดกล้อง'
@@ -95,10 +101,12 @@ class CheckinFlow {
         this._debug?.mount(n);
         const title = document.getElementById('checkinStageTitle');
         const help = document.getElementById('checkinStageHelp');
-        if (title) title.textContent = ['', this.proximityMethod === 'ble' ? 'หาสัญญาณห้องเรียน' : 'ยืนยันรหัสห้องเรียน', 'ยืนยันตัวตนด้วยใบหน้า', 'ผลการเช็คชื่อ'][n];
+        const scansBoard = this.proximityMethod === 'ble' || this.proximityMethod === 'broadcast';
+        if (title) title.textContent = ['', scansBoard ? 'หาสัญญาณห้องเรียน' : 'ยืนยันรหัสห้องเรียน', 'ยืนยันตัวตนด้วยใบหน้า', 'ผลการเช็คชื่อ'][n];
         if (help) help.textContent = ['', 'ตรวจสอบว่าคุณอยู่ในห้องเรียนของคาบที่เลือก', 'จัดใบหน้าในกรอบ ระบบจะถ่ายภาพและเช็คชื่อให้อัตโนมัติ', 'ระบบตรวจสอบใบหน้าและบันทึกการเข้าเรียน'][n];
         // 1=proximity, 2=camera, 3=result.
-        const steps = [this.proximityMethod === 'ble' ? 'stepBleRoom' : 'stepRoomCode', 'stepVerify', 'stepDone'];
+        const firstStep = {ble: 'stepBleRoom', broadcast: 'stepBroadcastRoom'}[this.proximityMethod] || 'stepRoomCode';
+        const steps = [firstStep, 'stepVerify', 'stepDone'];
         steps.forEach((id, i) => {
             const el = document.getElementById(id);
             if (el) el.style.display = (i + 1 === n) ? 'block' : 'none';
@@ -507,6 +515,20 @@ class CheckinFlow {
                 btn.disabled = false;
                 btn.textContent = 'หาอุปกรณ์ในห้อง';
             }
+        } else if (this.proximityMethod === 'broadcast') {
+            document.getElementById('stepBroadcastRoom').style.display = 'block';
+            document.getElementById('broadcastStatus').textContent = '';
+            document.getElementById('broadcastRetryBtn').style.display = 'none';
+            const warn = document.getElementById('broadcastUnsupportedWarning');
+            if (typeof BroadcastRoomScanner !== 'undefined' && BroadcastRoomScanner.available()) {
+                warn.style.display = 'none';
+                this.startBroadcastScan();
+            } else {
+                warn.textContent = this.sessionCodeEnabled
+                    ? 'การหาสัญญาณห้องอัตโนมัติใช้ได้ในแอป SmartCheck บน Android — บนเครื่องนี้ให้ใช้รหัสจากจอของอาจารย์ด้านล่าง'
+                    : 'การหาสัญญาณห้องอัตโนมัติใช้ได้ในแอป SmartCheck บน Android เท่านั้น — กรุณาเปิดหน้านี้ในแอป หรือแจ้งอาจารย์';
+                warn.style.display = 'block';
+            }
         } else {
             document.getElementById('stepRoomCode').style.display = 'block';
             document.getElementById('roomCode').value = '';
@@ -577,6 +599,33 @@ class CheckinFlow {
         }
     }
 
+    // Own guard, not _submitting: _verifyProximity stays pending through the whole
+    // camera step, and an expired receipt must be able to start a fresh scan.
+    async startBroadcastScan() {
+        if (this._broadcastScanning) return;
+        this._broadcastScanning = true;
+        const status = document.getElementById('broadcastStatus');
+        document.getElementById('broadcastRetryBtn').style.display = 'none';
+        status.textContent = 'กำลังหาสัญญาณห้องเรียน...';
+        let result;
+        try {
+            result = await new BroadcastRoomScanner().findRoom(this.expectedRoom);
+        } catch {
+            result = {ok: false, code: 'scan_error', error: 'หาสัญญาณห้องเรียนไม่สำเร็จ — กรุณาลองใหม่'};
+        } finally {
+            this._broadcastScanning = false;
+        }
+        if (!result.ok) {
+            console.info('step=broadcast_scan result=reject details=' + JSON.stringify({code: result.code || 'scan_error'}));
+            status.textContent = result.error;
+            document.getElementById('broadcastRetryBtn').style.display = 'block';
+            return;
+        }
+        console.info('step=broadcast_scan result=pass details={}');
+        status.textContent = 'พบสัญญาณห้อง ' + result.room + ' — กำลังตรวจสอบก่อนเปิดกล้อง...';
+        await this._verifyProximity(result.room, null, null, {broadcast_payload: result.payload});
+    }
+
     async _fetchBleChallenge(room) {
         try {
             const res = await fetch('/api/checkin/ble/challenge', {
@@ -599,6 +648,7 @@ class CheckinFlow {
         const status = document.getElementById('proximityStatus');
         status.textContent = 'กำลังตรวจสอบตำแหน่งห้องเรียน...';
         const started = performance.now();
+        let issued = false;
         try {
             const response = await fetch('/api/checkin/proximity', {
                 method: 'POST',
@@ -618,6 +668,7 @@ class CheckinFlow {
             }
             this._proximity = {room, receipt: result.proximity_receipt, ...(via ? {via} : {}),
                 deadline: started + result.expires_in * 1000, captureStarted: performance.now()};
+            issued = true;
             if (this._debug) {
                 this._debug.receiptDue = this._proximity.deadline;
                 this._debug.event('new receipt');
@@ -636,6 +687,10 @@ class CheckinFlow {
         } finally {
             if (this.proximityMethod === 'ble' && navigator.bluetooth) {
                 document.getElementById('bleRoomBtn').disabled = false;
+            }
+            // Refused (no receipt): a new board code needs a new scan.
+            if (this.proximityMethod === 'broadcast' && !issued && via === null) {
+                document.getElementById('broadcastRetryBtn').style.display = 'block';
             }
         }
     }

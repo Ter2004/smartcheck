@@ -1,0 +1,5 @@
+node_modules/
+dist/
+# Written by build-apk.js for each build (holds the server URL)
+capacitor.config.json
+www/server-url.js

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SmartCheck</string>
+    <string name="title_activity_main">SmartCheck</string>
+    <string name="package_name">com.smartcheck.app</string>
+    <string name="custom_url_scheme">com.smartcheck.app</string>
+</resources>

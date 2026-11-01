@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SmartCheck</title>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 32px 20px; text-align: center; color: #1e293b; background: #f8fafc; }
+  h1 { font-size: 20px; margin: 24px 0 8px; }
+  p { color: #475569; line-height: 1.6; }
+  button { margin-top: 20px; width: 100%; max-width: 320px; padding: 14px; border: 0; border-radius: 12px;
+           background: #4f46e5; color: #fff; font-size: 16px; }
+</style>
+</head>
+<body>
+<h1>เชื่อมต่อเซิร์ฟเวอร์ SmartCheck ไม่ได้</h1>
+<p>ตรวจสอบอินเทอร์เน็ตของมือถือ แล้วลองใหม่<br>ถ้ายังไม่ได้ ให้แจ้งอาจารย์ (เซิร์ฟเวอร์อาจปิดอยู่)</p>
+<button type="button" id="retry">ลองใหม่</button>
+<script src="server-url.js"></script>
+<script>
+  document.getElementById('retry').onclick = () => {
+    // server-url.js is written by build-apk.js; without it, just reload.
+    if (window.SMARTCHECK_URL) location.href = window.SMARTCHECK_URL; else location.reload();
+  };
+</script>
+</body>
+</html>

@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from app.services import class_open
+from app.services import class_open, class_push
 
 _log = logging.getLogger("smartcheck.scheduler")
 
@@ -193,6 +193,14 @@ def auto_manage_sessions():
 
     except Exception as e:
         _log.error(f"[SCHEDULER] Error: {e}", exc_info=True)
+
+    # Notifications after the sessions are right; a failure here must not stop the above.
+    try:
+        for session_id in opened:
+            class_push.class_opened(session_id, now, config["CLASS_ON_TIME_MINUTES"], config)
+        class_push.catch_up(config, now)
+    except Exception as e:
+        _log.error(f"[SCHEDULER] Push error: {e}", exc_info=True)
 
 
 def _parse_time(time_str: str):

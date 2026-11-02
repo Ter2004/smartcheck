@@ -194,6 +194,8 @@ def create_app():
     app.register_blueprint(api_checkin_bp)
     from app.routes.line import line_bp
     app.register_blueprint(line_bp)
+    from app.routes.push import push_bp
+    app.register_blueprint(push_bp)
 
     # --- Jinja2 filter: แปลง UTC → Thai time (UTC+7) ---
     from datetime import datetime, timedelta

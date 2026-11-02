@@ -104,6 +104,9 @@ class Config:
     CLASS_ON_TIME_MAX_MINUTES = int(os.getenv("CLASS_ON_TIME_MAX_MINUTES", "60"))
     CLASS_AUTO_OPEN_AFTER_MINUTES = int(os.getenv("CLASS_AUTO_OPEN_AFTER_MINUTES", "15"))
     CLASS_EARLY_OPEN_MINUTES = int(os.getenv("CLASS_EARLY_OPEN_MINUTES", "15"))
+    # Class-open notifications to the Android app (app/services/class_push.py):
+    # path to the Firebase service-account JSON; empty = no notifications.
+    FCM_SERVICE_ACCOUNT_FILE = os.getenv("FCM_SERVICE_ACCOUNT_FILE", "")
     # LINE Beacon proximity (optional): the LINE app detects the room board and LINE
     # posts a webhook to /line/webhook. Needs migration 20261020_line_beacon.sql.
     LINE_BEACON_ENABLED = os.getenv("LINE_BEACON_ENABLED", "0") == "1"

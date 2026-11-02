@@ -5,7 +5,7 @@ from flask import (Blueprint, render_template, request, redirect,
                    url_for, flash, session, jsonify, Response, abort, current_app)
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
-from app.services import attendance_export, class_open
+from app.services import attendance_export, class_open, class_push
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
 
 teacher_bp = Blueprint("teacher", __name__)
@@ -265,6 +265,7 @@ def session_open(session_id):
         return redirect(url_for("teacher.dashboard"))
     log_audit_event(supabase_admin, teacher_id, "teacher", "session_override",
                     session_id=session_id, new_value="opened", metadata={"present_minutes": minutes})
+    class_push.class_opened(session_id, now, minutes, config)
     until = (now + timedelta(minutes=minutes)).astimezone(timezone(timedelta(hours=7)))
     flash(f"เปิดคาบ {sess['courses']['code']} แล้ว — เช็คชื่อทันเวลาได้ถึง {until:%H:%M}", "success")
     return redirect(url_for("teacher.dashboard"))

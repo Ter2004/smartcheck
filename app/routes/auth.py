@@ -196,6 +196,8 @@ def logout():
         token, expected = request.form.get("csrf_token", ""), session.get("csrf_token", "")
         if not expected or not hmac.compare_digest(token, expected):
             abort(403)
+        from app.routes.push import forget_this_device   # push imports this module
+        forget_this_device()
     session.clear()
     flash("ออกจากระบบแล้ว", "info")
     return redirect(url_for("auth.login"))

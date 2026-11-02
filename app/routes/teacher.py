@@ -155,7 +155,7 @@ def dashboard():
         .data or []
     )
 
-    now = datetime.now(timezone.utc)
+    now = _now()
     config = current_app.config
     for s in today_sessions:
         s["on_time_until"] = _iso(class_open.on_time_until(s, config))
@@ -226,6 +226,10 @@ def session_view(session_id):
     )
 
 
+def _now():
+    return datetime.now(timezone.utc)
+
+
 def _iso(moment):
     return moment.astimezone(timezone.utc).isoformat() if moment else None
 
@@ -250,7 +254,7 @@ def session_open(session_id):
     if minutes is None:
         flash(f"ใส่เวลาเช็คชื่อทันเวลาเป็นนาที 1–{config['CLASS_ON_TIME_MAX_MINUTES']}", "warning")
         return redirect(url_for("teacher.dashboard"))
-    now = datetime.now(timezone.utc)
+    now = _now()
     refusal = class_open.open_refusal(sess, now, config)
     if refusal:
         flash(refusal, "warning")

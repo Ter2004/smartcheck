@@ -161,8 +161,7 @@ class TeacherOpenRouteTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def press(self, minutes="10", now=at(-5)):
-        with patch.object(teacher, "datetime") as clock:
-            clock.now.return_value = now
+        with patch.object(teacher, "_now", return_value=now):
             return self.client.post("/teacher/session/s1/open", data={"csrf_token": "c", "minutes": minutes})
 
     def test_opens_with_the_chosen_minutes(self):
@@ -182,6 +181,31 @@ class TeacherOpenRouteTests(unittest.TestCase):
     def test_needs_the_csrf_token(self):
         response = self.client.post("/teacher/session/s1/open", data={"minutes": "5"})
         self.assertEqual(response.status_code, 403)
+
+    def test_dashboard_marks_which_classes_can_be_opened_now(self):
+        rows = {"courses": [{"id": "c"}], "beacons": [], "sessions": [
+            dict(id="soon", start_time=at(10).isoformat(), is_open=False, end_time=None),
+            dict(id="later", start_time=at(30).isoformat(), is_open=False, end_time=None),
+            dict(id="open", start_time=at(0).isoformat(), is_open=True, end_time=None,
+                 opened_at=at(0).isoformat(), present_minutes=7)]}
+        db = Mock()
+
+        def table(name):
+            q = Mock()
+            for method in ["select", "eq", "order", "in_", "limit", "gte", "lte"]:
+                getattr(q, method).return_value = q
+            q.execute.return_value = SimpleNamespace(data=rows[name])
+            return q
+        db.table.side_effect = table
+        render = Mock(return_value="page")
+        with patch.object(teacher, "supabase_admin", db), patch.object(teacher, "render_template", render), \
+                patch.object(teacher, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = at(0)
+            self.assertEqual(self.client.get("/teacher/dashboard").status_code, 200)
+        today = {s["id"]: s for s in render.call_args.kwargs["today_sessions"]}
+        self.assertEqual({k: v["can_open"] for k, v in today.items()}, {"soon": True, "later": False, "open": False})
+        self.assertEqual(today["later"]["opens_from"], at(15).isoformat())
+        self.assertEqual(today["open"]["on_time_until"], at(7).isoformat())
 
     def test_schedule_mode_has_no_button(self):
         self.web.config["SESSION_OPEN_MODE"] = "schedule"

@@ -102,8 +102,22 @@ class Config:
     # Load and run the face models once while the app starts (1) or on first use (0).
     FACE_ENGINE_WARMUP = os.getenv("FACE_ENGINE_WARMUP", "1") == "1"
 
-    # ── Flask-Session: server-side SQLAlchemy sessions (Railway deployment) ──
-    SESSION_TYPE               = "sqlalchemy"
+    # ── Flask-Session: server-side sessions ──
+    # "file" (default): files in instance/sessions on this server. The database store
+    # cost 1.36 s on every request (6 round trips to Supabase in ap-south-1, measured
+    # 2026-11-02). Files work for any number of workers on one machine; several
+    # machines need a shared store. "database": the flask_sessions table, as before.
+    SESSION_STORE              = os.getenv("SESSION_STORE", "file")
+    if SESSION_STORE == "database":
+        SESSION_TYPE           = "sqlalchemy"
+    else:
+        from cachelib.file import FileSystemCache
+        SESSION_TYPE           = "cachelib"
+        # A threshold this high is never reached by valid sessions (1 hour each);
+        # past it cachelib drops expired files first.
+        SESSION_CACHELIB       = FileSystemCache(
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "instance", "sessions"),
+            threshold=20000)
     SESSION_SQLALCHEMY_TABLE   = "flask_sessions"
     SESSION_PERMANENT          = True
     PERMANENT_SESSION_LIFETIME = 3600          # 1 hour

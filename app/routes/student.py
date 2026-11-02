@@ -1,6 +1,7 @@
 import logging
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy as np
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app, g, Response
@@ -196,36 +197,50 @@ def pdpa_notice():
     return render_template("student/pdpa.html", consent_version=CONSENT_VERSION_V2)
 
 
-def _open_sessions_today(user_id):
-    """(today's open sessions of the student's courses, their course ids, now in Thai time)."""
+# Page reads that need no request context run here side by side: each one is a
+# round trip to Supabase (~120 ms from Thailand to ap-south-1, 2026-11-02).
+# Only request threads submit work, so no task ever waits on another task here.
+_page_reads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="page-read")
+
+
+def _open_session_reads(user_id):
+    """Start the two reads behind _open_sessions_today; returns (now in Thai time, reads)."""
     import datetime as _dt_mod
     _TH_S = _dt_mod.timezone(_dt_mod.timedelta(hours=7))
     _now_th = _dt_mod.datetime.now(_TH_S)
     _today_start = _now_th.replace(hour=0, minute=0, second=0, microsecond=0)
     _tomorrow_start = _today_start + _dt_mod.timedelta(days=1)
-
-    open_sessions = (
-        supabase_admin.table("sessions")
+    client = supabase_admin
+    sessions = _page_reads.submit(lambda: (
+        client.table("sessions")
         .select("*, courses(id, code, name), beacons(uuid, room_name, ble_room_code)")
         .eq("is_open", True)
         .gte("start_time", _today_start.isoformat())
         .lt("start_time", _tomorrow_start.isoformat())
         .execute()
         .data or []
-    )
-
-    enrolled_course_ids = {
+    ))
+    courses = _page_reads.submit(lambda: {
         row["course_id"]
         for row in (
-            supabase_admin.table("course_enrollments")
+            client.table("course_enrollments")
             .select("course_id")
             .eq("student_id", user_id)
             .execute()
             .data or []
         )
-    }
+    })
+    return _now_th, (sessions, courses)
 
-    available_sessions = [s for s in open_sessions if s["course_id"] in enrolled_course_ids]
+
+def _open_sessions_today(user_id, started=None):
+    """(today's open sessions of the student's courses, their course ids, now in Thai time).
+
+    started: the result of _open_session_reads, when the caller began the reads earlier.
+    """
+    _now_th, (sessions, courses) = started or _open_session_reads(user_id)
+    enrolled_course_ids = courses.result()
+    available_sessions = [s for s in sessions.result() if s["course_id"] in enrolled_course_ids]
     return available_sessions, enrolled_course_ids, _now_th
 
 
@@ -238,9 +253,10 @@ def start():
     One open class not checked yet: its check-in page. Several: the class list.
     None (or no face enrolled yet): the dashboard.
     """
+    user_id = session["user_id"]
+    started = _open_session_reads(user_id)
     if _enrollment_status()["is_enrolled"]:
-        user_id = session["user_id"]
-        available_sessions, _, _ = _open_sessions_today(user_id)
+        available_sessions, _, _ = _open_sessions_today(user_id, started)
         ids = [s["id"] for s in available_sessions]
         checked = {
             row["session_id"]
@@ -268,14 +284,26 @@ def checkin():
     import re
     import datetime as _dt_mod
     user_id = session["user_id"]
+    selected_id = request.args.get("session_id")
+
+    # All of this page's reads start now and run alongside the enrollment check.
+    started = _open_session_reads(user_id)
+    client = supabase_admin
+    checked_read = _page_reads.submit(lambda: (
+        client.table("attendance")
+        .select("id")
+        .eq("session_id", selected_id)
+        .eq("student_id", user_id)
+        .limit(1)
+        .execute()
+    )) if selected_id else None
 
     status = _enrollment_status()
     if not status["is_enrolled"]:
         flash("กรุณาลงทะเบียนใบหน้าก่อน", "warning")
         return redirect(url_for("student.enroll_face"))
 
-    available_sessions, enrolled_course_ids, _now_th = _open_sessions_today(user_id)
-    selected_id = request.args.get("session_id")
+    available_sessions, enrolled_course_ids, _now_th = _open_sessions_today(user_id, started)
     session_data = next((s for s in available_sessions if s["id"] == selected_id), None)
     if selected_id and session_data is None:
         flash("คาบนี้ไม่เปิดเช็คชื่อหรือคุณไม่ได้ลงทะเบียน กรุณาเลือกคาบใหม่", "warning")
@@ -283,31 +311,40 @@ def checkin():
 
     already_checked = False
     if session_data:
-        res = (
-            supabase_admin.table("attendance")
-            .select("id")
-            .eq("session_id", session_data["id"])
-            .eq("student_id", user_id)
-            .limit(1)
-            .execute()
-        )
+        res = checked_read.result()
         if res and res.data:
             already_checked = True
+
+    ua = request.headers.get("User-Agent", "")
+    ios_warning = bool(re.search(r"iPhone|iPad|iPod", ua, re.I))
+
+    if selected_id:
+        # The check-in page shows no week table: skip its three reads.
+        return render_template(
+            "student/checkin.html",
+            session_data=session_data,
+            ios_warning=ios_warning,
+            already_checked=already_checked,
+            week_schedules=[],
+            week_session_map={},
+            checked_session_ids=set(),
+            today_dow=_now_th.weekday(),
+        )
 
     _week_start = (_now_th.date() - _dt_mod.timedelta(days=_now_th.weekday())).isoformat()
     _week_end   = (_now_th.date() + _dt_mod.timedelta(days=6 - _now_th.weekday())).isoformat()
 
-    week_schedules = (
-        supabase_admin.table("schedules")
+    schedules_read = _page_reads.submit(lambda: (
+        client.table("schedules")
         .select("*, courses(id, code, name), beacons(room_name)")
         .in_("course_id", list(enrolled_course_ids))
         .order("day_of_week")
         .execute()
         .data or []
-    ) if enrolled_course_ids else []
+    )) if enrolled_course_ids else None
 
     week_sessions = (
-        supabase_admin.table("sessions")
+        client.table("sessions")
         .select("id, course_id, is_open, start_time, end_time")
         .in_("course_id", list(enrolled_course_ids))
         .gte("start_time", f"{_week_start}T00:00:00+07:00")
@@ -315,8 +352,6 @@ def checkin():
         .execute()
         .data or []
     ) if enrolled_course_ids else []
-
-    week_session_map = {s["course_id"]: s for s in week_sessions}
 
     checked_session_ids = set()
     if week_sessions:
@@ -330,25 +365,11 @@ def checkin():
             .data or []
         )
         checked_session_ids = {a["session_id"] for a in _wa}
-
-    ua = request.headers.get("User-Agent", "")
-    ios_warning = bool(re.search(r"iPhone|iPad|iPod", ua, re.I))
-
-    if not selected_id:
-        return render_template(
-            "student/checkin_select.html", available_sessions=available_sessions,
-            checked_session_ids=checked_session_ids, week_schedules=week_schedules,
-        )
+    week_schedules = schedules_read.result() if schedules_read else []
 
     return render_template(
-        "student/checkin.html",
-        session_data=session_data,
-        ios_warning=ios_warning,
-        already_checked=already_checked,
-        week_schedules=[],
-        week_session_map=week_session_map,
-        checked_session_ids=checked_session_ids,
-        today_dow=_now_th.weekday(),
+        "student/checkin_select.html", available_sessions=available_sessions,
+        checked_session_ids=checked_session_ids, week_schedules=week_schedules,
     )
 
 

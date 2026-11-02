@@ -25,6 +25,7 @@ the project folder `smartcheck_project/` and its `venv`.
 |---|---|---|
 | 3.1 | Get a stable https address: your own domain with a Cloudflare named tunnel, or a cloud deploy (`Dockerfile`; image about 1.6 GB). Quick-tunnel URLs change on every restart. | Open the URL on a phone and log in. |
 | 3.2 | Set `PUBLIC_BASE_URL=https://…` | QR codes and LINE buttons open this address. |
+| 3.3 | Logins are kept as files in `instance/sessions` on the server (`SESSION_STORE=file`, the default since Phase 4d). One server machine (any number of workers) is fine. A redeploy of a container without a persistent `instance/` logs everyone out once. Several machines need one shared store; `SESSION_STORE=database` goes back to the `flask_sessions` table (about 1.4 s slower per request from Thailand, measured 2026-11-02). | After logging in, a file appears in `instance/sessions`; logging out removes the login. |
 
 ## 4. Room proximity: choose what students use
 

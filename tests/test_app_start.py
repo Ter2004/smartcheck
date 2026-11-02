@@ -24,7 +24,7 @@ class AppStartTests(unittest.TestCase):
         self.stack.enter_context(patch.object(student, "_enrollment_status",
                                               side_effect=lambda: {"is_enrolled": self.enrolled}))
         self.stack.enter_context(patch.object(student, "_open_sessions_today",
-                                              side_effect=lambda uid: ([{"id": i} for i in self.open_ids], set(), None)))
+                                              side_effect=lambda uid, started=None: ([{"id": i} for i in self.open_ids], set(), None)))
         db = MagicMock()
         db.table.return_value.select.return_value.eq.return_value.in_.return_value.execute.side_effect = \
             lambda: MagicMock(data=[{"session_id": i} for i in self.checked])

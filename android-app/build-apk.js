@@ -43,6 +43,8 @@ const config = {
     appId: APP_ID,
     appName: APP_NAME,
     webDir: 'www',
+    // The server sends the app straight to the class open now (app/routes/auth.py APP_USER_AGENT).
+    appendUserAgent: 'SmartCheckApp',
     server: {url, errorPath: 'error.html'},
     android: {allowMixedContent: false},
 };

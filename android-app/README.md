@@ -6,11 +6,11 @@
 - บอร์ด: `firmware/smartcheck_broadcast` (ประกาศรหัสที่เปลี่ยนทุก 5 วินาที ไม่รับการเชื่อมต่อ)
 - หน้าเว็บที่สแกน: `app/static/js/broadcast_room_scanner.js` + `checkin_flow.js` (ทำงานเฉพาะเมื่อเปิดในแอป)
 - เซิร์ฟเวอร์ตรวจรหัส: `app/services/broadcast_beacon.py`
-- iPhone / โน้ตบุ๊ก: ใช้รหัสหรือ QR บนจออาจารย์ (`CHECKIN_SESSION_CODE=true`)
+- iPhone / โน้ตบุ๊ก: ใช้รหัสหรือ QR บนจออาจารย์ (`CHECKIN_SESSION_CODE=1`)
 
 ## ก่อนใช้จริง (ฝั่งเซิร์ฟเวอร์)
 1. apply `database/migrations/20261027_broadcast_sightings.sql` บน Supabase
-2. `.env`: `CHECKIN_PROXIMITY_METHOD=broadcast` และ (แนะนำ) `CHECKIN_SESSION_CODE=true` ให้ iPhone/โน้ตบุ๊ก
+2. `.env`: `CHECKIN_PROXIMITY_METHOD=broadcast` และ (แนะนำ) `CHECKIN_SESSION_CODE=1` ให้ iPhone/โน้ตบุ๊ก
 3. หน้า admin → อุปกรณ์ห้องเรียน: รหัสห้อง (`ble_room_code`) ต้องตรงกับ `ROOM_ID` ในบอร์ด (ตอนนี้ `TEST-101`)
 
 ## สร้างไฟล์ APK

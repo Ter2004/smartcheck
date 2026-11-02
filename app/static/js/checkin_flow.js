@@ -62,6 +62,7 @@ class CheckinFlow {
 
     async start() {
         if (!document.getElementById('stepRoomCode')) return;
+        this._preloadFaceMesh();
         if (this.lineReceipt) {
             // LINE Beacon already proved the room (server-issued receipt in the link):
             // skip the Bluetooth/room-code step and open the camera. 300 s matches
@@ -126,6 +127,31 @@ class CheckinFlow {
     // Step 2: Detect a steady frontal face, then (head_turn mode) one server-chosen
     // head turn and a look back, and submit automatically.
 
+    // Still frontal frames before the capture (~0.7 s at the 66 ms pump). The server
+    // still runs the face match and anti-spoof on the frame; this only picks a steady one.
+    static READY_FRAMES = 10;
+
+    _newFaceMesh() {
+        const mesh = new FaceMesh({ locateFile: f =>
+            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}` });
+        mesh.setOptions({
+            maxNumFaces: 1, refineLandmarks: false,
+            minDetectionConfidence: 0.7, minTrackingConfidence: 0.7,
+        });
+        return mesh;
+    }
+
+    /** Load the face model while the room is being confirmed, so the camera does not wait for it. */
+    _preloadFaceMesh() {
+        if (this._meshPreload || typeof FaceMesh === 'undefined') return;
+        try {
+            const mesh = this._newFaceMesh();
+            const ready = Promise.resolve(mesh.initialize());
+            ready.catch(() => {});  // _startVerify sees the failure and shows it
+            this._meshPreload = {mesh, ready};
+        } catch (_) { /* _startVerify loads it again */ }
+    }
+
     async _fetchLivenessChallenge() {
         const res = await fetch(this.livenessChallengeUrl, {
             method: 'POST',
@@ -165,13 +191,10 @@ class CheckinFlow {
         const canvas   = document.getElementById('canvasVerify');
         const guide    = document.getElementById('faceGuideVerify');
         const status   = document.getElementById('verifyStatus');
-        const countdown = document.getElementById('countdownBadge');
-
-        await StepGuide.show('📷', 'เตรียมยืนยันใบหน้า',
-            this.livenessMode === 'head_turn'
-                ? 'จัดหน้าในกรอบแล้วอยู่นิ่ง จากนั้นทำท่าตามคำสั่ง 1 ท่า (หันหรือเอียงศีรษะ) แล้วมองตรงอีกครั้ง ระบบจะเช็คชื่อให้อัตโนมัติ เวลายืนยันห้องยังคงนับถอยหลัง'
-                : 'จัดหน้าในกรอบแล้วอยู่นิ่ง ระบบจะถ่ายและเช็คชื่อให้อัตโนมัติ เวลายืนยันห้องยังคงนับถอยหลัง');
-        if (!active()) return;
+        const ring     = document.getElementById('faceProgressVerify');
+        // Ring around the oval: 0..100 = how far the still-face count has got.
+        const setProgress = p => { if (ring) ring.style.strokeDashoffset = String(100 - p); };
+        setProgress(0);
 
         let turnAction = null, challengeNonce = null;
         if (this.livenessMode === 'head_turn') {
@@ -263,19 +286,13 @@ class CheckinFlow {
             return snap.toDataURL('image/jpeg', 0.85);
         };
 
-        // รอให้กล้องเริ่มก่อน 1.5 วินาที
-        await this._sleep(1500);
-        if (!active()) return;
         status.textContent = 'จัดใบหน้าให้อยู่ในกรอบวงรี';
 
-        // FaceMesh ตรวจตำแหน่งหน้า
-        const faceMesh = new FaceMesh({ locateFile: f =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}` });
+        // FaceMesh ตรวจตำแหน่งหน้า (the one loaded during the room step, if any)
+        const preload = this._meshPreload;
+        this._meshPreload = null;
+        const faceMesh = preload ? preload.mesh : this._newFaceMesh();
         this._activeMesh = faceMesh;
-        faceMesh.setOptions({
-            maxNumFaces: 1, refineLandmarks: false,
-            minDetectionConfidence: 0.7, minTrackingConfidence: 0.7,
-        });
 
         const processResults = async results => {
             if (!active() || verified || countingDown) return;
@@ -301,6 +318,7 @@ class CheckinFlow {
                     failed: ['brightness (other gates not evaluated)']});
                 guide.classList.remove('ok');
                 faceReadyFrames = 0;
+                setProgress(0);
                 status.textContent = 'แสงน้อยเกินไป — กรุณาอยู่ในพื้นที่ที่มีแสงสว่างเพียงพอ';
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 return;
@@ -312,6 +330,7 @@ class CheckinFlow {
                     ready: 0, faces: 0, failed: ['hasFace (geometry not evaluated)']});
                 guide.classList.remove('ok', 'fail');
                 faceReadyFrames = 0;
+                setProgress(0);
                 status.textContent = 'ไม่พบใบหน้า — จัดหน้าให้อยู่ในกรอบ';
                 return;
             }
@@ -352,10 +371,6 @@ class CheckinFlow {
                 faces: results.multiFaceLandmarks.length,
                 failed: Object.entries({inCenter, closeEnough, pitchOk, rollOk, yawOk, mouthOk})
                     .filter(([, passed]) => !passed).map(([name]) => name)});
-
-            // วาด overlay ตา+ปาก — สีเขียวถ้าพร้อม, ขาวถ้ายังไม่พร้อม
-            this._drawFaceFeatures(ctx, lm, canvas.width, canvas.height,
-                faceOk ? 'rgba(74,222,128,0.95)' : 'rgba(255,255,255,0.6)');
 
             const rollDelta = CheckinFlow.eyeRollDeg(lm, video.videoWidth, video.videoHeight) - baselineRoll;
             if (phase === 'turn') {
@@ -400,17 +415,18 @@ class CheckinFlow {
                 guide.classList.remove('fail');
                 guide.classList.add('ok');
                 faceReadyFrames++;
+                setProgress(Math.min(100, faceReadyFrames / CheckinFlow.READY_FRAMES * 100));
                 status.textContent = '✓ พบใบหน้า — กรุณานิ่งสักครู่...';
 
-                if (faceReadyFrames >= 25 && this.livenessMode === 'head_turn') {
+                if (faceReadyFrames >= CheckinFlow.READY_FRAMES && this.livenessMode === 'head_turn') {
                     // The frontal frame the server matches; the turn follows.
-                    this._debug?.event('25 ready frames; head turn requested');
+                    this._debug?.event(`${faceReadyFrames} ready frames; head turn requested`);
                     beforeFrame = snapFrame();
                     baselineRoll = CheckinFlow.eyeRollDeg(lm, video.videoWidth, video.videoHeight);
                     phase = 'turn';
                     status.textContent = `${turnLabel} แล้วค้างไว้สักครู่`;
-                } else if (faceReadyFrames >= 25) {
-                    this._debug?.event('25 ready frames; capture complete');
+                } else if (faceReadyFrames >= CheckinFlow.READY_FRAMES) {
+                    this._debug?.event(`${faceReadyFrames} ready frames; capture complete`);
                     countingDown = true;
                     clearTimeout(this._streamTimeoutId);
                     verified = true;
@@ -428,6 +444,7 @@ class CheckinFlow {
                 guide.classList.remove('ok');
                 guide.classList.add('fail');
                 faceReadyFrames = 0;
+                setProgress(0);
                 if (!closeEnough)  status.textContent = 'เข้าใกล้กล้องอีกหน่อย';
                 else if (!mouthOk) status.textContent = 'กรุณาหุบปาก';
                 else if (!pitchOk) status.textContent = 'กรุณาอย่าก้มหรือเงยหน้า';
@@ -470,7 +487,7 @@ class CheckinFlow {
         try {
             await video.play();
             if (!active()) return;
-            this._meshWork = Promise.resolve(faceMesh.initialize());
+            this._meshWork = preload ? preload.ready : Promise.resolve(faceMesh.initialize());
             await this._meshWork;
             if (active()) await pump();
         } catch (_) { fail('startup'); }
@@ -622,8 +639,9 @@ class CheckinFlow {
             return;
         }
         console.info('step=broadcast_scan result=pass details={}');
-        status.textContent = 'พบสัญญาณห้อง ' + result.room + ' — กำลังตรวจสอบก่อนเปิดกล้อง...';
-        await this._verifyProximity(result.room, null, null, {broadcast_payload: result.payload});
+        status.textContent = 'พบสัญญาณห้อง ' + result.room;
+        // The camera opens now; the server checks the board code meanwhile.
+        await this._verifyProximity(result.room, null, null, {broadcast_payload: result.payload}, true);
     }
 
     async _fetchBleChallenge(room) {
@@ -644,11 +662,23 @@ class CheckinFlow {
         }
     }
 
-    async _verifyProximity(room, bleResponse, via = null, extra = {}) {
+    // early (broadcast board): the camera starts while the server checks the board
+    // code, and the check-in itself waits for the receipt (_submitCheckin).
+    static EARLY_RECEIPT_MS = 90000;
+
+    async _verifyProximity(room, bleResponse, via = null, extra = {}, early = false) {
         const status = document.getElementById('proximityStatus');
         status.textContent = 'กำลังตรวจสอบตำแหน่งห้องเรียน...';
         const started = performance.now();
         let issued = false;
+        let pending = null, settle = () => {}, capture = null;
+        if (early) {
+            const receiptReady = new Promise(resolve => { settle = resolve; });
+            pending = {room, receipt: null, receiptReady,
+                deadline: started + CheckinFlow.EARLY_RECEIPT_MS, captureStarted: started};
+            this._proximity = pending;
+            capture = this._startVerify();
+        }
         try {
             const response = await fetch('/api/checkin/proximity', {
                 method: 'POST',
@@ -661,14 +691,22 @@ class CheckinFlow {
                                       ...(via ? {proximity_via: via} : {}), ...extra}),
             });
             const result = await response.json();
+            if (early && this._proximity !== pending) return;   // the attempt was replaced meanwhile
             if (!response.ok || !result.ok) {
                 console.info('step=proximity_preflight result=reject details=' + JSON.stringify({status: response.status}));
+                if (early) this._earlyRefused();
                 status.textContent = result.error || 'ตรวจสอบตำแหน่งไม่สำเร็จ กรุณาลองใหม่';
                 return;
             }
-            this._proximity = {room, receipt: result.proximity_receipt, ...(via ? {via} : {}),
-                deadline: started + result.expires_in * 1000, captureStarted: performance.now()};
+            if (early) {
+                Object.assign(pending, {receipt: result.proximity_receipt,
+                    deadline: started + result.expires_in * 1000});
+            } else {
+                this._proximity = {room, receipt: result.proximity_receipt, ...(via ? {via} : {}),
+                    deadline: started + result.expires_in * 1000, captureStarted: performance.now()};
+            }
             issued = true;
+            settle(true);
             if (this._debug) {
                 this._debug.receiptDue = this._proximity.deadline;
                 this._debug.event('new receipt');
@@ -680,19 +718,30 @@ class CheckinFlow {
                 document.getElementById('receiptCountdown').textContent = `เวลายืนยันตำแหน่งคงเหลือ ${seconds} วินาที`;
                 if (!seconds) this._expireProximity();
             }, 250);
-            await this._startVerify();
+            await (capture || this._startVerify());
         } catch (error) {
             console.info('step=proximity_preflight result=error details={}');
+            if (early && this._proximity === pending) this._earlyRefused();
             status.textContent = 'ไม่สามารถเชื่อมต่อระบบตรวจสอบตำแหน่งได้ กรุณาลองใหม่';
         } finally {
+            settle(false);   // no-op once the receipt arrived
             if (this.proximityMethod === 'ble' && navigator.bluetooth) {
                 document.getElementById('bleRoomBtn').disabled = false;
             }
-            // Refused (no receipt): a new board code needs a new scan.
-            if (this.proximityMethod === 'broadcast' && !issued && via === null) {
+            // Refused (no receipt): a new board code needs a new scan. An early attempt
+            // that was replaced (e.g. expiry started a new scan) leaves the button alone.
+            if (this.proximityMethod === 'broadcast' && !issued && via === null && !(early && this._proximity)) {
                 document.getElementById('broadcastRetryBtn').style.display = 'block';
             }
         }
+    }
+
+    /** The board code was refused after the camera had opened: back to the room step. */
+    _earlyRefused() {
+        this._stopStream(this._camStream);
+        this._proximity = null;
+        this._goToStep(1);
+        document.getElementById('broadcastStatus').textContent = '';
     }
 
     _expireProximity() {
@@ -715,6 +764,13 @@ class CheckinFlow {
     }
 
     async _submitCheckin(faceImage, livenessAction) {
+        // Early camera: the face can be ready before the server has accepted the board code.
+        const pending = this._proximity;
+        if (pending && pending.receipt === null) {
+            document.getElementById('verifyStatus').textContent = '✓ ถ่ายแล้ว — กำลังยืนยันห้องเรียน...';
+            const accepted = await pending.receiptReady;
+            if (!accepted || this._proximity !== pending) return;   // _earlyRefused already reset the page
+        }
         if (!this._proximity || performance.now() >= this._proximity.deadline) {
             this._expireProximity();
             return;
@@ -730,6 +786,7 @@ class CheckinFlow {
         const loadingMessage = document.querySelector('#doneLoadingView p');
         if (loadingMessage) loadingMessage.textContent = 'กำลังเปรียบเทียบใบหน้ากับข้อมูลที่ลงทะเบียน กรุณารอและอย่าปิดหน้านี้';
         document.getElementById('doneResultView').style.display   = 'none';
+        this._barStart();
 
         try {
             const deviceToken = localStorage.getItem('sc_device_token');
@@ -757,6 +814,7 @@ class CheckinFlow {
             });
 
             const json = await this._readCheckinResponse(res);
+            this._barStop();
             document.getElementById('doneLoadingView').style.display = 'none';
             document.getElementById('doneResultView').style.display  = 'block';
 
@@ -771,6 +829,7 @@ class CheckinFlow {
                 this._showDone('error', json.error || json.message || 'เช็คชื่อไม่สำเร็จ', json.retry_face === true || this._retryRoomCode);
             }
         } catch (e) {
+            this._barStop();
             document.getElementById('doneLoadingView').style.display = 'none';
             document.getElementById('doneResultView').style.display  = 'block';
             console.error('Check-in response failed', {name: e.name, status: e.httpStatus});
@@ -825,25 +884,23 @@ class CheckinFlow {
 
     // ─── Helpers ─────────────────────────────────────────
 
-    _drawFaceFeatures(ctx, lm, w, h, color) {
-        const EYE_L = [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246];
-        const EYE_R = [362,382,381,380,374,373,390,249,263,466,388,387,386,385,384,398];
-        const MOUTH = [61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146];
+    // Checking bar: an estimate easing toward 90% (the server took 1.65 s in the first
+    // phone test, 2026-11-02), not real progress; the result screen replaces it.
+    static BAR_TAU_MS = 1500;
 
-        ctx.strokeStyle = color;
-        ctx.lineWidth   = 1.8;
-        ctx.setLineDash([4, 3]);
+    _barStart() {
+        this._barStop();
+        const bar = document.getElementById('doneBar');
+        if (!bar) return;
+        const t0 = performance.now();
+        bar.style.width = '0%';
+        this._barTimer = setInterval(() => {
+            bar.style.width = `${(90 * (1 - Math.exp(-(performance.now() - t0) / CheckinFlow.BAR_TAU_MS))).toFixed(1)}%`;
+        }, 100);
+    }
 
-        [EYE_L, EYE_R, MOUTH].forEach(indices => {
-            ctx.beginPath();
-            indices.forEach((idx, i) => {
-                const x = lm[idx].x * w, y = lm[idx].y * h;
-                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-            });
-            ctx.closePath();
-            ctx.stroke();
-        });
-        ctx.setLineDash([]);
+    _barStop() {
+        if (this._barTimer) { clearInterval(this._barTimer); this._barTimer = null; }
     }
 
 

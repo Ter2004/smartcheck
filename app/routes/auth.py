@@ -65,7 +65,7 @@ def index():
     """หน้าแรก — redirect ตาม role"""
     if "user_id" not in session:
         return redirect(url_for("auth.login"))
-    return _redirect_by_role(session.get("user_role"))
+    return _redirect_by_role(session.get("user_role"), app_start=True)
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -114,7 +114,7 @@ def login():
         if user.get("must_change_password"):
             return redirect(url_for("auth.change_password"))
 
-        return _redirect_by_role(user["role"])
+        return _redirect_by_role(user["role"], app_start=True)
 
     except Exception as e:
         flash("อีเมล / ID หรือรหัสผ่านไม่ถูกต้อง", "danger")
@@ -200,11 +200,25 @@ def logout():
 # HELPERS
 # ============================================================
 
-def _redirect_by_role(role: str):
-    """Redirect ไปหน้า dashboard ตาม role"""
+# The Android app adds this to its User-Agent (android-app/build-apk.js appendUserAgent).
+APP_USER_AGENT = "SmartCheckApp"
+
+
+def from_app() -> bool:
+    return APP_USER_AGENT in request.headers.get("User-Agent", "")
+
+
+def _redirect_by_role(role: str, app_start: bool = False):
+    """Redirect ไปหน้า dashboard ตาม role
+
+    app_start: opening the app or logging in there. A student goes to
+    student.start (straight to the class open now) instead of the dashboard.
+    """
     if role == "admin":
         return redirect(url_for("admin.dashboard"))
     elif role == "teacher":
         return redirect(url_for("teacher.dashboard"))
+    elif app_start and from_app():
+        return redirect(url_for("student.start"))
     else:
         return redirect(url_for("student.dashboard"))

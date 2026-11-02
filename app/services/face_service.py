@@ -196,6 +196,20 @@ def _run_antispoof(img_bgr: np.ndarray) -> tuple:
     return is_real, real_score
 
 
+def warm_up_antispoof():
+    """Load both anti-spoof models and run each once, so the first check-in after a
+    start does not pay for it (onnx=1296 ms on that check-in, 2026-11-02). Returns seconds."""
+    t0 = time.perf_counter()
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    _run_antispoof(img)
+    from app.services import fasnet_onnx
+    if fasnet_onnx.available():
+        fasnet_onnx.analyze(img, (200, 120, 240, 240))
+    seconds = time.perf_counter() - t0
+    _audit.info(f"[ANTISPOOF] warm-up {seconds:.2f}s")
+    return seconds
+
+
 def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
     """
     Fasnet (MiniVision Silent-Face, the weights DeepFace used) on ONNX Runtime,

@@ -42,10 +42,10 @@ function scannerContext(ble) {
     return context.Scanner;
 }
 
-function flowHarness({ble, proximityOk = true}) {
+function flowHarness({ble, proximityOk = true, gate = null}) {
     const elements = new Map();
     const requests = [];
-    let guides = 0;
+    let guides = 0, cameras = 0;
     const document = {
         getElementById(id) {
             if (!elements.has(id)) elements.set(id, {style: {}, value: '', textContent: '', classList: {toggle() {}}, focus() {}});
@@ -61,6 +61,7 @@ function flowHarness({ble, proximityOk = true}) {
         Capacitor: ble ? {isNativePlatform: () => true, Plugins: {BluetoothLe: ble.plugin}} : undefined,
         fetch: async (url, options) => {
             requests.push({url, body: JSON.parse(options.body)});
+            if (gate && url.endsWith('/proximity')) await gate;
             const result = url.endsWith('/proximity')
                 ? (proximityOk ? {ok: true, proximity_receipt: 'signed', expires_in: 90} : {ok: false, error: 'stale code'})
                 : {ok: false, error: 'not in this test'};
@@ -71,8 +72,9 @@ function flowHarness({ble, proximityOk = true}) {
         '\nBroadcastRoomScanner.TIMEOUT_MS = 50;' +
         `\nglobalThis.flow = new CheckinFlow({sessionId: 's', proximityMethod: 'broadcast', expectedRoom: 'TEST-101', sessionCodeEnabled: true});`,
         context);
-    context.flow._startVerify = async () => {};      // camera is covered by other tests
-    return {flow: context.flow, el: id => document.getElementById(id), requests, guides: () => guides};
+    context.flow._startVerify = async () => { cameras++; };      // camera is covered by other tests
+    return {flow: context.flow, el: id => document.getElementById(id), requests, guides: () => guides,
+            cameras: () => cameras};
 }
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 20));
@@ -126,6 +128,37 @@ const same = (actual, expected, message) => assert.equal(JSON.stringify(actual),
     await h.flow.start();
     await settle();
     assert.equal(h.flow._proximity, null);
+    assert.equal(h.el('broadcastRetryBtn').style.display, 'block');
+    assert.equal(h.el('proximityStatus').textContent, 'stale code');
+
+    // ── camera opens while the server checks the board; the check-in waits for the receipt ──
+    let release;
+    h = flowHarness({ble: fakeBle({adverts: [VECTOR]}), gate: new Promise(resolve => { release = resolve; })});
+    await h.flow.start();
+    await settle();
+    assert.equal(h.cameras(), 1, 'camera started before the server answered');
+    assert.equal(h.flow._proximity.receipt, null);
+    const submitted = h.flow._submitCheckin('face', 'passive');
+    await settle();
+    assert.ok(!h.requests.some(r => r.url === '/api/checkin'), 'no check-in before the receipt');
+    release();
+    await submitted;
+    const checkin = h.requests.find(r => r.url === '/api/checkin');
+    assert.ok(checkin, 'check-in sent once the receipt arrived');
+    assert.equal(checkin.body.proximity_receipt, 'signed');
+
+    // ── refused while the camera was open: back to the room step, nothing submitted ──
+    h = flowHarness({ble: fakeBle({adverts: [VECTOR]}), proximityOk: false,
+                     gate: new Promise(resolve => { release = resolve; })});
+    await h.flow.start();
+    await settle();
+    const refused = h.flow._submitCheckin('face', 'passive');
+    release();
+    await refused;
+    await settle();
+    assert.equal(h.flow._proximity, null);
+    assert.ok(!h.requests.some(r => r.url === '/api/checkin'));
+    assert.equal(h.el('stepBroadcastRoom').style.display, 'block');
     assert.equal(h.el('broadcastRetryBtn').style.display, 'block');
     assert.equal(h.el('proximityStatus').textContent, 'stale code');
 

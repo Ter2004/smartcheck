@@ -75,6 +75,21 @@ def _trust_proxies(app):
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops)
 
 
+def _cache_static_files(app):
+    """Phones keep static files instead of re-asking on every page (8 requests on the
+    check-in page, 2026-11-02). Each url_for('static') URL carries ?v=<file mtime>,
+    so an edited file gets a new URL and still reaches them at once."""
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 7 * 24 * 3600
+
+    @app.url_defaults
+    def static_version(endpoint, values):
+        if endpoint == "static" and "filename" in values and "v" not in values:
+            try:
+                values["v"] = int(os.stat(os.path.join(app.static_folder, values["filename"])).st_mtime)
+            except OSError:
+                pass
+
+
 def rate_limit_exceeded(e):
     from flask import jsonify, request as freq
     retry_after = getattr(e, "retry_after", None) or getattr(e, "description", None)
@@ -126,6 +141,11 @@ def create_app():
               face_engine.active_engine(app.config), face_engine.model_version(face_engine.active_engine(app.config)))
     if face_engine.active_engine(app.config) == "arcface" and app.config.get("FACE_ENGINE_WARMUP", True):
         face_engine.warm_up()
+        from app.services.face_service import warm_up_antispoof
+        try:
+            warm_up_antispoof()
+        except Exception as e:   # the check-in loads them itself; a cold first check-in only
+            _log.warning("[SmartCheck] anti-spoof warm-up failed: %s", type(e).__name__)
     if app.config.get("LINE_BEACON_ENABLED"):
         missing = [k for k in ("LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "PUBLIC_BASE_URL")
                    if not app.config.get(k)]
@@ -197,6 +217,8 @@ def create_app():
         return redirect(freq.url)
 
     app.register_error_handler(429, rate_limit_exceeded)
+
+    _cache_static_files(app)
 
     # --- Security headers (A9) ---
     @app.after_request

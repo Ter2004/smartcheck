@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const read = name => fs.readFileSync(path.join(__dirname, '../app/static/js/', name), 'utf8');
 function harness(debug, options = {}) {
-    let now = 0, brightness = 100, callback, created = 0, streams = 0, closes = 0, submits = 0;
+    let now = 0, brightness = 100, callback, created = 0, streams = 0, closes = 0, submits = 0, meshes = 0;
     const timers = new Map(), elements = new Map();
     let timerId = 0;
     const node = () => ({style: {}, textContent: '', classList: {toggle() {}, remove() {}, add() {}},
@@ -30,6 +30,7 @@ function harness(debug, options = {}) {
             return {ok: true, json: async () => ({nonce: 'n-1', actions: [options.turn || 'turn_left']})};
         },
         FaceMesh: class {
+            constructor() {meshes++;}
             setOptions() {} onResults(fn) {callback = fn;} async initialize() {}
             async send() {if (options.sendError) throw Error('send');}
             async close() {closes++; if (options.closeError) throw Error('close');}
@@ -46,7 +47,7 @@ function harness(debug, options = {}) {
     flow._proximity = {deadline: 90000};
     if (flow._debug) flow._debug.receiptDue = 90000;
     return {flow, context, elements, timers, created: () => created, streams: () => streams,
-        closes: () => closes, submits: () => submits, advance: t => now = t,
+        closes: () => closes, submits: () => submits, meshes: () => meshes, advance: t => now = t,
         dark: () => brightness = 0, frame: lm => callback({multiFaceLandmarks: lm ? [lm] : []})};
 }
 function landmarks(ear = .28) {
@@ -61,6 +62,7 @@ function landmarks(ear = .28) {
     return lm;
 }
 (async () => {
+    const N = harness(false).flow.constructor.READY_FRAMES;   // still frames before capture
     const off = harness(false);
     assert.equal(off.created(), 0);
     await off.flow._startVerify(); await off.frame(landmarks());
@@ -74,20 +76,34 @@ function landmarks(ear = .28) {
     assert.doesNotMatch(d.panel.textContent, /failed=eyesOk/);
     assert.match(d.panel.textContent, /ready=1/);
     assert.match(d.panel.textContent, /faceW=0.400000/);
-    for (let i = 0; i < 23; i++) await h.frame(landmarks());
-    assert.equal(h.submits(), 0, '24 ready frames must not submit');
+    for (let i = 0; i < N - 2; i++) await h.frame(landmarks());
+    assert.equal(h.submits(), 0, `${N - 1} ready frames must not submit`);
     await h.frame(landmarks());
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(h.submits(), 1, 'submit after 25 consecutive ready frames');
+    assert.equal(h.submits(), 1, `submit after ${N} consecutive ready frames`);
     assert.equal(h.closes(), 1, 'close model exactly once');
     await h.frame(landmarks()); assert.equal(h.submits(), 1, 'ignore stale results');
+    // The face model loaded during the room step is the one the camera uses; the ring follows the count.
+    const pre = harness(false);
+    pre.flow._preloadFaceMesh();
+    assert.equal(pre.meshes(), 1);
+    await pre.flow._startVerify();
+    assert.equal(pre.meshes(), 1, 'reuse the preloaded model');
+    const ring = pre.elements.get('faceProgressVerify');
+    for (let i = 0; i < N / 2; i++) await pre.frame(landmarks());
+    assert.equal(ring.style.strokeDashoffset, '50');
+    await pre.frame(null);
+    assert.equal(ring.style.strokeDashoffset, '100', 'lost face empties the ring');
+    const fresh = harness(false);
+    await fresh.flow._startVerify(); await fresh.flow._startVerify();
+    assert.equal(fresh.meshes(), 2, 'no preload: a new model per attempt, as before');
     const reset = harness(false);
     await reset.flow._startVerify();
-    for (let i = 0; i < 24; i++) await reset.frame(landmarks());
+    for (let i = 0; i < N - 1; i++) await reset.frame(landmarks());
     await reset.frame(null);
     await reset.frame(landmarks());
     assert.equal(reset.submits(), 0, 'lost face resets the ready frame count');
-    for (let i = 0; i < 24; i++) await reset.frame(landmarks());
+    for (let i = 0; i < N - 1; i++) await reset.frame(landmarks());
     assert.equal(reset.submits(), 1);
     const timeout = harness(true);
     await timeout.flow._startVerify(); await timeout.frame(landmarks());
@@ -114,7 +130,7 @@ function landmarks(ear = .28) {
     const turned = x => { const lm = landmarks(); lm[1] = {x, y: .5}; return lm; };  // noseRelX=(x-.3)/.4
     const turn = harness(false, {livenessMode: 'head_turn', turn: 'turn_left'});
     await turn.flow._startVerify();
-    for (let i = 0; i < 25; i++) await turn.frame(landmarks());
+    for (let i = 0; i < N; i++) await turn.frame(landmarks());
     assert.equal(turn.submits(), 0, 'head_turn does not submit after the frontal frames alone');
     assert.match(turn.elements.get('verifyStatus').textContent, /ซ้าย/);
     for (let i = 0; i < 2; i++) await turn.frame(turned(.6));
@@ -132,7 +148,7 @@ function landmarks(ear = .28) {
     assert.equal(typeof turn.flow._liveness.after, 'string');
     const right = harness(false, {livenessMode: 'head_turn', turn: 'turn_right'});
     await right.flow._startVerify();
-    for (let i = 0; i < 25; i++) await right.frame(landmarks());
+    for (let i = 0; i < N; i++) await right.frame(landmarks());
     for (let i = 0; i < 5; i++) await right.frame(turned(.6));   // turned left: not the request
     for (let i = 0; i < 5; i++) await right.frame(landmarks());
     assert.equal(right.submits(), 0, 'the other direction does not complete the challenge');
@@ -148,7 +164,7 @@ function landmarks(ear = .28) {
     });
     const tilt = harness(false, {livenessMode: 'head_turn', turn: 'tilt_left'});
     await tilt.flow._startVerify();
-    for (let i = 0; i < 25; i++) await tilt.frame(landmarks());
+    for (let i = 0; i < N; i++) await tilt.frame(landmarks());
     assert.match(tilt.elements.get('verifyStatus').textContent, /เอียงศีรษะไปทางซ้าย/);
     for (let i = 0; i < 3; i++) await tilt.frame(tilted(10));    // too small
     for (let i = 0; i < 3; i++) await tilt.frame(tilted(-25));   // wrong way
@@ -164,7 +180,7 @@ function landmarks(ear = .28) {
     // Phone held at -12 degrees: the tilt counts from there, not from level.
     const held = harness(false, {livenessMode: 'head_turn', turn: 'tilt_left'});
     await held.flow._startVerify();
-    for (let i = 0; i < 25; i++) await held.frame(tilted(-12));
+    for (let i = 0; i < N; i++) await held.frame(tilted(-12));
     for (let i = 0; i < 3; i++) await held.frame(tilted(0));      // +12 from the start: not enough
     for (let i = 0; i < 5; i++) await held.frame(tilted(-12));
     assert.equal(held.submits(), 0);
@@ -172,5 +188,5 @@ function landmarks(ear = .28) {
     for (let i = 0; i < 5; i++) await held.frame(tilted(-12));
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(held.submits(), 1, 'tilt measured from the frontal frame');
-    console.log('PASS: capture without eye calibration, one stream/close, timeout, expiry, stale callbacks, promise failures, head turn and tilt');
+    console.log('PASS: preloaded face model and progress ring, capture without eye calibration, one stream/close, timeout, expiry, stale callbacks, promise failures, head turn and tilt');
 })().catch(error => {console.error(error); process.exitCode = 1;});

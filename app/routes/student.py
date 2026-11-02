@@ -196,18 +196,8 @@ def pdpa_notice():
     return render_template("student/pdpa.html", consent_version=CONSENT_VERSION_V2)
 
 
-@student_bp.route("/checkin")
-@login_required
-@role_required("student")
-def checkin():
-    import re
-    user_id = session["user_id"]
-
-    status = _enrollment_status()
-    if not status["is_enrolled"]:
-        flash("กรุณาลงทะเบียนใบหน้าก่อน", "warning")
-        return redirect(url_for("student.enroll_face"))
-
+def _open_sessions_today(user_id):
+    """(today's open sessions of the student's courses, their course ids, now in Thai time)."""
     import datetime as _dt_mod
     _TH_S = _dt_mod.timezone(_dt_mod.timedelta(hours=7))
     _now_th = _dt_mod.datetime.now(_TH_S)
@@ -236,6 +226,55 @@ def checkin():
     }
 
     available_sessions = [s for s in open_sessions if s["course_id"] in enrolled_course_ids]
+    return available_sessions, enrolled_course_ids, _now_th
+
+
+@student_bp.route("/start")
+@login_required
+@role_required("student")
+def start():
+    """Opening the Android app: straight to the class open for check-in now.
+
+    One open class not checked yet: its check-in page. Several: the class list.
+    None (or no face enrolled yet): the dashboard.
+    """
+    if _enrollment_status()["is_enrolled"]:
+        user_id = session["user_id"]
+        available_sessions, _, _ = _open_sessions_today(user_id)
+        ids = [s["id"] for s in available_sessions]
+        checked = {
+            row["session_id"]
+            for row in (
+                supabase_admin.table("attendance")
+                .select("session_id")
+                .eq("student_id", user_id)
+                .in_("session_id", ids)
+                .execute()
+                .data or []
+            )
+        } if ids else set()
+        unchecked = [i for i in ids if i not in checked]
+        if len(unchecked) == 1:
+            return redirect(url_for("student.checkin", session_id=unchecked[0]))
+        if unchecked:
+            return redirect(url_for("student.checkin"))
+    return redirect(url_for("student.dashboard"))
+
+
+@student_bp.route("/checkin")
+@login_required
+@role_required("student")
+def checkin():
+    import re
+    import datetime as _dt_mod
+    user_id = session["user_id"]
+
+    status = _enrollment_status()
+    if not status["is_enrolled"]:
+        flash("กรุณาลงทะเบียนใบหน้าก่อน", "warning")
+        return redirect(url_for("student.enroll_face"))
+
+    available_sessions, enrolled_course_ids, _now_th = _open_sessions_today(user_id)
     selected_id = request.args.get("session_id")
     session_data = next((s for s in available_sessions if s["id"] == selected_id), None)
     if selected_id and session_data is None:

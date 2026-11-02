@@ -1,5 +1,6 @@
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy as np
 from datetime import datetime, timezone
@@ -26,6 +27,23 @@ from app.services.liveness_challenge import (
 from app import limiter as _limiter
 
 api_checkin_bp = Blueprint("api_checkin", __name__)
+
+# Database reads a check-in needs later (device, enrollment, duplicate) run here
+# while the anti-spoof models work, instead of one after another afterwards.
+_read_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="checkin-read")
+
+
+def _prefetch_reads(student_id, session_id):
+    from app.services import face_store
+    client = supabase_admin
+    return {
+        "user": _read_pool.submit(lambda: client.table("users").select("device_id")
+                                  .eq("id", student_id).maybe_single().execute()),
+        "enrollment": _read_pool.submit(face_store.load_enrollment, client, student_id),
+        "duplicate": _read_pool.submit(lambda: client.table("attendance").select("id, status")
+                                       .eq("session_id", session_id).eq("student_id", student_id)
+                                       .limit(1).execute()),
+    }
 
 @api_checkin_bp.route("/api/checkin", methods=["POST"])
 @audited_checkin
@@ -117,6 +135,7 @@ def checkin():
         }), 400
 
     _perf["session"] = round((time.perf_counter() - _t1) * 1000, 2)
+    reads = _prefetch_reads(student_id, session_id)
 
     antispoof_pass = False
 
@@ -252,13 +271,7 @@ def checkin():
     # ─── 5. Device binding (determines threshold) ─────────────────────────────
     device_id = request.headers.get("X-Device-ID", "")
     with stage("device_lookup"):
-        user_res  = (
-            supabase_admin.table("users")
-            .select("device_id")
-            .eq("id", student_id)
-            .maybe_single()
-            .execute()
-        )
+        user_res = reads["user"].result()
     user_device = ((user_res and user_res.data) or {}).get("device_id") or ""
     if user_device and device_id and user_device != device_id:
         reject("device_binding_mismatch")
@@ -285,17 +298,17 @@ def checkin():
     # was never reachable (no device token is ever issued) and is not carried over.
 
     # ─── 6. Face verification (face_templates of the active model) ──────────
-    score, failure = _verify_face_v2(student_id, raw_frame)
+    score, failure = _verify_face_v2(student_id, raw_frame, reads["enrollment"])
     if failure is not None:
         return failure
     _perf["embed"] = round((time.perf_counter() - _t8) * 1000, 2)
     _perf["verify"] = 0.0
     _t10 = time.perf_counter()
     return _record_attendance(sess, session_id, student_id, score, antispoof_pass, liveness_action,
-                              device_id, _perf, _t0, _t10)
+                              device_id, _perf, _t0, _t10, duplicate_read=reads["duplicate"])
 
 
-def _verify_face_v2(student_id, raw_frame):
+def _verify_face_v2(student_id, raw_frame, enrollment_read=None):
     """(best similarity, None) or (None, error response): face_templates of the active model.
 
     A missing enrollment of the active model_version — including a student who
@@ -307,7 +320,8 @@ def _verify_face_v2(student_id, raw_frame):
 
     model_version = face_engine.model_version()
     with stage("biometrics_lookup"):
-        enrollment = face_store.load_enrollment(supabase_admin, student_id)
+        enrollment = (enrollment_read.result() if enrollment_read is not None
+                      else face_store.load_enrollment(supabase_admin, student_id))
     if not enrollment or enrollment.get("status") != "completed" \
             or enrollment.get("model_version") != model_version or not enrollment.get("templates"):
         reject("reenrollment_required", stored_model=(enrollment or {}).get("model_version"))
@@ -339,11 +353,13 @@ def _verify_face_v2(student_id, raw_frame):
 
 
 def _record_attendance(sess, session_id, student_id, score, antispoof_pass, liveness_action,
-                       device_id, _perf, _t0, _t10):
+                       device_id, _perf, _t0, _t10, duplicate_read=None):
     """Duplicate guard, present/late, insert. Shared by both face engines."""
     # ─── 7. Duplicate check-in guard ─────────────────────────────────────────
+    # Read early (duplicate_read); the unique (session_id, student_id) constraint
+    # on insert still catches a check-in that lands after that read.
     with stage("attendance_lookup"):
-        dup = (
+        dup = duplicate_read.result() if duplicate_read is not None else (
             supabase_admin.table("attendance")
             .select("id, status")
             .eq("session_id", session_id)

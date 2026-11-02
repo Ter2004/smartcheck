@@ -8,6 +8,7 @@ from app import limiter as _limiter
 from flask_limiter.util import get_remote_address
 from app.models.user_model import get_user_by_id
 from app.services.security_service import csrf_protect_form
+from app.services.session_lifetime import LIFETIME_KEY, login_lifetime_seconds
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -108,6 +109,10 @@ def login():
         session["user_name"]    = user["full_name"]
         # Sprint 1C: per-session CSRF token (สร้างใหม่พร้อม session ใหม่)
         session["csrf_token"]   = secrets.token_hex(32)
+        # Students in the app and admins stay logged in longer (session_lifetime.py).
+        lifetime = login_lifetime_seconds(user["role"], from_app(), current_app.config)
+        if lifetime:
+            session[LIFETIME_KEY] = lifetime
         session.modified        = True
 
         # A6: force password change on first login after CSV import

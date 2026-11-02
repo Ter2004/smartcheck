@@ -170,6 +170,8 @@ def create_app():
     with app.app_context():
         db.create_all()
         Session(app)
+    from app.services import session_lifetime
+    session_lifetime.enable(app)
 
     # --- Rate limiter — Sprint 1C ---
     limiter.init_app(app)

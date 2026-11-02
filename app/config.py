@@ -120,7 +120,11 @@ class Config:
             threshold=20000)
     SESSION_SQLALCHEMY_TABLE   = "flask_sessions"
     SESSION_PERMANENT          = True
-    PERMANENT_SESSION_LIFETIME = 3600          # 1 hour
+    PERMANENT_SESSION_LIFETIME = 3600          # 1 hour: teachers, and students in a browser
+    # Longer logins (app/services/session_lifetime.py), counted from the last use.
+    # Students in the Android app: about one term. Admin: "permanent" (10 years).
+    STUDENT_APP_SESSION_DAYS   = int(os.getenv("STUDENT_APP_SESSION_DAYS", "120"))
+    ADMIN_SESSION_DAYS         = int(os.getenv("ADMIN_SESSION_DAYS", "3650"))
     SESSION_COOKIE_HTTPONLY    = True           # JS cannot read the session cookie
     SESSION_COOKIE_SAMESITE    = "Strict"       # CSRF layer 1
     SESSION_COOKIE_SECURE      = _IS_PRODUCTION  # True in production (TLS required)

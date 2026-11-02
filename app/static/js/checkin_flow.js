@@ -624,6 +624,9 @@ class CheckinFlow {
         const status = document.getElementById('broadcastStatus');
         document.getElementById('broadcastRetryBtn').style.display = 'none';
         status.textContent = 'กำลังหาสัญญาณห้องเรียน...';
+        // Camera and board scan start together (the scan takes 0.1–0.5 s in a room),
+        // so a tap on the class-open notification lands on the face screen at once.
+        const early = this._openCameraEarly();
         let result;
         try {
             result = await new BroadcastRoomScanner().findRoom(this.expectedRoom);
@@ -632,16 +635,32 @@ class CheckinFlow {
         } finally {
             this._broadcastScanning = false;
         }
+        if (this._proximity !== early.pending) return;   // replaced meanwhile (e.g. a new scan)
         if (!result.ok) {
             console.info('step=broadcast_scan result=reject details=' + JSON.stringify({code: result.code || 'scan_error'}));
-            status.textContent = result.error;
+            early.settle(false);
+            this._earlyRefused();
+            status.textContent = result.code === 'not_found'
+                ? 'คาบเปิดแล้ว แต่ยังไม่พบสัญญาณห้องเรียน — มาเข้าห้องเรียนแล้วกด "ลองใหม่"'
+                : result.error;
             document.getElementById('broadcastRetryBtn').style.display = 'block';
             return;
         }
         console.info('step=broadcast_scan result=pass details={}');
         status.textContent = 'พบสัญญาณห้อง ' + result.room;
-        // The camera opens now; the server checks the board code meanwhile.
-        await this._verifyProximity(result.room, null, null, {broadcast_payload: result.payload}, true);
+        // The server checks the board code while the camera runs.
+        await this._verifyProximity(result.room, null, null, {broadcast_payload: result.payload}, early);
+    }
+
+    /** Pending proximity (no receipt yet) and the camera starting: {pending, settle, capture}. */
+    _openCameraEarly(room = null) {
+        const started = performance.now();
+        let settle = () => {};
+        const receiptReady = new Promise(resolve => { settle = resolve; });
+        const pending = {room, receipt: null, receiptReady,
+            deadline: started + CheckinFlow.EARLY_RECEIPT_MS, captureStarted: started};
+        this._proximity = pending;
+        return {pending, settle, capture: this._startVerify()};
     }
 
     async _fetchBleChallenge(room) {
@@ -663,7 +682,8 @@ class CheckinFlow {
     }
 
     // early (broadcast board): the camera starts while the server checks the board
-    // code, and the check-in itself waits for the receipt (_submitCheckin).
+    // code, and the check-in itself waits for the receipt (_submitCheckin). Pass true
+    // to open the camera here, or the {pending, settle, capture} of _openCameraEarly.
     static EARLY_RECEIPT_MS = 90000;
 
     async _verifyProximity(room, bleResponse, via = null, extra = {}, early = false) {
@@ -673,11 +693,8 @@ class CheckinFlow {
         let issued = false;
         let pending = null, settle = () => {}, capture = null;
         if (early) {
-            const receiptReady = new Promise(resolve => { settle = resolve; });
-            pending = {room, receipt: null, receiptReady,
-                deadline: started + CheckinFlow.EARLY_RECEIPT_MS, captureStarted: started};
-            this._proximity = pending;
-            capture = this._startVerify();
+            ({pending, settle, capture} = early === true ? this._openCameraEarly(room) : early);
+            pending.room = room;
         }
         try {
             const response = await fetch('/api/checkin/proximity', {

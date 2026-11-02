@@ -293,6 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
+{% if push_in_app %}<script src="{{ url_for('static', filename='js/push_notifications.js') }}"></script>{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

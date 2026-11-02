@@ -3,10 +3,11 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, current_app, jsonify, request, session
 
 from app import supabase_admin
 from app.routes.auth import login_required, role_required
+from app.services import class_push
 from app.services.security_service import csrf_protect
 
 push_bp = Blueprint("push", __name__)
@@ -14,6 +15,17 @@ _log = logging.getLogger("smartcheck.push")
 
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_:\-]{20,4096}$")
 SESSION_KEY = "push_token"   # removed from push_devices on logout (auth.logout)
+# Added to the User-Agent by app builds that include Firebase (android-app/build-apk.js).
+PUSH_USER_AGENT = "SmartCheckPush"
+
+
+@push_bp.app_context_processor
+def push_context():
+    """push_in_app: base.html loads push_notifications.js (students, Firebase build, server can send)."""
+    on = (session.get("user_role") == "student"
+          and PUSH_USER_AGENT in request.headers.get("User-Agent", "")
+          and class_push.enabled(current_app.config))
+    return {"push_in_app": on}
 
 
 @push_bp.route("/api/push/register", methods=["POST"])

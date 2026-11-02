@@ -819,6 +819,7 @@ class CheckinFlow {
             document.getElementById('doneResultView').style.display  = 'block';
 
             this._retryRoomCode = json.retry_room_code === true;
+            if (json.ok || json.already_checked) this._clearNotification();
             if (json.ok) {
                 this._showDone('success', json.message || 'เช็คชื่อสำเร็จ!', false);
             } else if (json.already_checked) {
@@ -835,6 +836,11 @@ class CheckinFlow {
             console.error('Check-in response failed', {name: e.name, status: e.httpStatus});
             this._showDone('error', e.userMessage || 'การเชื่อมต่อขาดหาย กรุณาตรวจประวัติเช็คชื่อก่อนลองใหม่ หากยังไม่ได้บันทึกให้โหลดหน้าใหม่', false);
         }
+    }
+
+    /** Remove this class's "open" notification from the bar (push_notifications.js; app only). */
+    _clearNotification() {
+        if (typeof SmartCheckPush !== 'undefined') SmartCheckPush.clear(this.sessionId).catch(() => {});
     }
 
     async _readCheckinResponse(res) {

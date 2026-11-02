@@ -3,3 +3,6 @@ dist/
 # Written by build-apk.js for each build (holds the server URL)
 capacitor.config.json
 www/server-url.js
+# Firebase app config (put it here; build-apk.js copies it into android/app)
+google-services.json
+android/app/google-services.json

@@ -39,14 +39,21 @@ function run(command, args, options = {}) {
 }
 
 const url = serverUrl();
+// Class-open notifications need the Firebase app config (docs/push-notifications.md).
+// Without it the app still builds and works, just without notifications.
+const firebaseConfig = path.join(root, 'google-services.json');
+const push = fs.existsSync(firebaseConfig);
 const config = {
     appId: APP_ID,
     appName: APP_NAME,
     webDir: 'www',
     // The server sends the app straight to the class open now (app/routes/auth.py APP_USER_AGENT).
-    appendUserAgent: 'SmartCheckApp',
+    // SmartCheckPush: this build can receive notifications (app/routes/push.py).
+    appendUserAgent: push ? 'SmartCheckApp SmartCheckPush' : 'SmartCheckApp',
     server: {url, errorPath: 'error.html'},
     android: {allowMixedContent: false},
+    // Show a notification in the bar even while the app is open.
+    plugins: {PushNotifications: {presentationOptions: ['badge', 'sound', 'alert']}},
 };
 fs.writeFileSync(path.join(root, 'capacitor.config.json'), JSON.stringify(config, null, 2) + '\n');
 fs.writeFileSync(path.join(root, 'www', 'server-url.js'), 'window.SMARTCHECK_URL = ' + JSON.stringify(url + '/') + ';\n');
@@ -64,6 +71,13 @@ if (!env.ANDROID_HOME || !fs.existsSync(env.ANDROID_HOME)) fail('Android SDK not
 const android = path.join(root, 'android');
 if (!fs.existsSync(android)) run('npx', ['cap', 'add', 'android'], {cwd: root, env});
 run('npx', ['cap', 'sync', 'android'], {cwd: root, env});
+const builtFirebaseConfig = path.join(android, 'app', 'google-services.json');
+if (push) {
+    fs.copyFileSync(firebaseConfig, builtFirebaseConfig);
+} else if (fs.existsSync(builtFirebaseConfig)) {
+    fs.unlinkSync(builtFirebaseConfig);
+}
+console.log('notifications: ' + (push ? 'on (google-services.json)' : 'off (no google-services.json)'));
 fs.writeFileSync(path.join(android, 'local.properties'),
     'sdk.dir=' + env.ANDROID_HOME.replace(/\\/g, '\\\\').replace(/:/g, '\\:') + '\n');
 // Full path: cmd may not search the current folder (NoDefaultCurrentDirectoryInExePath).
@@ -75,4 +89,4 @@ if (!fs.existsSync(apk)) fail('build finished but no APK at ' + apk);
 fs.mkdirSync(path.join(root, 'dist'), {recursive: true});
 const out = path.join(root, 'dist', 'SmartCheck-debug.apk');
 fs.copyFileSync(apk, out);
-console.log('\nAPK: ' + out + '\nserver URL inside: ' + url);
+console.log('\nAPK: ' + out + '\nserver URL inside: ' + url + '\nnotifications: ' + (push ? 'on' : 'off'));

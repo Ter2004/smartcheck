@@ -24,6 +24,16 @@
 
         </activity>
 
+        <!-- Class-open notifications (Firebase): channel the app creates at start
+             (app/static/js/push_notifications.js) and a white status-bar icon. Any
+             application meta-data also lets the plugin show them while the app is open. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="checkin" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_checkin" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -42,4 +52,6 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- Bluetooth scan and location permissions come from @capacitor-community/bluetooth-le. -->
+    <!-- Android 13+: asked at the first start (push_notifications.js). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

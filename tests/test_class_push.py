@@ -227,6 +227,21 @@ class RegisterTests(unittest.TestCase):
         self.assertNotEqual(self.register(TOKEN_A).status_code, 200)
         self.query.upsert.assert_not_called()
 
+    def test_push_script_only_for_students_in_a_firebase_build_when_the_server_can_send(self):
+        from flask import render_template_string
+
+        def loaded(user_agent, role="student", enabled=True):
+            with self.web.test_request_context("/", headers={"User-Agent": user_agent}), \
+                    patch.object(class_push, "enabled", return_value=enabled):
+                from flask import session
+                session["user_role"] = role
+                return render_template_string("{{ 'yes' if push_in_app else 'no' }}") == "yes"
+        app_ua = "Mozilla/5.0 (Linux; Android 16; wv) SmartCheckApp SmartCheckPush"
+        self.assertTrue(loaded(app_ua))
+        self.assertFalse(loaded("Mozilla/5.0 (Linux; Android 16; wv) SmartCheckApp"))
+        self.assertFalse(loaded(app_ua, role="teacher"))
+        self.assertFalse(loaded(app_ua, enabled=False))
+
     def test_logout_forgets_this_phone(self):
         self.register(TOKEN_A)
         self.client.post("/logout", data={"csrf_token": "c"})

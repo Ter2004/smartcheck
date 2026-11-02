@@ -2,6 +2,7 @@
 scheduler.py — Auto create/close sessions ตาม schedules table
 รันทุก 1 นาที:
   - สร้าง session อัตโนมัติสำหรับทุก schedule ที่ตรงกับวันนี้ (ถ้ายังไม่มี)
+  - เปิด session ตามกติกาใน app/services/class_open.py (อาจารย์กด หรือเปิดเองหลังเริ่ม 15 นาที)
   - ปิด session ถ้าเลยเวลาจบแล้ว
 """
 import logging
@@ -9,6 +10,8 @@ from threading import Lock
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
+
+from app.services import class_open
 
 _log = logging.getLogger("smartcheck.scheduler")
 
@@ -23,6 +26,11 @@ _warned_unmatched = set()
 def _get_supabase():
     from app import supabase_admin
     return supabase_admin
+
+
+def _get_config():
+    from app.config import Config
+    return {k: getattr(Config, k) for k in dir(Config) if k.isupper()}
 
 
 def _read_all(make_query):
@@ -88,13 +96,14 @@ def _close_expired_sessions(sb, now):
 
 
 def auto_manage_sessions():
+    opened = []   # sessions this tick opened by itself
     try:
+        config    = _get_config()
         sb        = _get_supabase()
         now       = datetime.now(timezone.utc)
         local_now = now.astimezone(TZ_THAI)
         today_dow  = local_now.weekday()
         today_date = local_now.date().isoformat()
-        now_time   = local_now.time()
 
         # Recover missed closures even when the server was down for days.
         _close_expired_sessions(sb, now)
@@ -135,7 +144,7 @@ def auto_manage_sessions():
             ).astimezone(timezone.utc)
             existing = (
                 sb.table("sessions")
-                .select("id, is_open, end_time")
+                .select("*")   # opened_at exists only after migration 20261103
                 .eq("course_id", course_id)
                 .eq("start_time", sched_start_dt.isoformat())
                 .execute()
@@ -145,16 +154,18 @@ def auto_manage_sessions():
             if not existing and beacon_id_to_use:
                 day_name  = DAY_NAMES[today_dow]
                 title     = f"{course['code']} {day_name} {today_date} ({sch_start}–{sch_end})"
+                fields, auto_opened = class_open.scheduled_state({}, sched_start_dt, sched_end_dt, now, config)
                 try:
-                    sb.table("sessions").insert({
+                    created = sb.table("sessions").insert({
                         "course_id":  course_id,
                         "beacon_id":  beacon_id_to_use,
                         "title":      title,
                         "start_time": sched_start_dt.isoformat(),
-                        "end_time":   sched_end_dt.isoformat() if now_time >= end_time else None,
-                        "is_open":    start_time <= now_time < end_time,
-                    }).execute()
+                        **fields,
+                    }).execute().data or []
                     _log.info(f"[SCHEDULER] Auto-created: {title}")
+                    if auto_opened:
+                        opened.extend(row["id"] for row in created)
                 except Exception as insert_err:
                     err_str = str(insert_err)
                     if "23505" in err_str or "duplicate" in err_str.lower() or "unique" in err_str.lower():
@@ -166,14 +177,19 @@ def auto_manage_sessions():
                         raise
 
             # Each occurrence follows its own schedule, including adjacent classes.
-            desired_open = start_time <= now_time < end_time
-            desired_end = sched_end_dt.isoformat() if now_time >= end_time else None
             for sess in existing:
-                if sess["is_open"] != desired_open or sess.get("end_time") != desired_end:
-                    sb.table("sessions").update({
-                        "is_open": desired_open,
-                        "end_time": desired_end,
-                    }).eq("id", sess["id"]).execute()
+                fields, auto_opened = class_open.scheduled_state(sess, sched_start_dt, sched_end_dt, now, config)
+                changes = {k: v for k, v in fields.items() if sess.get(k) != v}
+                if not changes:
+                    continue
+                query = sb.table("sessions").update(changes).eq("id", sess["id"])
+                if class_open.teacher_mode(config) and not sess.get("opened_at") and now < sched_end_dt:
+                    # The teacher may press "open" between our read and this write.
+                    query = query.is_("opened_at", "null")
+                updated = query.execute().data or []
+                if auto_opened and updated:
+                    _log.info(f"[SCHEDULER] Auto-opened (no teacher press): {sess['id']}")
+                    opened.extend(row["id"] for row in updated)
 
     except Exception as e:
         _log.error(f"[SCHEDULER] Error: {e}", exc_info=True)

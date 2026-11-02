@@ -19,7 +19,7 @@ from app.services.security_service import (
     verify_device_token_details, csrf_protect,
 )
 from app.services.esp32_totp import verify_code
-from app.services import ble_challenge, proximity_receipt
+from app.services import ble_challenge, class_open, proximity_receipt
 from app.services.liveness_challenge import (
     new_challenge as new_liveness_challenge, verify as verify_liveness,
     CHALLENGE_TTL_S as LIVENESS_CHALLENGE_TTL_S, CHECKIN_ACTIONS,
@@ -372,13 +372,9 @@ def _record_attendance(sess, session_id, student_id, score, antispoof_pass, live
         return jsonify({"ok": False, "already_checked": True, "error": f"เช็คชื่อแล้ว (สถานะ: {dup.data[0]['status']})"}), 400
 
     # ─── 8. Determine attendance status (present / late) ─────────────────────
+    # Inside the teacher's on-time window present, after it late (class_open.py).
     now = datetime.now(timezone.utc)
-    start_time_str = sess.get("start_time", "")
-    status = "present"
-    if start_time_str:
-        start_time = dtparser.parse(start_time_str)
-        if now > start_time and (now - start_time).total_seconds() > 900:
-            status = "late"
+    status = class_open.checkin_status(sess, now, current_app.config)
 
     # ─── 9. Insert attendance record ─────────────────────────────────────────
     # ใช้ upsert + on_conflict เพื่อป้องกัน TOCTOU race condition:
@@ -452,7 +448,7 @@ def _eligible(data):
     with stage("session_lookup"):
         sess_res = (
             supabase_admin.table("sessions")
-            .select("id, course_id, is_open, beacon_id, start_time, end_time, checkin_duration, beacons(ble_room_code)")
+            .select("*, beacons(ble_room_code)")   # opened_at/present_minutes after migration 20261103
             .eq("id", session_id)
             .maybe_single()
             .execute()

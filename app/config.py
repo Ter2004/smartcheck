@@ -93,6 +93,17 @@ class Config:
     # phones without BLE or LINE (e.g. iPhone Safari). Off by default: a code read
     # off the screen can be forwarded within its minute, weaker than BLE/LINE.
     CHECKIN_SESSION_CODE = os.getenv("CHECKIN_SESSION_CODE", "0") == "1"
+    # Who opens a class (app/services/class_open.py): "teacher" (button, needs migration
+    # 20261103_teacher_open_and_push.sql) or "schedule" (old: open for the whole
+    # scheduled time, late after 15 minutes).
+    SESSION_OPEN_MODE = os.getenv("SESSION_OPEN_MODE", "teacher").lower()
+    if SESSION_OPEN_MODE not in ("teacher", "schedule"):
+        _log.warning(f"[SmartCheck] SESSION_OPEN_MODE={SESSION_OPEN_MODE!r} is invalid — using 'teacher'.")
+        SESSION_OPEN_MODE = "teacher"
+    CLASS_ON_TIME_MINUTES = int(os.getenv("CLASS_ON_TIME_MINUTES", "5"))           # default window: present
+    CLASS_ON_TIME_MAX_MINUTES = int(os.getenv("CLASS_ON_TIME_MAX_MINUTES", "60"))
+    CLASS_AUTO_OPEN_AFTER_MINUTES = int(os.getenv("CLASS_AUTO_OPEN_AFTER_MINUTES", "15"))
+    CLASS_EARLY_OPEN_MINUTES = int(os.getenv("CLASS_EARLY_OPEN_MINUTES", "15"))
     # LINE Beacon proximity (optional): the LINE app detects the room board and LINE
     # posts a webhook to /line/webhook. Needs migration 20261020_line_beacon.sql.
     LINE_BEACON_ENABLED = os.getenv("LINE_BEACON_ENABLED", "0") == "1"
@@ -120,10 +131,12 @@ class Config:
             threshold=20000)
     SESSION_SQLALCHEMY_TABLE   = "flask_sessions"
     SESSION_PERMANENT          = True
-    PERMANENT_SESSION_LIFETIME = 3600          # 1 hour: teachers, and students in a browser
+    PERMANENT_SESSION_LIFETIME = 3600          # 1 hour: students in a browser
     # Longer logins (app/services/session_lifetime.py), counted from the last use.
-    # Students in the Android app: about one term. Admin: "permanent" (10 years).
+    # Students in the Android app and teachers (they press "open class" every
+    # class): about one term. Admin: "permanent" (10 years).
     STUDENT_APP_SESSION_DAYS   = int(os.getenv("STUDENT_APP_SESSION_DAYS", "120"))
+    TEACHER_SESSION_DAYS       = int(os.getenv("TEACHER_SESSION_DAYS", "120"))
     ADMIN_SESSION_DAYS         = int(os.getenv("ADMIN_SESSION_DAYS", "3650"))
     SESSION_COOKIE_HTTPONLY    = True           # JS cannot read the session cookie
     SESSION_COOKIE_SAMESITE    = "Strict"       # CSRF layer 1

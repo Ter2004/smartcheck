@@ -14,6 +14,8 @@ def login_lifetime_seconds(role, in_app, config):
     """Seconds this login should last, or None for the default (PERMANENT_SESSION_LIFETIME)."""
     if role == "admin":
         return int(config["ADMIN_SESSION_DAYS"]) * 86400
+    if role == "teacher":
+        return int(config["TEACHER_SESSION_DAYS"]) * 86400
     if role == "student" and in_app:
         return int(config["STUDENT_APP_SESSION_DAYS"]) * 86400
     return None

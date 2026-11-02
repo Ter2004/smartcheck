@@ -108,7 +108,9 @@ class SchedulerTests(unittest.TestCase):
             return q
         db.table.side_effect = table
         now = datetime(2026, 9, 21, hour, minute, tzinfo=scheduler.TZ_THAI).astimezone(timezone.utc)
-        with patch.object(scheduler, '_close_expired_sessions'), \
+        # The old open-for-the-whole-schedule rule; teacher mode is in test_class_open.py.
+        config = {'SESSION_OPEN_MODE': 'schedule'}
+        with patch.object(scheduler, '_close_expired_sessions'), patch.object(scheduler, '_get_config', return_value=config), \
                 patch.object(scheduler, '_get_supabase', return_value=db), patch.object(scheduler, 'datetime') as clock:
             clock.now.return_value = now
             scheduler.auto_manage_sessions()
@@ -122,7 +124,8 @@ class SchedulerTests(unittest.TestCase):
                 if expected is None:
                     self.assertEqual(updates, [])
                 else:
-                    self.assertEqual(updates[0]['is_open'], expected)
+                    # Only changed fields are written; the row starts closed.
+                    self.assertEqual(updates[0].get('is_open', False), expected)
                     self.assertNotIn('start_time', updates[0])
 
     def test_created_session_is_open_only_during_schedule(self):

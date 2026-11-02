@@ -5,7 +5,7 @@ from flask import (Blueprint, render_template, request, redirect,
                    url_for, flash, session, jsonify, Response, abort, current_app)
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
-from app.services import attendance_export
+from app.services import attendance_export, class_open
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
 
 teacher_bp = Blueprint("teacher", __name__)
@@ -155,8 +155,18 @@ def dashboard():
         .data or []
     )
 
+    now = datetime.now(timezone.utc)
+    config = current_app.config
+    for s in today_sessions:
+        s["on_time_until"] = _iso(class_open.on_time_until(s, config))
+        s["can_open"] = class_open.teacher_mode(config) and class_open.open_refusal(s, now, config) is None
+        s["opens_from"] = _iso(class_open.opens_from(s, config)) if s.get("start_time") else None
+
     return render_template(
         "teacher/dashboard.html",
+        open_mode_teacher=class_open.teacher_mode(config),
+        on_time_default=config["CLASS_ON_TIME_MINUTES"],
+        on_time_max=config["CLASS_ON_TIME_MAX_MINUTES"],
         courses=courses,
         recent_sessions=recent_sessions,
         beacons=beacons,
@@ -214,6 +224,50 @@ def session_view(session_id):
         att_map=att_map,
         photos=_enrollment_photos([s["student_id"] for s in all_students]),
     )
+
+
+def _iso(moment):
+    return moment.astimezone(timezone.utc).isoformat() if moment else None
+
+
+@teacher_bp.route("/session/<session_id>/open", methods=["POST"])
+@login_required
+@role_required("teacher")
+@csrf_protect_form
+def session_open(session_id):
+    """The teacher opens the class; check-ins inside the chosen minutes are on time."""
+    config = current_app.config
+    if not class_open.teacher_mode(config):
+        abort(404)
+    teacher_id = session["user_id"]
+    res = (supabase_admin.table("sessions").select("*, courses(code, name, teacher_id)")
+           .eq("id", session_id).maybe_single().execute())
+    sess = res.data if res else None
+    if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
+        flash("ไม่พบ session หรือไม่มีสิทธิ์", "danger")
+        return redirect(url_for("teacher.dashboard"))
+    minutes = class_open.parse_minutes(request.form.get("minutes"), config)
+    if minutes is None:
+        flash(f"ใส่เวลาเช็คชื่อทันเวลาเป็นนาที 1–{config['CLASS_ON_TIME_MAX_MINUTES']}", "warning")
+        return redirect(url_for("teacher.dashboard"))
+    now = datetime.now(timezone.utc)
+    refusal = class_open.open_refusal(sess, now, config)
+    if refusal:
+        flash(refusal, "warning")
+        return redirect(url_for("teacher.dashboard"))
+    opened = (supabase_admin.table("sessions")
+              .update({"is_open": True, "opened_at": now.isoformat(), "opened_by": teacher_id,
+                       "present_minutes": minutes})
+              .eq("id", session_id).eq("is_open", False).is_("end_time", "null")
+              .execute().data or [])
+    if not opened:   # the scheduler opened or closed it meanwhile
+        flash("คาบนี้เปิดอยู่แล้วหรือจบไปแล้ว", "warning")
+        return redirect(url_for("teacher.dashboard"))
+    log_audit_event(supabase_admin, teacher_id, "teacher", "session_override",
+                    session_id=session_id, new_value="opened", metadata={"present_minutes": minutes})
+    until = (now + timedelta(minutes=minutes)).astimezone(timezone(timedelta(hours=7)))
+    flash(f"เปิดคาบ {sess['courses']['code']} แล้ว — เช็คชื่อทันเวลาได้ถึง {until:%H:%M}", "success")
+    return redirect(url_for("teacher.dashboard"))
 
 
 def _owned_session(session_id, teacher_id):

@@ -1,4 +1,4 @@
-"""Per-login lifetimes: students in the app ~4 months, admin "permanent", the rest 1 hour."""
+"""Per-login lifetimes: students in the app and teachers ~4 months, admin "permanent", the rest 1 hour."""
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -13,7 +13,7 @@ from app.routes import auth
 from app.services import session_lifetime
 from app.services.session_lifetime import LIFETIME_KEY
 
-CONFIG = {"STUDENT_APP_SESSION_DAYS": 120, "ADMIN_SESSION_DAYS": 3650}
+CONFIG = {"STUDENT_APP_SESSION_DAYS": 120, "ADMIN_SESSION_DAYS": 3650, "TEACHER_SESSION_DAYS": 120}
 APP_UA = "Mozilla/5.0 (Linux; Android 16; wv) Chrome/140 Mobile SmartCheckApp"
 BROWSER_UA = "Mozilla/5.0 (Linux; Android 16) Chrome/140 Mobile"
 
@@ -46,8 +46,12 @@ class LoginLifetimeTests(unittest.TestCase):
         self.assertEqual(self.lifetime_after_login("admin", BROWSER_UA), 3650 * 86400)
         self.assertEqual(self.lifetime_after_login("admin", APP_UA), 3650 * 86400)
 
-    def test_teachers_and_browser_students_keep_one_hour(self):
-        self.assertIsNone(self.lifetime_after_login("teacher", APP_UA))
+    def test_teachers_stay_about_a_term_anywhere(self):
+        # They press "open class" every class; a 1-hour login meant logging in each time.
+        self.assertEqual(self.lifetime_after_login("teacher", BROWSER_UA), 120 * 86400)
+        self.assertEqual(self.lifetime_after_login("teacher", APP_UA), 120 * 86400)
+
+    def test_browser_students_keep_one_hour(self):
         self.assertIsNone(self.lifetime_after_login("student", BROWSER_UA))
 
 

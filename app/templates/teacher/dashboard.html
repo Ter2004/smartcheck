@@ -40,9 +40,32 @@
                     </p>
                 </div>
             </div>
-            <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="flex flex-wrap items-center justify-end gap-2 flex-shrink-0">
                 {% if s.end_time and not s.is_open %}
                 <span class="text-xs font-medium bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full">เสร็จแล้ว</span>
+                {% elif s.is_open and s.on_time_until %}
+                <span class="text-xs text-emerald-700">ทันเวลาถึง {{ s.on_time_until | thai_time('%H:%M') }}</span>
+                {% elif open_mode_teacher and not s.is_open %}
+                <form method="post" action="{{ url_for('teacher.session_open', session_id=s.id) }}"
+                      class="flex items-center gap-1.5">
+                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                    <label class="text-xs text-slate-500" for="minutes-{{ s.id }}">ทันเวลา</label>
+                    <input id="minutes-{{ s.id }}" type="number" name="minutes" min="1" max="{{ on_time_max }}"
+                           value="{{ on_time_default }}" required
+                           class="w-14 text-xs border border-slate-200 rounded-lg px-2 py-1.5">
+                    <span class="text-xs text-slate-500">นาที</span>
+                    {% if s.can_open %}
+                    <button type="submit"
+                            class="text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+                        เปิดคาบ
+                    </button>
+                    {% else %}
+                    <button type="button" disabled
+                            class="text-xs font-medium bg-slate-100 text-slate-400 px-3 py-1.5 rounded-lg">
+                        เปิดได้ {{ s.opens_from | thai_time('%H:%M') }}
+                    </button>
+                    {% endif %}
+                </form>
                 {% endif %}
                 <a href="{{ url_for('teacher.session_view', session_id=s.id) }}"
                    class="text-xs font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors">

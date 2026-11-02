@@ -59,8 +59,9 @@ limiter = Limiter(
 def _refresh_clients():
     """สร้าง supabase client ใหม่ (เรียกเมื่อ connection ตาย)"""
     global supabase, supabase_admin
-    supabase = create_client(Config.SUPABASE_URL, Config.SUPABASE_ANON_KEY)
-    supabase_admin = create_client(Config.SUPABASE_URL, Config.SUPABASE_SERVICE_KEY)
+    from app.services.supabase_http import harden
+    supabase = harden(create_client(Config.SUPABASE_URL, Config.SUPABASE_ANON_KEY))
+    supabase_admin = harden(create_client(Config.SUPABASE_URL, Config.SUPABASE_SERVICE_KEY))
 
 
 def _trust_proxies(app):

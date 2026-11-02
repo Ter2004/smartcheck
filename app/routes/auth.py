@@ -216,14 +216,16 @@ def from_app() -> bool:
 def _redirect_by_role(role: str, app_start: bool = False):
     """Redirect ไปหน้า dashboard ตาม role
 
-    app_start: opening the app or logging in there. A student goes to
-    student.start (straight to the class open now) instead of the dashboard.
+    app_start: opening the app or logging in there. A student goes straight to
+    the class open now (student.start_target) instead of the dashboard, in one
+    redirect: each hop is a round trip through the tunnel (~0.3 s, 2026-11-02).
     """
     if role == "admin":
         return redirect(url_for("admin.dashboard"))
     elif role == "teacher":
         return redirect(url_for("teacher.dashboard"))
     elif app_start and from_app():
-        return redirect(url_for("student.start"))
+        from app.routes.student import start_target   # student imports this module
+        return redirect(start_target())
     else:
         return redirect(url_for("student.dashboard"))

@@ -27,7 +27,8 @@ class EnrollmentStatusUnavailable(Exception):
     """The current enrollment state could not be established."""
 
 
-@student_bp.errorhandler(EnrollmentStatusUnavailable)
+# App-wide: "/" and the app login read the status too (auth._redirect_by_role).
+@student_bp.app_errorhandler(EnrollmentStatusUnavailable)
 def enrollment_status_unavailable(error):
     # Standalone response: rendering the shared layout would query status again.
     return Response(
@@ -248,7 +249,12 @@ def _open_sessions_today(user_id, started=None):
 @login_required
 @role_required("student")
 def start():
-    """Opening the Android app: straight to the class open for check-in now.
+    """Opening the Android app: straight to the class open for check-in now."""
+    return redirect(start_target())
+
+
+def start_target():
+    """Where the app opens for this student (auth sends it there in one redirect).
 
     One open class not checked yet: its check-in page. Several: the class list.
     None (or no face enrolled yet): the dashboard.
@@ -271,10 +277,10 @@ def start():
         } if ids else set()
         unchecked = [i for i in ids if i not in checked]
         if len(unchecked) == 1:
-            return redirect(url_for("student.checkin", session_id=unchecked[0]))
+            return url_for("student.checkin", session_id=unchecked[0])
         if unchecked:
-            return redirect(url_for("student.checkin"))
-    return redirect(url_for("student.dashboard"))
+            return url_for("student.checkin")
+    return url_for("student.dashboard")
 
 
 @student_bp.route("/checkin")

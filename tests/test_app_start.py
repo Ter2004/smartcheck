@@ -44,7 +44,8 @@ class AppStartTests(unittest.TestCase):
         return response.headers["Location"]
 
     def test_opening_the_app_goes_to_the_one_open_class(self):
-        self.assertEqual(self.location("/", APP_UA), "/student/start")
+        # One redirect, not two: each hop is a round trip through the tunnel.
+        self.assertEqual(self.location("/", APP_UA), "/student/checkin?session_id=s1")
         self.assertEqual(self.location("/student/start", APP_UA), "/student/checkin?session_id=s1")
 
     def test_browser_still_gets_the_dashboard(self):
@@ -67,6 +68,12 @@ class AppStartTests(unittest.TestCase):
     def test_not_enrolled_goes_to_the_dashboard(self):
         self.enrolled = False
         self.assertEqual(self.location("/student/start", APP_UA), "/student/dashboard")
+
+    def test_status_read_failure_on_open_shows_the_retry_page_not_a_500(self):
+        with patch.object(student, "_enrollment_status", side_effect=student.EnrollmentStatusUnavailable()):
+            response = self.client.get("/", headers=APP_UA)
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("ลองใหม่".encode(), response.data)
 
 
 class StaticVersionTests(unittest.TestCase):

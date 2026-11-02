@@ -28,3 +28,6 @@ firmware/smartcheck_ble/secret.h
 /compare-out/
 firmware/line_beacon/secret.h
 firmware/smartcheck_broadcast/secret.h
+
+# Tailwind CLI (tools/tailwind: npm install, then npm run build)
+tools/tailwind/node_modules/

@@ -1,0 +1,11 @@
+{
+  "name": "smartcheck-tailwind",
+  "private": true,
+  "description": "Builds app/static/css/tailwind.css from the templates and scripts",
+  "scripts": {
+    "build": "tailwindcss -c tailwind.config.js -i input.css -o ../../app/static/css/tailwind.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}

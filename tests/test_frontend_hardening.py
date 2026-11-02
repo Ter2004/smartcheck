@@ -1,6 +1,4 @@
 """Phase 3 front-end hardening, pinned at source level (no browser here)."""
-import hashlib
-import base64
 import re
 import unittest
 from pathlib import Path
@@ -45,13 +43,32 @@ class FrontendHardeningTests(unittest.TestCase):
             with self.subTest(js=js):
                 self.assertNotIn("@mediapipe/face_mesh/${f}", source)
 
-    def test_tailwind_is_served_locally_and_unchanged(self):
-        self.assertNotIn("cdn.tailwindcss.com", read("app/templates/base.html"))
+    def test_tailwind_is_a_prebuilt_local_stylesheet_last_in_head(self):
+        base = read("app/templates/base.html")
+        self.assertNotIn("cdn.tailwindcss.com", base)
         self.assertNotIn("cdn.tailwindcss.com", read("app/__init__.py"))
-        digest = hashlib.sha384((ROOT / "app/static/vendor/tailwindcss-3.4.17.js").read_bytes()).digest()
-        # Same bytes as https://cdn.tailwindcss.com/3.4.17 on 2026-09-29.
-        self.assertEqual(base64.b64encode(digest).decode(),
-                         "igm5BeiBt36UU4gqwWS7imYmelpTsZlQ45FZf+XBn9MuJbn4nQr7yx1yFydocC/K")
+        self.assertNotIn("tailwind.config", base, "no Play CDN runtime")
+        head = base[:base.index("</head>")]
+        # Last in <head>, where the runtime used to add its <style>: same cascade.
+        self.assertTrue(head.rstrip().endswith("""filename='css/tailwind.css') }}">"""))
+
+    def test_every_template_class_is_in_the_built_css(self):
+        # Fails when a template gains a Tailwind class and tools/tailwind was not
+        # rebuilt (npm run build there). Classes may also come from the custom CSS.
+        css = read("app/static/css/tailwind.css")
+        custom = read("app/static/css/style.css") + read("app/static/css/modern.css")
+        hooks = {"row-check", "todo"}   # JavaScript selectors/states, never styled
+        escape = lambda t: re.sub(r'([:/.\[\]()%#!,=&@*+>~])', lambda m: chr(92) + m.group(1), t)
+        missing = set()
+        for page in TEMPLATES.rglob("*.html"):
+            text = page.read_text(encoding="utf-8")
+            custom += "".join(re.findall(r"<style[^>]*>(.*?)</style>", text, re.S))
+            for attr in re.findall(r'class="([^"]*)"', text):
+                for token in re.sub(r"\{\{.*?\}\}|\{%.*?%\}", " ", attr).split():
+                    missing.add((token, page.name))
+        missing = sorted((t, p) for t, p in missing if t not in hooks and "." + escape(t) not in css
+                         and not re.search(r"\." + re.escape(t) + r"(?![\w-])", custom))
+        self.assertEqual(missing, [])
 
 
 if __name__ == "__main__":

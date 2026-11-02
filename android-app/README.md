@@ -27,10 +27,15 @@ node build-apk.js https://ที่อยู่เซิร์ฟเวอร์
 ถ้าที่อยู่เปลี่ยน — เช่นเปิด cloudflared quick tunnel ใหม่ — ต้อง build ใหม่ (ประมาณ 1–2 นาที) แล้วลงแอปทับ
 ก่อนแจกนักศึกษาควรมีที่อยู่ถาวร (Cloudflare named tunnel + โดเมน หรือ deploy บน cloud)
 
+## แจ้งเตือนเปิดคาบ (Firebase)
+วาง `google-services.json` จาก Firebase ไว้ที่ `android-app/google-services.json` ก่อน build
+บรรทัดท้ายของ build จะขึ้น `notifications: on` (ไม่มีไฟล์ = `off` แอปใช้ได้ปกติแต่ไม่มีแจ้งเตือน)
+ขั้นตอนทั้งหมด: `docs/push-notifications.md`
+
 ## ลงแอปบนมือถือ
 - **ผ่านสาย USB:** เปิด "ตัวเลือกสำหรับนักพัฒนา" → "USB debugging" บนมือถือ แล้ว
   `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe install -r dist\SmartCheck-debug.apk`
-- **ส่งไฟล์:** ส่ง APK ให้มือถือ (LINE/Drive) → เปิดไฟล์ → อนุญาต "ติดตั้งแอปที่ไม่รู้จัก"
+- **ส่งไฟล์:** ส่ง APK ให้มือถือ (เช่น Google Drive) → เปิดไฟล์ → อนุญาต "ติดตั้งแอปที่ไม่รู้จัก"
 
 ## ครั้งแรกที่เปิดหน้าเช็คชื่อ แอปจะขอสิทธิ์
 - **อุปกรณ์ใกล้เคียง (Bluetooth)** และ **ตำแหน่ง** — ต้องอนุญาตทั้งคู่

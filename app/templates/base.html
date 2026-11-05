@@ -211,9 +211,10 @@
 <!-- ─── Toast Container ──────────────────────────────────────── -->
 <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 w-80 pointer-events-none"></div>
 
-<!-- Flash messages data -->
+<!-- Flash messages data (toasts). The login page shows its messages inline, next
+     to the form, so they are not repeated as a toast there. -->
 {% with messages = get_flashed_messages(with_categories=true) %}
-{% if messages %}
+{% if messages and request.endpoint != 'auth.login' %}
 <div id="flash-data" style="display:none">
     {% for category, message in messages %}
     <span data-category="{{ category }}" data-message="{{ message|e }}"></span>

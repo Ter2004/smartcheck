@@ -17,6 +17,8 @@ body, input, select, textarea, button {
     font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans Thai', Tahoma, 'Segoe UI', sans-serif;
 }
 a { text-decoration: none; }
+::selection { background: #bedaff; color: #1d1d1f; }
+:is(input, textarea) { caret-color: var(--primary); }
 button, input, select, textarea { font: inherit; }
 button, summary { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
@@ -64,8 +66,8 @@ main .overflow-hidden:has(> table) { overflow-x: auto; }
 .login-layout { min-height: 100svh; display: grid; grid-template-columns: 1fr 1fr; }
 .login-intro { padding: clamp(40px, 7vw, 100px); display: flex; flex-direction: column; justify-content: space-between; background: #eceef2; }
 .login-wordmark { font-size: 20px; font-weight: 600; letter-spacing: -.04em; }
-.login-intro h2 { font-size: clamp(40px, 5vw, 72px); font-weight: 600; line-height: 1.25; letter-spacing: -.05em; margin: 32px 0 20px; }
-.login-intro p { color: var(--text-muted); font-size: 16px; }
+.login-intro h2 { font-size: clamp(40px, 5vw, 72px); font-weight: 600; line-height: 1.25; letter-spacing: -.035em; margin: 32px 0 20px; }
+.login-intro p { color: #5f5f64; font-size: 16px; }   /* 5.5:1 on the gray panel; --text-muted was 4.4:1 */
 .login-symbol { width: 88px; height: 88px; display: grid; place-items: center; background: #fff; border-radius: 26px; color: var(--primary); box-shadow: 0 12px 40px rgb(0 0 0 / 5%); }
 .login-symbol svg { width: 40px; height: 40px; }
 .login-form-panel { display: flex; align-items: center; justify-content: center; padding: 48px 32px; background: #fff; }

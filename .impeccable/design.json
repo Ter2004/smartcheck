@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-06T00:30:00+07:00",
+  "title": "Design System: SmartCheck",
+  "extensions": {
+    "colorMeta": {
+      "action-blue": { "role": "primary", "displayName": "Action Blue", "canonical": "#0071e3", "tonalRamp": ["#003c78", "#004f9e", "#0062c4", "#0071e3", "#5299f0", "#91bfff", "#bedaff", "#eef5ff"] },
+      "canvas": { "role": "neutral", "displayName": "Canvas", "canonical": "#f5f5f7", "tonalRamp": ["#1d1d1f", "#424245", "#6e6e73", "#a1a1a6", "#d2d2d7", "#e5e5ea", "#f5f5f7", "#ffffff"] },
+      "present-green": { "role": "status", "displayName": "Present Green", "canonical": "#047857", "tonalRamp": ["#064e3b", "#065f46", "#047857", "#059669", "#10b981", "#6ee7b7", "#a7f3d0", "#ecfdf5"] },
+      "late-amber": { "role": "status", "displayName": "Late Amber", "canonical": "#b45309", "tonalRamp": ["#78350f", "#92400e", "#b45309", "#d97706", "#f59e0b", "#fcd34d", "#fde68a", "#fffbeb"] },
+      "error-rose": { "role": "status", "displayName": "Error Rose", "canonical": "#be123c", "tonalRamp": ["#881337", "#9f1239", "#be123c", "#e11d48", "#f43f5e", "#fda4af", "#fecdd3", "#fff1f2"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Page titles (main h1)." },
+      "title": { "displayName": "Title", "purpose": "Card and section titles, course codes." },
+      "body": { "displayName": "Body", "purpose": "Content and descriptions." },
+      "label": { "displayName": "Label", "purpose": "Field labels, table headers, badges, meta; not for text a student must act on." },
+      "mono": { "displayName": "Mono", "purpose": "Room codes, session codes, IDs." }
+    },
+    "shadows": [
+      { "name": "card-ambient", "value": "0 4px 24px rgb(0 0 0 / 3%)", "purpose": "Every bordered card." },
+      { "name": "login-symbol", "value": "0 12px 40px rgb(0 0 0 / 5%)", "purpose": "The one lifted object on the login intro." }
+    ],
+    "motion": [
+      { "name": "state-change", "value": "150ms ease", "purpose": "Hover/pressed color changes on buttons and nav." },
+      { "name": "sidebar-slide", "value": "250ms ease", "purpose": "Mobile sidebar and overlay." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action color; full width as a phone form's main action.",
+      "html": "<button class=\"ds-btn-primary\">เข้าสู่ระบบ</button>",
+      "css": ".ds-btn-primary { background: #0071e3; color: #fff; min-height: 44px; padding: 10px 16px; border: 0; border-radius: 12px; font-weight: 500; font-size: 14px; transition: background 150ms ease; } .ds-btn-primary:hover { background: #0062c4; } .ds-btn-primary:active { background: #004f9e; } .ds-btn-primary:focus-visible { outline: 3px solid #0071e3; outline-offset: 3px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Quiet companion action such as 'ดูผล'.",
+      "html": "<button class=\"ds-btn-secondary\">ดูผล</button>",
+      "css": ".ds-btn-secondary { background: #fff; color: #424245; min-height: 36px; padding: 6px 12px; border: 1px solid #e5e5ea; border-radius: 12px; font-weight: 500; font-size: 12px; transition: background 150ms ease; } .ds-btn-secondary:hover { background: #f5f5f7; } .ds-btn-secondary:focus-visible { outline: 3px solid #0071e3; outline-offset: 3px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "44px field, 12px corners, blue focus ring.",
+      "html": "<input class=\"ds-input\" placeholder=\"อีเมล / ID\">",
+      "css": ".ds-input { background: #fff; color: #1d1d1f; min-height: 44px; padding: 10px 16px; border: 1px solid #d2d2d7; border-radius: 12px; font-size: 14px; width: 260px; } .ds-input:focus { outline: none; border-color: transparent; box-shadow: 0 0 0 2px #0071e3; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "White surface on the gray canvas, 22px corners, ambient shadow.",
+      "html": "<div class=\"ds-card\"><strong>TEST1 — วิชาทดสอบ</strong><p>08:00 · TEST-101</p></div>",
+      "css": ".ds-card { background: #fff; border: 1px solid #e5e5ea; border-radius: 22px; padding: 26px; box-shadow: 0 4px 24px rgb(0 0 0 / 3%); color: #1d1d1f; font-size: 14px; } .ds-card p { color: #6e6e73; margin: 4px 0 0; font-size: 12px; }"
+    },
+    {
+      "name": "Status Badges",
+      "kind": "chip",
+      "refersTo": "status-present",
+      "description": "Attendance truth only: present, late, failed.",
+      "html": "<span class=\"ds-badge ds-present\">มา</span> <span class=\"ds-badge ds-late\">สาย</span> <span class=\"ds-badge ds-error\">ไม่สำเร็จ</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; border: 1px solid; } .ds-present { background: #ecfdf5; color: #047857; border-color: #a7f3d0; } .ds-late { background: #fffbeb; color: #b45309; border-color: #fde68a; } .ds-error { background: #fff1f2; color: #be123c; border-color: #fecdd3; }"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "44px rows; active item on a blue-gray wash.",
+      "html": "<a class=\"ds-nav\">หน้าหลัก</a><a class=\"ds-nav ds-nav-active\">เช็คชื่อ</a>",
+      "css": ".ds-nav { display: flex; align-items: center; min-height: 44px; padding: 11px 14px; border-radius: 12px; color: #424245; font-size: 14px; } .ds-nav:hover { background: #f5f5f7; color: #1d1d1f; } .ds-nav-active { background: #e6edf7; color: #0062c4; font-weight: 600; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Classroom Door That Opens Itself",
+    "overview": "SmartCheck should feel like walking through a door that opens as you arrive. It is quiet, clean and fast. At each moment it shows only the next thing to do. Students and teachers arrive at a screen, get its one job done, and leave. Nothing on the page competes with the job.",
+    "keyCharacteristics": [
+      "One action color (Action Blue); status colors only for status.",
+      "White cards on a gray canvas, 22px corners, near-invisible shadow.",
+      "44px minimum controls, 12px control corners.",
+      "Thai-first typography; headline tracking tightened, body left at normal tracking."
+    ],
+    "rules": [
+      { "name": "The One Blue Rule", "body": "Every tappable primary action is Action Blue. The legacy indigo (#4f46e5, --primary in style.css, the brand scale) is retired. Any screen still showing it is a bug to fix, not a second accent.", "section": "colors" },
+      { "name": "The Status-Only Rule", "body": "Green, amber and rose appear only when they mean present, late or failed (or success, warning, error). Never use them as decoration.", "section": "colors" },
+      { "name": "The Thai Line-Height Rule", "body": "Never set Thai text below line-height 1.45, or upper vowels and tone marks collide with the line above.", "section": "typography" },
+      { "name": "The Phone Floor Rule", "body": "On student screens, any text a student must read to act is at least 0.875rem. This includes errors, the next step and status. Use 0.75rem only for meta that no one needs to act on.", "section": "typography" },
+      { "name": "The Flat Card Rule", "body": "Cards never get stronger shadows on hover. State is shown with color (blue wash, border) rather than lift.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use Action Blue (#0071e3) for every primary action and nothing else.",
+      "Do keep every tappable control at least 44px tall, and a phone form's main action full width.",
+      "Do write every error as the fix, in Thai: what to turn on, where to stand, what to press.",
+      "Do keep Thai text at line-height 1.45 or more.",
+      "Do rebuild app/static/css/tailwind.css (npm run build in tools/tailwind) after adding a Tailwind class."
+    ],
+    "donts": [
+      "Don't reintroduce the legacy indigo (#4f46e5) or a second accent color.",
+      "Don't use green, amber or rose for anything but attendance or result status.",
+      "Don't add hover lift or heavy shadows to cards.",
+      "Don't put text a student needs to act on below 0.875rem on student screens.",
+      "Don't change element ids used by checkin_flow.js, enrollment_v2.js or push_notifications.js while restyling."
+    ]
+  }
+}

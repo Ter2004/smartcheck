@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const read = name => fs.readFileSync(path.join(__dirname, '../app/static/js/', name), 'utf8');
 function harness(debug, options = {}) {
-    let now = 0, brightness = 100, callback, created = 0, streams = 0, closes = 0, submits = 0, meshes = 0;
+    let now = 0, brightness = 100, callback, created = 0, streams = 0, closes = 0, submits = 0, meshes = 0, warmups = 0;
     const timers = new Map(), elements = new Map();
     let timerId = 0;
     const node = () => ({style: {}, textContent: '', classList: {toggle() {}, remove() {}, add() {}},
@@ -32,7 +32,10 @@ function harness(debug, options = {}) {
         FaceMesh: class {
             constructor() {meshes++;}
             setOptions() {} onResults(fn) {callback = fn;} async initialize() {}
-            async send() {if (options.sendError) throw Error('send');}
+            async send(arg) {
+                if (arg && arg.image && arg.image.width === 64) warmups++;   // blank warm-up frame
+                if (options.sendError) throw Error('send');
+            }
             async close() {closes++; if (options.closeError) throw Error('close');}
         },
     });
@@ -47,7 +50,7 @@ function harness(debug, options = {}) {
     flow._proximity = {deadline: 90000};
     if (flow._debug) flow._debug.receiptDue = 90000;
     return {flow, context, elements, timers, created: () => created, streams: () => streams,
-        closes: () => closes, submits: () => submits, meshes: () => meshes, advance: t => now = t,
+        closes: () => closes, submits: () => submits, meshes: () => meshes, warmups: () => warmups, advance: t => now = t,
         dark: () => brightness = 0, frame: lm => callback({multiFaceLandmarks: lm ? [lm] : []})};
 }
 function landmarks(ear = .28) {
@@ -87,6 +90,8 @@ function landmarks(ear = .28) {
     const pre = harness(false);
     pre.flow._preloadFaceMesh();
     assert.equal(pre.meshes(), 1);
+    await pre.flow._meshPreload.ready;
+    assert.equal(pre.warmups(), 1, 'the preload builds the graph on a blank frame before the camera opens');
     await pre.flow._startVerify();
     assert.equal(pre.meshes(), 1, 'reuse the preloaded model');
     const ring = pre.elements.get('faceProgressVerify');

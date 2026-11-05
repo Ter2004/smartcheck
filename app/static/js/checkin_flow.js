@@ -146,7 +146,15 @@ class CheckinFlow {
         if (this._meshPreload || typeof FaceMesh === 'undefined') return;
         try {
             const mesh = this._newFaceMesh();
-            const ready = Promise.resolve(mesh.initialize());
+            // The first send() builds the WebGL graph (1.4 s on an OPPO, 2026-11-05).
+            // Do it on a blank frame while the board is being found, so detection starts
+            // with the camera's first frame. _startVerify sets the real onResults later.
+            mesh.onResults(() => {});
+            const ready = Promise.resolve(mesh.initialize()).then(() => {
+                const blank = document.createElement('canvas');
+                blank.width = blank.height = 64;
+                return mesh.send({image: blank});
+            });
             ready.catch(() => {});  // _startVerify sees the failure and shows it
             this._meshPreload = {mesh, ready};
         } catch (_) { /* _startVerify loads it again */ }

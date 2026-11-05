@@ -3,9 +3,10 @@
 Two notifications per class, only to enrolled students who have not checked in:
   1. when the class opens (teacher press or automatic open), and
   2. REMINDER_BEFORE the on-time window ends ("มาเรียนได้แล้ว").
-Both carry the same Android tag (the session id), so the reminder replaces the
-first one in the notification bar instead of stacking. The app removes it once
-the student has checked in.
+The app listens for the room board before showing each one and picks the text:
+in the room "แตะเพื่อสแกนหน้า", not yet "กรุณารีบมา" (android-app ClassPushService).
+Both use the session id as the Android tag, so the reminder replaces the first
+one instead of stacking. The app removes it once the student has checked in.
 
 Each notification is claimed with a conditional update (sessions.open_push_at /
 reminder_push_at IS NULL), so a teacher press, the scheduler tick and a second
@@ -23,7 +24,6 @@ from app.services import class_open, fcm
 
 _log = logging.getLogger("smartcheck.class_push")
 
-CHANNEL_ID = "checkin"                    # created by the app (app/static/js/push_notifications.js)
 REMINDER_BEFORE = timedelta(minutes=1)
 OPEN_CATCH_UP = timedelta(minutes=10)     # the tick still sends a missed open notification this late
 OPEN_TTL_S = 30 * 60                      # an offline phone gets it within this, else never
@@ -71,14 +71,26 @@ def _recipient_tokens(sess):
     return [r["token"] for r in rows]
 
 
-def message(sess, title, body, ttl_s):
-    """FCM v1 message (without the device token)."""
-    return {
-        "notification": {"title": title, "body": body},
-        "data": {"session_id": sess["id"], "url": f"/student/checkin?session_id={sess['id']}"},
-        "android": {"priority": "HIGH", "ttl": f"{int(ttl_s)}s",
-                    "notification": {"channel_id": CHANNEL_ID, "tag": sess["id"]}},
-    }
+def _room_code(sess):
+    if not sess.get("beacon_id"):
+        return ""
+    res = _db().table("beacons").select("ble_room_code").eq("id", sess["beacon_id"]).maybe_single().execute()
+    return (((res.data if res else None) or {}).get("ble_room_code") or "").strip()
+
+
+def message(sess, kind, room, texts, ttl_s):
+    """FCM v1 data-only message (without the device token).
+
+    texts: {"in": (title, body), "out": (...), "any": (...)}. The app listens for
+    the room board first and shows "in" or "out", or "any" when it cannot scan
+    (android-app ClassPushService). Data-only, so the app's code runs even when it
+    is closed; HIGH priority lets it scan right away.
+    """
+    data = {"kind": kind, "session_id": sess["id"], "room": room,
+            "url": f"/student/checkin?session_id={sess['id']}"}
+    for where, (title, body) in texts.items():
+        data["title_" + where], data["body_" + where] = title, body
+    return {"data": data, "android": {"priority": "HIGH", "ttl": f"{int(ttl_s)}s"}}
 
 
 def _send(config, tokens, msg):
@@ -106,9 +118,13 @@ def notify_opened(session_id, config, now=None):
     if not sess:
         return 0
     until = class_open.on_time_until(sess, config)
-    body = (f"แตะเพื่อเช็คชื่อ — มาเรียนทันเวลาถึง {until.astimezone(TH):%H:%M} น."
-            if until else "แตะเพื่อเช็คชื่อ")
-    msg = message(sess, f"{_course_code(sess)} เปิดเช็คชื่อแล้ว", body, OPEN_TTL_S)
+    by = f" (ทันเวลาถึง {until.astimezone(TH):%H:%M} น.)" if until else ""
+    code = _course_code(sess)
+    msg = message(sess, "open", _room_code(sess), {
+        "in": (f"{code} เปิดเช็คชื่อแล้ว", f"คุณอยู่ในห้องแล้ว — แตะเพื่อสแกนหน้าเช็คชื่อ{by}"),
+        "out": (f"{code} เริ่มแล้ว", f"กรุณารีบมาให้ทันเช็คชื่อ{by}"),
+        "any": (f"{code} เปิดเช็คชื่อแล้ว", f"แตะเพื่อเช็คชื่อ{by}"),
+    }, OPEN_TTL_S)
     return _send(config, _recipient_tokens(sess), msg)
 
 
@@ -123,9 +139,13 @@ def notify_reminder(session_id, config, now=None):
     until = class_open.on_time_until(sess, config)
     if until is None or now >= until:
         return 0
-    msg = message(sess, f"{_course_code(sess)} ยังไม่ได้เช็คชื่อ",
-                  f"อีก {max(1, round((until - now).total_seconds() / 60))} นาทีจะนับสาย — มาเรียนได้แล้ว แตะเพื่อเช็คชื่อ",
-                  max(1, (until - now).total_seconds()))
+    left = f"อีก {max(1, round((until - now).total_seconds() / 60))} นาทีจะนับสาย"
+    code = _course_code(sess)
+    msg = message(sess, "reminder", _room_code(sess), {
+        "in": (f"{code} ยังไม่ได้เช็คชื่อ", f"แตะเพื่อสแกนหน้าเช็คชื่อ — {left}"),
+        "out": (f"{code} {left}", "กรุณารีบมาให้ทันเช็คชื่อ"),
+        "any": (f"{code} ยังไม่ได้เช็คชื่อ", f"{left} — แตะเพื่อเช็คชื่อ"),
+    }, max(1, (until - now).total_seconds()))
     return _send(config, _recipient_tokens(sess), msg)
 
 

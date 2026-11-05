@@ -100,6 +100,7 @@ class Database:
                 return SimpleNamespace(data=[self.session_row])
             return SimpleNamespace(data={
                 "courses": {"code": "SE101"},
+                "beacons": {"ble_room_code": "TEST-101"},
                 "course_enrollments": [{"student_id": "s1"}, {"student_id": "s2"}, {"student_id": "s3"}],
                 "attendance": [{"student_id": "s2"}],
                 "push_devices": [{"token": TOKEN_A}, {"token": TOKEN_B}],
@@ -110,7 +111,7 @@ class Database:
 
 class NotifyTests(unittest.TestCase):
     def setUp(self):
-        self.row = {"id": "sess-1", "course_id": "c1", "is_open": True,
+        self.row = {"id": "sess-1", "course_id": "c1", "beacon_id": "b1", "is_open": True,
                     "opened_at": OPENED.isoformat(), "present_minutes": 5}
         self.sent = []
         sender = Mock()
@@ -130,10 +131,18 @@ class NotifyTests(unittest.TestCase):
         self.assertEqual(reached, 1)
         self.assertEqual([t for t, _ in self.sent], [TOKEN_A, TOKEN_B])
         msg = self.sent[0][1]
-        self.assertEqual(msg["notification"]["title"], "SE101 เปิดเช็คชื่อแล้ว")
-        self.assertIn("08:05", msg["notification"]["body"])
-        self.assertEqual(msg["data"]["url"], "/student/checkin?session_id=sess-1")
-        self.assertEqual(msg["android"]["notification"], {"channel_id": "checkin", "tag": "sess-1"})
+        self.assertNotIn("notification", msg, "data-only: the app scans for the board, then shows it")
+        data = msg["data"]
+        self.assertEqual((data["kind"], data["session_id"], data["room"]), ("open", "sess-1", "TEST-101"))
+        self.assertEqual(data["url"], "/student/checkin?session_id=sess-1")
+        self.assertEqual(data["title_in"], "SE101 เปิดเช็คชื่อแล้ว")
+        self.assertIn("แตะเพื่อสแกนหน้า", data["body_in"])
+        self.assertEqual(data["title_out"], "SE101 เริ่มแล้ว")
+        self.assertIn("กรุณารีบมาให้ทันเช็คชื่อ", data["body_out"])
+        for where in ("in", "out", "any"):
+            self.assertIn("08:05", data["body_" + where])
+        self.assertTrue(all(isinstance(v, str) for v in data.values()), "FCM data values are strings")
+        self.assertEqual(msg["android"]["priority"], "HIGH")
         self.assertEqual(db.deleted, [TOKEN_B])
         self.assertIn(("sessions", {"open_push_at": OPENED.isoformat()}), db.updates)
 
@@ -159,8 +168,11 @@ class NotifyTests(unittest.TestCase):
     def test_reminder_only_while_still_on_time(self):
         reached = self.run_with(Database(self.row), class_push.notify_reminder, OPENED + timedelta(minutes=4))
         self.assertEqual(reached, 1)
-        self.assertEqual(self.sent[0][1]["notification"]["title"], "SE101 ยังไม่ได้เช็คชื่อ")
-        self.assertIn("มาเรียนได้แล้ว", self.sent[0][1]["notification"]["body"])
+        data = self.sent[0][1]["data"]
+        self.assertEqual(data["kind"], "reminder")
+        self.assertEqual(data["title_in"], "SE101 ยังไม่ได้เช็คชื่อ")
+        self.assertEqual(data["title_out"], "SE101 อีก 1 นาทีจะนับสาย")
+        self.assertEqual(data["body_out"], "กรุณารีบมาให้ทันเช็คชื่อ")
         self.sent.clear()
         self.run_with(Database(self.row), class_push.notify_reminder, OPENED + timedelta(minutes=5))
         self.assertEqual(self.sent, [])

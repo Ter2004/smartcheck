@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -27,6 +28,19 @@
         <!-- Class-open notifications (Firebase): channel the app creates at start
              (app/static/js/push_notifications.js) and a white status-bar icon. Any
              application meta-data also lets the plugin show them while the app is open. -->
+        <!-- Class-open messages: listen for the room board, then pick the text
+             (ClassPushService). Replaces the push plugin's own service. -->
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
+        <service
+            android:name=".ClassPushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="checkin" />

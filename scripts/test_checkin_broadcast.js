@@ -114,10 +114,9 @@ const same = (actual, expected, message) => assert.equal(JSON.stringify(actual),
     // ── flow in the app: scans by itself, no tap-to-start guide ──
     let h = flowHarness({ble: fakeBle({adverts: [VECTOR]})});
     await h.flow.start();
-    assert.equal(h.cameras(), 1, 'camera opens together with the board scan');
-    assert.equal(h.requests.length, 0, 'before the board was found');
+    assert.equal(h.cameras(), 0, 'no camera before the board is found');
     await settle();
-    assert.equal(h.cameras(), 1, 'the same camera continues once the board is found');
+    assert.equal(h.cameras(), 1, 'camera opens once the board is found');
     assert.equal(h.guides(), 0, 'broadcast mode must not wait for a tap');
     assert.equal(h.el('stepBroadcastRoom').style.display, 'block');
     const proximity = h.requests.find(r => r.url === '/api/checkin/proximity');
@@ -165,16 +164,15 @@ const same = (actual, expected, message) => assert.equal(JSON.stringify(actual),
     assert.equal(h.el('broadcastRetryBtn').style.display, 'block');
     assert.equal(h.el('proximityStatus').textContent, 'stale code');
 
-    // ── not in the room (nothing found): camera closed, "come to class", retry button ──
+    // ── not in the room (nothing found): never opens the camera, asks to be in range ──
     h = flowHarness({ble: fakeBle()});
     await h.flow.start();
-    const waiting = h.flow._submitCheckin('face', 'passive');   // face done before the scan gave up
     await new Promise(resolve => setTimeout(resolve, 150));
-    await waiting;
+    assert.equal(h.cameras(), 0, 'no face scan outside the room');
     assert.equal(h.flow._proximity, null);
     assert.ok(!h.requests.length, 'nothing sent without the board');
     assert.equal(h.el('broadcastRetryBtn').style.display, 'block');
-    assert.match(h.el('broadcastStatus').textContent, /คาบเปิดแล้ว แต่ยังไม่พบสัญญาณห้องเรียน/);
+    assert.match(h.el('broadcastStatus').textContent, /กรุณาอยู่ภายในระยะสัญญาณของห้องเรียน/);
 
     // ── other scan failures keep the scanner's own message ──
     h = flowHarness({ble: fakeBle({enabled: false})});

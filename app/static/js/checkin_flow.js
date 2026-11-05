@@ -624,9 +624,7 @@ class CheckinFlow {
         const status = document.getElementById('broadcastStatus');
         document.getElementById('broadcastRetryBtn').style.display = 'none';
         status.textContent = 'กำลังหาสัญญาณห้องเรียน...';
-        // Camera and board scan start together (the scan takes 0.1–0.5 s in a room),
-        // so a tap on the class-open notification lands on the face screen at once.
-        const early = this._openCameraEarly();
+        // Board first: no camera, no face scan until the phone is in the room's range.
         let result;
         try {
             result = await new BroadcastRoomScanner().findRoom(this.expectedRoom);
@@ -635,21 +633,18 @@ class CheckinFlow {
         } finally {
             this._broadcastScanning = false;
         }
-        if (this._proximity !== early.pending) return;   // replaced meanwhile (e.g. a new scan)
         if (!result.ok) {
             console.info('step=broadcast_scan result=reject details=' + JSON.stringify({code: result.code || 'scan_error'}));
-            early.settle(false);
-            this._earlyRefused();
             status.textContent = result.code === 'not_found'
-                ? 'คาบเปิดแล้ว แต่ยังไม่พบสัญญาณห้องเรียน — มาเข้าห้องเรียนแล้วกด "ลองใหม่"'
+                ? 'ไม่พบสัญญาณห้องเรียน — กรุณาอยู่ภายในระยะสัญญาณของห้องเรียน แล้วกด "ลองใหม่"'
                 : result.error;
             document.getElementById('broadcastRetryBtn').style.display = 'block';
             return;
         }
         console.info('step=broadcast_scan result=pass details={}');
         status.textContent = 'พบสัญญาณห้อง ' + result.room;
-        // The server checks the board code while the camera runs.
-        await this._verifyProximity(result.room, null, null, {broadcast_payload: result.payload}, early);
+        // The camera opens now; the server checks the board code meanwhile.
+        await this._verifyProximity(result.room, null, null, {broadcast_payload: result.payload}, true);
     }
 
     /** Pending proximity (no receipt yet) and the camera starting: {pending, settle, capture}. */

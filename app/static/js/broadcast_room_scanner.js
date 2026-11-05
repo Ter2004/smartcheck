@@ -22,7 +22,7 @@
 class BroadcastRoomScanner {
     static COMPANY_ID = '65535';           // 0xFFFF, the plugin's decimal key
     static PAYLOAD_HEX_LEN = 46;           // 23 bytes
-    static TIMEOUT_MS = 15000;
+    static TIMEOUT_MS = 8000;      // in a room the board is found in 0.1–0.5 s (Redmi, 2026-11-02)
     static SCAN_MODE_LOW_LATENCY = 2;      // Android ScanSettings.SCAN_MODE_LOW_LATENCY
 
     static plugin() {

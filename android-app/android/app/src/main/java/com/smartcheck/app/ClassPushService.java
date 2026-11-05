@@ -15,11 +15,13 @@ import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.location.LocationManager;
 import android.os.Build;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.location.LocationManagerCompat;
 import com.capacitorjs.plugins.pushnotifications.MessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 import java.nio.charset.StandardCharsets;
@@ -126,6 +128,9 @@ public class ClassPushService extends MessagingService {
     /** The same permissions the check-in page asks for (bluetooth-le, androidNeverForLocation: false). */
     private boolean canScan() {
         if (!granted(Manifest.permission.ACCESS_FINE_LOCATION)) return false;
+        // Location off: Android delivers no scan results, which would read as "not in the room".
+        LocationManager location = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        if (location == null || !LocationManagerCompat.isLocationEnabled(location)) return false;
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.S || granted(Manifest.permission.BLUETOOTH_SCAN);
     }
 

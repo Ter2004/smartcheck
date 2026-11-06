@@ -41,6 +41,8 @@ def web_app():
     web = Flask(__name__, template_folder=str(templates))
     web.config.update(SECRET_KEY="test", RATELIMIT_ENABLED=False)
     web.jinja_env.filters["thai_time"] = lambda value, fmt=None: str(value)
+    from app.services.thai_dates import thai_date
+    web.jinja_env.filters["thai_date"] = thai_date   # create_app's filter
     app.limiter.init_app(web)
     for bp, prefix in ((auth.auth_bp, None), (admin.admin_bp, "/admin"),
                        (teacher.teacher_bp, "/teacher"), (student.student_bp, "/student")):

@@ -57,6 +57,17 @@ body[data-world="pass"] { background: var(--tarmac) !important; color: #fff; }
 .pass-on-light { border: 1px solid #DCE2EE; box-shadow: 0 6px 20px rgb(11 29 58 / 6%); }
 .pass-on-light .pass-perf::before, .pass-on-light .pass-perf::after { background: var(--bg, #F3F5FA); border: 1px solid #DCE2EE; }
 
+/* Segmented choice (teacher: on-time minutes). Radios stay real inputs for keyboard + readers. */
+.seg { display: flex; flex-wrap: wrap; gap: 8px; border: 0; padding: 0; margin: 0; }
+.seg-legend { width: 100%; font-size: 14px; color: var(--pass-muted); margin-bottom: 6px; }
+.seg label { flex: 1; min-width: 72px; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: flex; align-items: center; justify-content: center; min-height: 48px; border-radius: 12px;
+    border: 1.5px solid var(--pass-rule); color: var(--pass-ink); font-family: 'Anuphan', sans-serif; font-weight: 600;
+    font-size: 16px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.seg input:checked + span { background: var(--pass-ink); border-color: var(--pass-ink); color: #fff; }
+.seg input:focus-visible + span { outline: 3px solid var(--gate); outline-offset: 2px; }
+
 /* Actions */
 .btn-board { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 54px;
     border-radius: 14px; background: var(--go); color: #fff; font-family: 'Anuphan', sans-serif;

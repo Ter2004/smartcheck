@@ -6,30 +6,32 @@
 {% endblock %}
 
 {% block content %}
-<div class="max-w-3xl mx-auto text-center">
+<div class="max-w-3xl mx-auto">
     <a href="{{ url_for('teacher.session_view', session_id=sess.id) }}"
        class="inline-flex items-center gap-1.5 min-h-[44px] px-1 text-sm text-slate-600 hover:text-slate-900 mb-2">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
         กลับหน้าคาบเรียน
     </a>
-    <h1 class="text-2xl font-semibold text-slate-900">{{ sess.title }}</h1>
-    <p class="text-sm text-slate-500 mb-6">
-        {{ sess.courses.code }} · ห้อง {{ sess.beacons.room_name | replace('ห้อง ', '') if sess.beacons else '—' }}
-    </p>
-
-    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-10">
-        <p class="text-base text-slate-600 mb-2">สำหรับมือถือที่หาสัญญาณห้องไม่ได้ (เช่น iPhone): สแกน QR หรือกรอกรหัสในหน้าเช็คชื่อ</p>
-        <div id="codeLive">
-            <div id="qrBox" class="mx-auto my-4 w-64 h-64 sm:w-80 sm:h-80" aria-hidden="true"></div>
-            <p id="codeDigits" class="font-mono font-bold tracking-[0.3em] text-6xl sm:text-8xl text-slate-900 select-all"
-               aria-live="polite">------</p>
-            <div class="h-2 bg-slate-100 rounded-full overflow-hidden mt-6 max-w-md mx-auto">
-                <div id="codeBar" class="h-full bg-indigo-600 rounded-full" style="width:100%; transition: width 1s linear"></div>
-            </div>
-            <p id="codeLeft" class="text-sm text-slate-500 mt-2">&nbsp;</p>
+    <article class="pass pass-on-light text-center" aria-labelledby="codeTitle">
+        <div class="pass-band" id="codeBand" data-state="boarding">
+            <span id="codeBandLabel">รหัสสำรอง · เปิดเช็คชื่ออยู่</span>
+            <span>ห้อง {{ sess.beacons.room_name | replace('ห้อง ', '') if sess.beacons else '—' }}</span>
         </div>
-        <p id="codeClosed" class="text-lg text-rose-600 my-8" hidden>คาบนี้ปิดการเช็คชื่อแล้ว</p>
-    </div>
+        <div class="pass-body p-6 sm:p-10">
+            <h1 id="codeTitle" class="pass-code">{{ sess.courses.code }}</h1>
+            <p class="pass-name mb-2">สำหรับมือถือที่หาสัญญาณห้องไม่ได้ (เช่น iPhone): สแกน QR หรือกรอกรหัสในหน้าเช็คชื่อ</p>
+            <div id="codeLive">
+                <div id="qrBox" class="mx-auto my-4 w-64 h-64 sm:w-80 sm:h-80" aria-hidden="true"></div>
+                <p id="codeDigits" class="pass-display font-bold tracking-[0.3em] text-6xl sm:text-8xl text-slate-900 select-all"
+                   aria-live="polite">------</p>
+                <div class="h-2 bg-slate-100 rounded-full overflow-hidden mt-6 max-w-md mx-auto">
+                    <div id="codeBar" class="h-full bg-indigo-600 rounded-full" style="width:100%; transition: width 1s linear"></div>
+                </div>
+                <p id="codeLeft" class="text-sm text-slate-500 mt-2">&nbsp;</p>
+            </div>
+            <p id="codeClosed" class="text-lg my-8" style="color:var(--stop)" hidden>คาบนี้ปิดการเช็คชื่อแล้ว</p>
+        </div>
+    </article>
 
     <p class="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mt-4 text-left">
         รหัสนี้ถูกส่งต่อให้คนนอกห้องได้ภายในเวลาราว 1 นาที จึงอ่อนกว่าการยืนยันด้วยบอร์ดในห้อง —
@@ -60,6 +62,9 @@
             const closed = document.getElementById('codeClosed');
             closed.textContent = json.error || 'แสดงรหัสไม่ได้';
             closed.hidden = false;
+            // The band says it too, so the projector shows the state from across the room.
+            document.getElementById('codeBand').dataset.state = 'closed';
+            document.getElementById('codeBandLabel').textContent = json.closed ? 'ปิดเช็คชื่อแล้ว' : 'แสดงรหัสไม่ได้';
             return;
         }
         document.getElementById('qrBox').innerHTML = json.qr_svg;   // server-generated SVG

@@ -91,6 +91,26 @@ def _cache_static_files(app):
                 pass
 
 
+def _retry_seconds():
+    """Seconds until the limit that was hit resets (60 when it cannot be read)."""
+    import time
+    try:
+        hit = limiter.current_limit
+        if hit and hit.reset_at:
+            return max(1, int(hit.reset_at - time.time()) + 1)
+    except Exception:
+        pass
+    return 60
+
+
+def page_not_found(e):
+    """Thai 404 inside the app shell; API paths keep a JSON answer."""
+    from flask import jsonify, render_template, request as freq
+    if freq.is_json or "/api/" in freq.path:
+        return jsonify({"status": "error", "message": "ไม่พบหน้าที่ต้องการ"}), 404
+    return render_template("errors/not_found.html"), 404
+
+
 def rate_limit_exceeded(e):
     from flask import jsonify, request as freq
     retry_after = getattr(e, "retry_after", None) or getattr(e, "description", None)
@@ -105,7 +125,7 @@ def rate_limit_exceeded(e):
     if fsession.get("user_id"):
         # Logged in: a redirect to the login form would show it inside the
         # app layout, and one to the dashboard can hit the same limit again.
-        return render_template("errors/rate_limited.html"), 429
+        return render_template("errors/rate_limited.html", wait=_retry_seconds()), 429
     flash("คำขอมากเกินไป กรุณารอสักครู่แล้วลองใหม่", "warning")
     return redirect(url_for("auth.login"))
 
@@ -210,6 +230,9 @@ def create_app():
         except Exception:
             return str(utc_str)[:16]
     app.jinja_env.filters['thai_time'] = to_thai_time
+    # One date format on every screen: "6 พ.ย. 69" (owner decision 2026-11-07).
+    from app.services.thai_dates import thai_date
+    app.jinja_env.filters['thai_date'] = thai_date
 
     # --- Auto-reconnect เมื่อ httpx connection ตาย ---
     import httpx
@@ -222,6 +245,7 @@ def create_app():
         return redirect(freq.url)
 
     app.register_error_handler(429, rate_limit_exceeded)
+    app.register_error_handler(404, page_not_found)
 
     _cache_static_files(app)
 

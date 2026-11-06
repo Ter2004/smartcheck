@@ -18,14 +18,28 @@ _log = logging.getLogger("smartcheck.admin")
 @login_required
 @role_required("admin")
 def dashboard():
-    users_res = supabase_admin.table("users").select("*", count="exact").execute()
-    beacons_res = supabase_admin.table("beacons").select("*", count="exact").execute()
+    users_res = supabase_admin.table("users").select("id", count="exact").execute()
+    students_res = (supabase_admin.table("users").select("id", count="exact")
+                    .eq("role", "student").execute())
+    beacons_res = supabase_admin.table("beacons").select("id", count="exact").execute()
     stats = {
         "total_users": users_res.count or 0,
+        "students": students_res.count or 0,
         "total_beacons": beacons_res.count or 0,
         "enrolled_biometrics": _enrolled_face_count(),
+        "has_term": _has_term(),
     }
-    return render_template("admin/dashboard.html", stats=stats)
+    from datetime import datetime, timedelta, timezone
+    today = datetime.now(timezone(timedelta(hours=7))).date()
+    return render_template("admin/dashboard.html", stats=stats, today=today)
+
+
+def _has_term():
+    """A term is set (the whole-term export needs it); True before the terms migration."""
+    try:
+        return bool(supabase_admin.table("terms").select("name").limit(1).execute().data)
+    except Exception:
+        return True   # table missing: do not nag about a feature that is not installed
 
 
 def _enrolled_face_count():

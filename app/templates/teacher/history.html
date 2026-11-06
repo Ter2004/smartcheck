@@ -64,8 +64,8 @@
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden md:table-cell">ชื่อคาบ</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">วันที่</th>
                     <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">เวลา</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">เข้าเรียน</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">สถานะ</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">เข้าเรียน</th>
+                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden sm:table-cell">สถานะ</th>
                     <th class="px-4 py-3"></th>
                 </tr>
             </thead>
@@ -82,7 +82,7 @@
                     <span class="text-xs text-slate-500 max-w-48 truncate block">{{ s.title }}</span>
                 </td>
                 <td class="px-4 py-3.5">
-                    <span class="font-mono text-xs text-slate-600">{{ s.start_time | thai_time('%d/%m/%y') }}</span>
+                    <span class="text-xs text-slate-600">{{ s.start_time | thai_date(with_time=true) }}</span>
                 </td>
                 <td class="px-4 py-3.5 hidden sm:table-cell">
                     <span class="font-mono text-xs text-slate-600">{{ s.start_time | thai_time('%H:%M') }}</span>
@@ -90,11 +90,11 @@
                     <span class="text-slate-400 text-xs">→ {{ s.end_time | thai_time('%H:%M') }}</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3.5 hidden sm:table-cell">
+                <td class="px-4 py-3.5">
                     <span class="text-sm font-semibold text-indigo-600">{{ s.present_count }}</span>
                     <span class="text-xs text-slate-400"> คน</span>
                 </td>
-                <td class="px-4 py-3.5">
+                <td class="px-4 py-3.5 hidden sm:table-cell">
                     {% if s.is_open %}
                     <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full">
                         <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>

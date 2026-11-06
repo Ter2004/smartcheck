@@ -224,6 +224,21 @@ Icons are drawn SVG, not emoji. With no retry, "กลับหน้าวั�
 - **Student phone:** bottom `.tabbar`. Active tab is amber with `aria-current="page"`. Logout lives in the บัญชี tab.
 - **Sidebar (all roles, ≥1024px):** navy. The active item has an amber label/icon on a tarmac-2 pill. The logo tile is amber.
 
+### Dates
+Every screen shows dates as "6 พ.ย. 69" (Buddhist year, two digits), with the time after it when it matters ("6 พ.ย. 69 08:05"). Use the `thai_date` filter (app/services/thai_dates.py). It converts UTC timestamps to Thai time; never slice `start_time[:10]`, because that is the UTC date. Browser date inputs keep the browser's own format.
+
+### Student account (บัญชี tab)
+A pass answering "am I set up?":
+- the band says พร้อมเช็คชื่อ / ยังไม่พร้อมเช็คชื่อ;
+- face status, with an enrol button when missing;
+- notification permission, read from the Android app;
+- then password and logout.
+
+Consent withdrawal stays "contact admin" (owner decision 2026-11-07).
+
+### Segmented choice (`.seg`)
+Real radio inputs drawn as 48 px segments. The selected segment is ink-filled. Used for the teacher's on-time minutes (5 / 10 / 15), so opening a class needs no keyboard.
+
 ## Do's and Don'ts
 
 ### Do

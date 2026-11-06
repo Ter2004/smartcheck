@@ -172,6 +172,20 @@ def dashboard():
                            board_states={row["id"]: row["state"] for row in board})
 
 
+@student_bp.route("/account")
+@login_required
+@role_required("student")
+def account():
+    """The บัญชี tab: am I set up (face, notifications), then password and logout."""
+    from app.models.user_model import get_user_by_id
+    user = get_user_by_id(session["user_id"]) or {}
+    try:
+        enrolled = _enrollment_status()["is_enrolled"]
+    except EnrollmentStatusUnavailable:
+        enrolled = None   # the page still opens; it says the status could not be read
+    return render_template("student/account.html", user=user, enrolled=enrolled)
+
+
 @student_bp.route("/today.json")
 # Own limit: the home page polls every 15 s while a class is still to open (240/hour
 # would pass the 200/hour default 50 minutes in).

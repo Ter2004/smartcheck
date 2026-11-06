@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}บัญชี — SmartCheck{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto">
+<header class="pass-head">
+    <small>บัญชีของฉัน</small>
+    <h1>{{ user.full_name or session.get('user_name', '') }}</h1>
+</header>
+
+<!-- "Am I set up?" in one pass: face, notifications, then the account actions. -->
+<article class="pass" aria-label="สถานะบัญชี">
+    <div class="pass-band" data-state="{{ 'boarded' if enrolled else 'waiting' }}">
+        <span>{{ 'พร้อมเช็คชื่อ' if enrolled else 'ยังไม่พร้อมเช็คชื่อ' }}</span>
+        <span>{{ user.student_id or '' }}</span>
+    </div>
+    <div class="pass-body">
+        <p class="pass-name">{{ user.email or '' }}</p>
+        <dl class="acct-list">
+            <div>
+                <dt>ใบหน้า</dt>
+                <dd>
+                    {% if enrolled %}<span class="chip boarded">ลงทะเบียนแล้ว</span>
+                    {% elif enrolled is none %}<span class="chip-muted">ตรวจสอบไม่ได้ ลองโหลดหน้าใหม่</span>
+                    {% else %}<span class="chip closed">ยังไม่ลงทะเบียน</span>{% endif %}
+                </dd>
+            </div>
+            <div>
+                <dt>การแจ้งเตือน</dt>
+                <dd><span id="pushState" class="chip-muted">ใช้ได้ในแอป SmartCheck บน Android</span></dd>
+            </div>
+        </dl>
+    </div>
+    <div class="pass-perf" aria-hidden="true"></div>
+    <div class="pass-foot flex flex-col gap-2">
+        {% if enrolled is sameas false %}
+        <a href="{{ url_for('student.enroll_face') }}" class="btn-board">ลงทะเบียนใบหน้า</a>
+        {% endif %}
+        <a href="{{ url_for('auth.change_password') }}" class="btn-quiet">เปลี่ยนรหัสผ่าน</a>
+        <form method="POST" action="{{ url_for('auth.logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+            <button type="submit" class="btn-quiet">ออกจากระบบ</button>
+        </form>
+    </div>
+</article>
+
+<p class="mt-4 text-sm text-center" style="color:rgb(255 255 255 / 72%)">ต้องการถอนความยินยอมและลบข้อมูลใบหน้า กรุณาติดต่อผู้ดูแลระบบ (admin)</p>
+</div>
+{% endblock %}
+
+{% block head %}
+<style>
+    .acct-list { margin-top: 14px; }
+    .acct-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 12px 0; border-top: 1px solid var(--pass-rule); }
+    .acct-list dt { font-size: 15px; color: var(--pass-muted); }
+    .acct-list dd { text-align: right; }
+    .chip-muted { font-size: 14px; color: var(--pass-muted); }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Notifications: only the Android app can receive them; ask the app for its permission.
+(async function () {
+    const out = document.getElementById('pushState');
+    const cap = globalThis.Capacitor;
+    const pn = cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform()
+        && cap.Plugins && cap.Plugins.PushNotifications;
+    if (!pn || !out) return;
+    try {
+        const p = await pn.checkPermissions();
+        if (p.receive === 'granted') {
+            out.className = 'chip boarded';
+            out.textContent = 'เปิดอยู่';
+        } else {
+            out.className = 'chip-muted';
+            out.textContent = 'ปิดอยู่ — เปิดได้ที่ ตั้งค่า > แอป > SmartCheck > การแจ้งเตือน';
+        }
+    } catch (_) { /* keep the default line */ }
+})();
+</script>
+{% endblock %}

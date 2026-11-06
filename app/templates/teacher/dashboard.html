@@ -16,7 +16,7 @@
 <div class="mb-8">
     <div class="flex items-center gap-2 mb-3">
         <h2 class="text-lg font-semibold text-slate-900">คาบวันนี้</h2>
-        <span class="text-sm text-slate-500">{{ today }}</span>
+        <span class="text-sm text-slate-500">{{ today | thai_date }}</span>
     </div>
     {% if today_sessions %}
     <div class="grid gap-4 md:grid-cols-2">
@@ -25,7 +25,7 @@
             {% if s.is_open %}
             <div class="pass-band" data-state="boarding"><span>เปิดเช็คชื่ออยู่</span><span>{% if s.on_time_until %}ทันเวลาถึง {{ s.on_time_until | thai_time('%H:%M') }}{% endif %}</span></div>
             {% elif s.end_time %}
-            <div class="pass-band" data-state="closed"><span>ปิดแล้ว</span><span>{{ s.start_time | thai_time('%H:%M') }}</span></div>
+            <div class="pass-band" data-state="closed"><span>ปิดแล้ว</span><span>เริ่ม {{ s.start_time | thai_time('%H:%M') }}</span></div>
             {% else %}
             <div class="pass-band" data-state="waiting"><span>รอเปิดคาบ</span><span>เริ่ม {{ s.start_time | thai_time('%H:%M') }}</span></div>
             {% endif %}
@@ -36,17 +36,20 @@
             <div class="pass-perf" aria-hidden="true"></div>
             <div class="pass-foot flex flex-col gap-2">
                 {% if open_mode_teacher and not s.is_open and not s.end_time %}
-                <form method="post" action="{{ url_for('teacher.session_open', session_id=s.id) }}" class="flex items-center gap-2">
+                <form method="post" action="{{ url_for('teacher.session_open', session_id=s.id) }}" class="flex flex-col gap-2">
                     <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
-                    <label class="text-sm text-slate-600" for="minutes-{{ s.id }}">ทันเวลา</label>
-                    <input id="minutes-{{ s.id }}" type="number" name="minutes" min="1" max="{{ on_time_max }}"
-                           value="{{ on_time_default }}" required
-                           class="w-16 min-h-[48px] text-lg text-center border border-slate-300 rounded-xl px-2 pass-display">
-                    <span class="text-sm text-slate-600">นาที</span>
+                    {% set choices = ([5, 10, 15] + ([on_time_default] if on_time_default not in [5, 10, 15] and on_time_default <= on_time_max else [])) | sort %}
+                    <fieldset class="seg" aria-describedby="minutes-help-{{ s.id }}">
+                        <legend class="seg-legend">นับว่าทันเวลาภายใน</legend>
+                        {% for m in choices if m <= on_time_max %}
+                        <label><input type="radio" name="minutes" value="{{ m }}" {{ 'checked' if m == on_time_default }}><span>{{ m }} นาที</span></label>
+                        {% endfor %}
+                    </fieldset>
+                    <p id="minutes-help-{{ s.id }}" class="sr-only">หลังจากนี้ยังเช็คชื่อได้ แต่จะนับว่ามาสาย</p>
                     {% if s.can_open %}
-                    <button type="submit" class="btn-board flex-1">เปิดคาบ</button>
+                    <button type="submit" class="btn-board">เปิดคาบ</button>
                     {% else %}
-                    <button type="button" disabled class="btn-quiet flex-1 cursor-not-allowed" style="color:var(--pass-muted)">เปิดได้ {{ s.opens_from | thai_time('%H:%M') }}</button>
+                    <button type="button" disabled class="btn-quiet cursor-not-allowed" style="color:var(--pass-muted)">ยังไม่ถึงเวลา · เปิดได้ตั้งแต่ {{ s.opens_from | thai_time('%H:%M') }}</button>
                     {% endif %}
                 </form>
                 {% endif %}
@@ -85,7 +88,7 @@
             {% if s.thai_date > today %}
             <tr class="hover:bg-slate-50 transition-colors">
                 <td class="px-5 py-3.5">
-                    <span class="text-xs font-mono text-slate-600">{{ s.start_time[:10] }}</span>
+                    <span class="text-xs text-slate-600">{{ s.start_time | thai_date(with_time=true) }}</span>
                 </td>
                 <td class="px-4 py-3.5">
                     <span class="text-sm font-medium text-slate-800">{{ s.courses.code }}</span>
@@ -136,7 +139,7 @@
             {% if s.thai_date < today %}
             <tr class="hover:bg-slate-50 transition-colors">
                 <td class="px-5 py-3.5">
-                    <span class="text-xs font-mono text-slate-600">{{ s.start_time[:10] }}</span>
+                    <span class="text-xs text-slate-600">{{ s.start_time | thai_date(with_time=true) }}</span>
                 </td>
                 <td class="px-4 py-3.5">
                     <span class="text-sm font-medium text-slate-800">{{ s.courses.code }}</span>

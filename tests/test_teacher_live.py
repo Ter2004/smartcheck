@@ -14,6 +14,15 @@ class LiveCountTests(unittest.TestCase):
         self.assertEqual(live_counts([{"status": "present"}] * 3, 2)["rest"], 0)
 
 
+class RosterOrderTests(unittest.TestCase):
+    def test_missing_students_first_while_open_then_by_name(self):
+        from app.routes.teacher import order_roster
+        roster = [{"student_id": i, "users": {"full_name": n}} for i, n in [("c", "Chai"), ("a", "Anan"), ("b", "Boon")]]
+        checked = {"a": {"status": "present"}}
+        self.assertEqual([e["student_id"] for e in order_roster(roster, checked, True)], ["b", "c", "a"])
+        self.assertEqual([e["student_id"] for e in order_roster(roster, checked, False)], ["a", "b", "c"])
+
+
 class LivePollLimitTests(unittest.TestCase):
     """The 10 s poll is 360/hour: the 200/hour default answered 429 at request 201."""
     def test_poll_has_its_own_per_minute_limit(self):

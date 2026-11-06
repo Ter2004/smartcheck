@@ -75,7 +75,7 @@
                         {% if cl and cl.consent_given %}
                         <div class="flex flex-col gap-0.5">
                             <span class="text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-full w-fit">ยินยอม v{{ cl.consent_version or '1.0' }}</span>
-                            <span class="text-[10px] text-slate-400 font-mono">{{ cl.created_at[:10] if cl.created_at else '' }}</span>
+                            <span class="text-xs text-slate-500">{{ cl.created_at | thai_date(empty='') }}</span>
                         </div>
                         {% elif cl and not cl.consent_given %}
                         <span class="text-xs font-medium bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full">ถอนความยินยอม</span>
@@ -85,7 +85,7 @@
                     </td>
                     <td class="px-4 py-3.5 hidden lg:table-cell">
                         {% set when = (r.v2.completed_at if r.v2 and r.v2.completed_at else r.enrolled_at) %}
-                        <span class="text-xs text-slate-400 font-mono">{{ when[:10] if when else '—' }}</span>
+                        <span class="text-xs text-slate-400 font-mono">{{ when | thai_date }}</span>
                     </td>
                     <td class="px-4 py-3.5">
                         {% if r.face_embeddings or r.v2 %}

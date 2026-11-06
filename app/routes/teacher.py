@@ -216,6 +216,7 @@ def session_view(session_id):
 
     # att_map: student_id → attendance row (สร้างใน Python เพื่อใช้ใน template)
     att_map = {a["student_id"]: a for a in attendance}
+    all_students = order_roster(all_students, att_map, bool(sess.get("is_open")))
     sess["on_time_until"] = _iso(class_open.on_time_until(sess, current_app.config)) if sess.get("is_open") else None
 
     return render_template(
@@ -230,6 +231,14 @@ def session_view(session_id):
 
 
 CHECKED_STATUSES = ("present", "late", "manual")
+
+
+def order_roster(enrollments, att_map, is_open):
+    """By name; while the class is open, the students not checked in yet come first."""
+    by_name = sorted(enrollments, key=lambda e: ((e.get("users") or {}).get("full_name") or ""))
+    if not is_open:
+        return by_name
+    return sorted(by_name, key=lambda e: e.get("student_id") in att_map)   # stable: keeps name order
 
 
 def live_counts(attendance, total):

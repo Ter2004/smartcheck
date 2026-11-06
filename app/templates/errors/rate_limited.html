@@ -1,18 +1,46 @@
 {% extends "base.html" %}
-{% block title %}คำขอมากเกินไป — SmartCheck{% endblock %}
+{% block title %}รอสักครู่ — SmartCheck{% endblock %}
 
 {% block content %}
+{% set wait = wait or 60 %}
 <div class="max-w-md mx-auto pt-6">
     <article class="pass{% if session.get('user_role') != 'student' %} pass-on-light{% endif %}" aria-labelledby="rl-title">
-        <div class="pass-band" data-state="closed"><span>รอสักครู่</span><span>429</span></div>
+        <div class="pass-band" data-state="closed"><span>รอสักครู่</span><span id="rlLeft" aria-live="off">{{ '%d:%02d' | format(wait // 60, wait % 60) }}</span></div>
         <div class="pass-body">
             <h1 id="rl-title" class="pass-code" style="font-size:24px">คำขอมากเกินไป</h1>
-            <p class="pass-name mt-1">ระบบรับคำขอจากเครื่องนี้ถี่เกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง</p>
+            <p class="pass-name mt-1">ระบบพักคำขอจากบัญชีนี้ไว้ชั่วครู่ เพื่อไม่ให้เซิร์ฟเวอร์ทำงานหนักเกิน ลองใหม่ได้เมื่อเวลาด้านบนหมด</p>
         </div>
         <div class="pass-perf" aria-hidden="true"></div>
         <div class="pass-foot">
-            <a href="{{ request.full_path }}" class="btn-board">ลองใหม่</a>
+            <a href="{{ request.full_path }}" id="rlRetry" class="btn-quiet" aria-disabled="true" data-wait="{{ wait }}">ลองใหม่ได้ในอีก {{ wait }} วินาที</a>
         </div>
     </article>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Retrying early hits the same limit again: count down, then turn the button on.
+(function () {
+    const btn = document.getElementById('rlRetry');
+    const left = document.getElementById('rlLeft');
+    if (!btn) return;
+    let wait = parseInt(btn.dataset.wait, 10) || 60;
+    btn.addEventListener('click', e => { if (wait > 0) e.preventDefault(); });
+    const tick = () => {
+        wait -= 1;
+        if (wait <= 0) {
+            left.textContent = '0:00';
+            btn.textContent = 'ลองใหม่';
+            btn.className = 'btn-board';
+            btn.removeAttribute('aria-disabled');
+            return;
+        }
+        left.textContent = Math.floor(wait / 60) + ':' + String(wait % 60).padStart(2, '0');
+        btn.textContent = 'ลองใหม่ได้ในอีก ' + wait + ' วินาที';
+        setTimeout(tick, 1000);
+    };
+    setTimeout(tick, 1000);
+})();
+</script>
 {% endblock %}

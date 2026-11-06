@@ -18,19 +18,19 @@
 <!-- Role filter tabs -->
 <div class="flex items-center gap-1.5 mb-5">
     <a href="{{ url_for('admin.users') }}"
-       class="inline-flex items-center min-h-[40px] text-sm font-medium px-4 rounded-xl border transition-colors {% if not role_filter %}bg-indigo-600 border-indigo-600 text-white{% else %}bg-white border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+       class="inline-flex items-center min-h-[44px] text-sm font-medium px-4 rounded-xl border transition-colors {% if not role_filter %}bg-indigo-600 border-indigo-600 text-white{% else %}bg-white border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
         ทั้งหมด
     </a>
     <a href="{{ url_for('admin.users', role='student') }}"
-       class="inline-flex items-center min-h-[40px] text-sm font-medium px-4 rounded-xl border transition-colors {% if role_filter=='student' %}bg-indigo-600 border-indigo-600 text-white{% else %}bg-white border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+       class="inline-flex items-center min-h-[44px] text-sm font-medium px-4 rounded-xl border transition-colors {% if role_filter=='student' %}bg-indigo-600 border-indigo-600 text-white{% else %}bg-white border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
         นักศึกษา
     </a>
     <a href="{{ url_for('admin.users', role='teacher') }}"
-       class="inline-flex items-center min-h-[40px] text-sm font-medium px-4 rounded-xl border transition-colors {% if role_filter=='teacher' %}bg-indigo-600 border-indigo-600 text-white{% else %}bg-white border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+       class="inline-flex items-center min-h-[44px] text-sm font-medium px-4 rounded-xl border transition-colors {% if role_filter=='teacher' %}bg-indigo-600 border-indigo-600 text-white{% else %}bg-white border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
         อาจารย์
     </a>
     <a href="{{ url_for('admin.users', role='admin') }}"
-       class="inline-flex items-center min-h-[40px] text-sm font-medium px-4 rounded-xl border transition-colors {% if role_filter=='admin' %}bg-indigo-600 border-indigo-600 text-white{% else %}bg-white border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
+       class="inline-flex items-center min-h-[44px] text-sm font-medium px-4 rounded-xl border transition-colors {% if role_filter=='admin' %}bg-indigo-600 border-indigo-600 text-white{% else %}bg-white border-slate-200 text-slate-600 hover:bg-slate-50{% endif %}">
         ผู้ดูแลระบบ
     </a>
 </div>
@@ -40,7 +40,7 @@
     <!-- Search -->
     <div class="px-5 py-3.5 border-b border-slate-100 flex items-center gap-3">
         <svg class="w-4 h-4 text-slate-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" placeholder="ค้นหาชื่อหรืออีเมล..."
+        <input type="search" aria-label="ค้นหาชื่อหรืออีเมล" placeholder="ค้นหาชื่อหรืออีเมล..."
                class="flex-1 text-sm text-slate-700 placeholder-slate-400 focus:outline-none bg-transparent"
                oninput="filterUsers(this.value)">
         <span class="text-xs text-slate-400" id="userCount">{{ users|length }} คน</span>
@@ -99,7 +99,7 @@
                     {% endif %}
                 </td>
                 <td class="px-4 py-3.5 hidden lg:table-cell">
-                    <span class="font-mono text-xs text-slate-400">{{ u.created_at[:10] if u.created_at else '—' }}</span>
+                    <span class="text-xs text-slate-500">{{ u.created_at | thai_date }}</span>
                 </td>
             </tr>
             {% else %}

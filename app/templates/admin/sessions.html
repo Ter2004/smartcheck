@@ -103,7 +103,7 @@
                 {% for s in g.sessions %}
                     <tr class="hover:bg-slate-50 transition-colors">
                         <td class="px-5 py-3">
-                            <span class="text-xs text-slate-600 font-mono">{{ s.start_time | thai_time('%d/%m/%y %H:%M') }}</span>
+                            <span class="text-xs text-slate-600">{{ s.start_time | thai_date(with_time=true) }}</span>
                         </td>
                         <td class="px-4 py-3 hidden md:table-cell">
                             <span class="text-sm text-slate-600">{{ s.beacons.room_name if s.beacons else '—' }}</span>

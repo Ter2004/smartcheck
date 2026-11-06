@@ -220,7 +220,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18v4a2 2 0 0 0 0 4v4H3v-4a2 2 0 0 0 0-4z"/><path d="M14 7v12" stroke-dasharray="2 2"/></svg>
         เช็คชื่อ
     </a>
-    <a href="{{ url_for('auth.change_password') }}" {% if request.endpoint == 'auth.change_password' %}aria-current="page"{% endif %}>
+    <a href="{{ url_for('student.account') }}" {% if request.endpoint in ('student.account', 'auth.change_password') %}aria-current="page"{% endif %}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>
         บัญชี
     </a>

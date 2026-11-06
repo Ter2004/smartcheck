@@ -17,7 +17,7 @@
     {% if terms %}
     <p class="text-sm text-slate-700">
         <span class="font-medium">{{ terms[0].name }}</span>
-        · เปิดเทอม <span class="font-mono">{{ terms[0].start_date }}</span>
+        · เปิดเทอม <span>{{ terms[0].start_date | thai_date }}</span>
         · {{ terms[0].weeks }} สัปดาห์
     </p>
     {% else %}

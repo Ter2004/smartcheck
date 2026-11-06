@@ -45,14 +45,47 @@
 
     {% if week_schedules %}
     <section aria-labelledby="week-heading">
-        <h2 id="week-heading" class="board-title">ตารางเรียนสัปดาห์นี้ <span>{{ week_schedules | length }} คาบ</span></h2>
-        {% for sch in week_schedules %}
+        <h2 id="week-heading" class="board-title">ตารางเรียน <span>จันทร์–ศุกร์ 07:00–19:00</span></h2>
+        <div class="tt" role="table" aria-label="ตารางเรียนจันทร์ถึงศุกร์">
+            <div class="tt-head" role="row">
+                <span role="columnheader"></span>
+                {% for day in timetable.days %}<span role="columnheader" class="{{ 'today' if day.today }}">{{ short_days[day.dow] }}</span>{% endfor %}
+            </div>
+            <div class="tt-body">
+                <div class="tt-hours" aria-hidden="true">
+                    {% for h in timetable.hours %}<span>{{ '%02d' % h }}:00</span>{% endfor %}<span>{{ '%02d' % (timetable.hours[-1] + 1) }}:00</span>
+                </div>
+                {% for day in timetable.days %}
+                <div class="tt-day{{ ' today' if day.today }}" role="cell" aria-label="วัน{{ days[day.dow] }}">
+                    {% for b in day.blocks %}
+                    <{{ 'a' if b.session_id else 'div' }} class="tt-block {{ b.state }}" style="top:{{ b.top }}%;height:{{ b.height }}%"
+                        {% if b.session_id %}href="{{ url_for('student.checkin', session_id=b.session_id) }}"{% endif %}
+                        aria-label="{{ b.code }} วัน{{ days[b.dow] }} {{ b.start }}–{{ b.end }}{% if b.room %} {{ b.room }}{% endif %}{{ ' เปิดเช็คชื่ออยู่' if b.state == 'open' else (' เช็คชื่อแล้ว' if b.state == 'boarded' else '') }}">
+                        <b>{{ b.code }}</b>
+                        <small>{{ b.start }}</small>
+                        <small>{{ b.room | replace('ห้อง ', '') }}</small>
+                    </{{ 'a' if b.session_id else 'div' }}>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <ul class="tt-legend" aria-label="ความหมายของสี">
+            <li><i class="open"></i>เปิดเช็คชื่ออยู่ (แตะได้)</li>
+            <li><i class="boarded"></i>เช็คชื่อแล้ว</li>
+            <li><i class="closed"></i>ปิดแล้ว</li>
+            <li><i></i>ยังไม่ถึง</li>
+        </ul>
+        {% if timetable.outside %}
+        <h3 class="board-title" style="font-size:15px">นอกตาราง <span>เสาร์–อาทิตย์ หรือนอก 07:00–19:00</span></h3>
+        {% for b in timetable.outside %}
         <div class="board-row">
-            <b>{{ sch.start_time[:5] }}</b>
-            <span class="what">{{ sch.courses.code }} — {{ sch.courses.name }}<small>วัน{{ days[sch.day_of_week] }} · ถึง {{ sch.end_time[:5] }}{% if sch.beacons %} · {{ sch.beacons.room_name }}{% endif %}</small></span>
-            <span class="chip">{{ short_days[sch.day_of_week] }}</span>
+            <b>{{ b.start }}</b>
+            <span class="what">{{ b.code }} — {{ b.name }}<small>วัน{{ days[b.dow] }} · ถึง {{ b.end }}{% if b.room %} · {{ b.room }}{% endif %}</small></span>
+            <span class="chip">{{ short_days[b.dow] }}</span>
         </div>
         {% endfor %}
+        {% endif %}
     </section>
     {% endif %}
 </div>

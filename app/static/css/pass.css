@@ -88,6 +88,37 @@ a.board-row:active { background: var(--tarmac-2); }
 [data-world="pass"] .ci-dot.active { background: var(--gate); color: var(--pass-ink); }
 [data-world="pass"] .ci-dot.done { background: var(--go); color: #fff; }
 
+/* Weekly timetable (tab "เช็คชื่อ"): Monday-Friday columns, 07:00-19:00, one row per hour */
+.tt { --tt-hour: 52px; --tt-gutter: 40px; background: var(--tarmac-2); border: 1px solid var(--tarmac-line);
+    border-radius: 16px; padding: 8px 8px 10px 0; }
+.tt-head { display: grid; grid-template-columns: var(--tt-gutter) repeat(5, 1fr); gap: 4px; padding-bottom: 6px;
+    font-family: 'Anuphan', sans-serif; font-weight: 600; font-size: 14px; text-align: center; color: rgb(255 255 255 / 75%); }
+.tt-head .today { color: var(--gate); }
+.tt-body { position: relative; display: grid; grid-template-columns: var(--tt-gutter) repeat(5, 1fr); gap: 4px;
+    height: calc(var(--tt-hour) * 12); }
+.tt-hours { position: relative; }
+.tt-hours span { display: block; height: var(--tt-hour); margin-top: -7px; padding-right: 6px; text-align: right;
+    font-family: 'Anuphan', sans-serif; font-size: 11px; color: rgb(255 255 255 / 62%); font-variant-numeric: tabular-nums; }
+.tt-hours span:last-child { height: 0; }
+.tt-day { position: relative; border-radius: 8px;
+    background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 9%) 0 1px, transparent 1px var(--tt-hour)); }
+.tt-day.today { background-color: rgb(255 176 0 / 8%); }
+.tt-block { position: absolute; left: 0; right: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden;
+    padding: 5px 5px; border-radius: 8px; background: #fff; color: var(--pass-ink); border-top: 4px solid #9AA6BF; }
+.tt-block b { font-family: 'Anuphan', sans-serif; font-weight: 700; font-size: 13px; line-height: 1.25; }
+.tt-block small { font-size: 11px; line-height: 1.35; color: var(--pass-muted); overflow-wrap: anywhere; }
+.tt-block.open { background: var(--gate); border-top-color: var(--pass-ink); }
+.tt-block.open small { color: var(--pass-ink); }
+.tt-block.boarded { border-top-color: var(--go); }
+.tt-block.closed { background: #E6EAF2; border-top-color: var(--stop); }
+a.tt-block:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.tt-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 12px 2px 0; font-size: 13px; color: rgb(255 255 255 / 75%); }
+.tt-legend li { display: flex; align-items: center; gap: 6px; }
+.tt-legend i { width: 14px; height: 14px; border-radius: 4px; background: #fff; border-top: 3px solid #9AA6BF; }
+.tt-legend i.open { background: var(--gate); border-top-color: var(--pass-ink); }
+.tt-legend i.boarded { border-top-color: var(--go); }
+.tt-legend i.closed { background: #E6EAF2; border-top-color: var(--stop); }
+
 /* Notices on the tarmac */
 .tarmac-note { display: flex; gap: 12px; align-items: flex-start; background: var(--tarmac-2); border: 1px solid var(--tarmac-line);
     border-radius: 16px; padding: 14px 16px; color: #fff; font-size: 15px; }

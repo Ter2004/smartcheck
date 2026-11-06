@@ -456,7 +456,53 @@ def checkin():
     return render_template(
         "student/checkin_select.html", available_sessions=available_sessions,
         checked_session_ids=checked_session_ids, week_schedules=week_schedules,
+        timetable=week_timetable(week_schedules, week_sessions, checked_session_ids,
+                                 {s["id"] for s in available_sessions}, _now_th),
     )
+
+
+TIMETABLE_FIRST_HOUR, TIMETABLE_LAST_HOUR = 7, 19   # the grid shows 07:00-19:00, Monday to Friday
+
+
+def week_timetable(schedules, week_sessions, checked_ids, open_ids, now_th):
+    """Monday-Friday columns of class blocks placed by time, for the timetable grid.
+
+    Each block: code, room, start, end, top/height in % of 07:00-19:00, state
+    (open / boarded / closed / upcoming) from this week's session for that slot,
+    and session_id when it is open now. Classes outside the grid go to `outside`.
+    """
+    from datetime import datetime, timedelta, timezone
+    th = timezone(timedelta(hours=7))
+    slot_session = {}
+    for s in week_sessions:
+        start = datetime.fromisoformat(s["start_time"].replace("Z", "+00:00")).astimezone(th)
+        slot_session[(s["course_id"], start.weekday(), start.strftime("%H:%M"))] = s
+    span = (TIMETABLE_LAST_HOUR - TIMETABLE_FIRST_HOUR) * 60
+    days = [{"dow": d, "today": d == now_th.weekday(), "blocks": []} for d in range(5)]
+    outside = []
+    for sch in schedules:
+        start, end = sch["start_time"][:5], sch["end_time"][:5]
+        to_min = lambda hhmm: int(hhmm[:2]) * 60 + int(hhmm[3:5])   # noqa: E731
+        top, bottom = to_min(start) - TIMETABLE_FIRST_HOUR * 60, to_min(end) - TIMETABLE_FIRST_HOUR * 60
+        block = {"code": (sch.get("courses") or {}).get("code", ""), "name": (sch.get("courses") or {}).get("name", ""),
+                 "room": (sch.get("beacons") or {}).get("room_name", ""), "start": start, "end": end,
+                 "dow": sch["day_of_week"], "state": "upcoming", "session_id": None}
+        sess = slot_session.get((sch["course_id"], sch["day_of_week"], start))
+        if sess:
+            if sess["id"] in checked_ids:
+                block["state"] = "boarded"
+            elif sess["id"] in open_ids:
+                block["state"], block["session_id"] = "open", sess["id"]
+            elif sess.get("end_time"):
+                block["state"] = "closed"
+        if sch["day_of_week"] > 4 or top < 0 or bottom > span or bottom <= top:
+            outside.append(block)
+            continue
+        block["top"] = round(top / span * 100, 3)
+        block["height"] = round((bottom - top) / span * 100, 3)
+        days[sch["day_of_week"]]["blocks"].append(block)
+    return {"days": days, "outside": outside,
+            "hours": list(range(TIMETABLE_FIRST_HOUR, TIMETABLE_LAST_HOUR))}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

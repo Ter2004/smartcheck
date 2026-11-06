@@ -47,27 +47,30 @@
     <section aria-labelledby="week-heading">
         <h2 id="week-heading" class="board-title">ตารางเรียน <span>จันทร์–ศุกร์ 07:00–19:00</span></h2>
         <div class="tt" role="table" aria-label="ตารางเรียนจันทร์ถึงศุกร์">
-            <div class="tt-head" role="row">
-                <span role="columnheader"></span>
-                {% for day in timetable.days %}<span role="columnheader" class="{{ 'today' if day.today }}">{{ short_days[day.dow] }}</span>{% endfor %}
-            </div>
-            <div class="tt-body">
-                <div class="tt-hours" aria-hidden="true">
-                    {% for h in timetable.hours %}<span>{{ '%02d' % h }}:00</span>{% endfor %}<span>{{ '%02d' % (timetable.hours[-1] + 1) }}:00</span>
-                </div>
-                {% for day in timetable.days %}
-                <div class="tt-day{{ ' today' if day.today }}" role="cell" aria-label="วัน{{ days[day.dow] }}">
-                    {% for b in day.blocks %}
-                    <{{ 'a' if b.session_id else 'div' }} class="tt-block {{ b.state }}" style="top:{{ b.top }}%;height:{{ b.height }}%"
-                        {% if b.session_id %}href="{{ url_for('student.checkin', session_id=b.session_id) }}"{% endif %}
-                        aria-label="{{ b.code }} วัน{{ days[b.dow] }} {{ b.start }}–{{ b.end }}{% if b.room %} {{ b.room }}{% endif %}{{ ' เปิดเช็คชื่ออยู่' if b.state == 'open' else (' เช็คชื่อแล้ว' if b.state == 'boarded' else '') }}">
-                        <b>{{ b.code }}</b>
-                        <small>{{ b.start }}</small>
-                        <small>{{ b.room | replace('ห้อง ', '') }}</small>
-                    </{{ 'a' if b.session_id else 'div' }}>
+            <div class="tt-scroll" tabindex="0" aria-label="เลื่อนซ้ายขวาเพื่อดูเวลา">
+                <div class="tt-grid">
+                    <div class="tt-head" role="row" aria-hidden="true">
+                        <span></span>
+                        <div class="tt-hours">
+                            {% for h in timetable.hours %}<span>{{ '%02d' % h }}:00</span>{% endfor %}<span>{{ '%02d' % (timetable.hours[-1] + 1) }}:00</span>
+                        </div>
+                    </div>
+                    {% for day in timetable.days %}
+                    <div class="tt-row{{ ' today' if day.today }}" role="row">
+                        <span class="tt-dayname" role="rowheader">{{ short_days[day.dow] }}</span>
+                        <div class="tt-track" role="cell" aria-label="วัน{{ days[day.dow] }}">
+                            {% for b in day.blocks %}
+                            <{{ 'a' if b.session_id else 'div' }} class="tt-block {{ b.state }}" style="left:{{ b.top }}%;width:{{ b.height }}%"
+                                {% if b.session_id %}href="{{ url_for('student.checkin', session_id=b.session_id) }}"{% endif %}
+                                aria-label="{{ b.code }} วัน{{ days[b.dow] }} {{ b.start }}–{{ b.end }}{% if b.room %} {{ b.room }}{% endif %}{{ ' เปิดเช็คชื่ออยู่' if b.state == 'open' else (' เช็คชื่อแล้ว' if b.state == 'boarded' else '') }}">
+                                <b>{{ b.code }}</b>
+                                <small>{{ b.start }}–{{ b.end }} · {{ b.room | replace('ห้อง ', '') }}</small>
+                            </{{ 'a' if b.session_id else 'div' }}>
+                            {% endfor %}
+                        </div>
+                    </div>
                     {% endfor %}
                 </div>
-                {% endfor %}
             </div>
         </div>
         <ul class="tt-legend" aria-label="ความหมายของสี">

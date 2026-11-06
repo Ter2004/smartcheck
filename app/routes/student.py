@@ -155,9 +155,89 @@ def _log(student_id, step, result, details=""):
 @login_required
 @role_required("student")
 def dashboard():
+    user_id = session["user_id"]
+    board_read = _page_reads.submit(_today_board_reads, user_id, supabase_admin)
     enrolled = _enrollment_status()["is_enrolled"]
+    try:
+        sessions, attendance, now_th = board_read.result()
+    except Exception as e:   # the home page still opens; the board is just empty
+        _audit.warning("[DASHBOARD] today board read failed: %s", type(e).__name__)
+        import datetime as _dt_mod
+        sessions, attendance = [], []
+        now_th = _dt_mod.datetime.now(_dt_mod.timezone(_dt_mod.timedelta(hours=7)))
+    board = today_board(sessions, attendance, now_th, current_app.config)
     return render_template("student/dashboard.html", enrolled=enrolled,
-                           needs_reenroll=not enrolled and _has_legacy_enrollment(session["user_id"]))
+                           needs_reenroll=not enrolled and _has_legacy_enrollment(user_id),
+                           board=board, hero=board_hero(board), today_label=thai_day_label(now_th))
+
+
+_TH_DAYS = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"]
+_TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
+
+
+def thai_day_label(moment):
+    """'วันศุกร์ 6 พ.ย.' for the page head."""
+    return f"วัน{_TH_DAYS[moment.weekday()]} {moment.day} {_TH_MONTHS[moment.month - 1]}"
+
+
+def _today_board_reads(user_id, client):
+    """(today's sessions of the student's courses, their attendance rows, now in Thai time)."""
+    import datetime as _dt_mod
+    now_th = _dt_mod.datetime.now(_dt_mod.timezone(_dt_mod.timedelta(hours=7)))
+    day = now_th.replace(hour=0, minute=0, second=0, microsecond=0)
+    course_ids = [r["course_id"] for r in (client.table("course_enrollments").select("course_id")
+                                           .eq("student_id", user_id).execute().data or [])]
+    if not course_ids:
+        return [], [], now_th
+    sessions = (client.table("sessions").select("*, courses(code, name), beacons(room_name)")
+                .in_("course_id", course_ids)
+                .gte("start_time", day.isoformat())
+                .lt("start_time", (day + _dt_mod.timedelta(days=1)).isoformat())
+                .order("start_time").execute().data or [])
+    attendance = (client.table("attendance").select("session_id, status, check_in_at")
+                  .eq("student_id", user_id).in_("session_id", [s["id"] for s in sessions])
+                  .execute().data or []) if sessions else []
+    return sessions, attendance, now_th
+
+
+def today_board(sessions, attendance, now_th, config):
+    """Today's classes as boarding passes: state boarded / boarding / closed / waiting.
+
+    boarding carries on_time_until (ISO) for the live "เหลือ" countdown, or None when
+    the class opened before teacher-open mode (no window) and counts as late after 15 min.
+    """
+    from datetime import timezone
+    from app.services import class_open
+    now = now_th.astimezone(timezone.utc)
+    seen = {a["session_id"]: a for a in attendance}
+    board = []
+    for s in sessions:
+        row = {"id": s["id"], "code": (s.get("courses") or {}).get("code", ""),
+               "name": (s.get("courses") or {}).get("name", ""),
+               "room": (s.get("beacons") or {}).get("room_name", ""),
+               "start_time": s.get("start_time"), "on_time_until": None, "attendance": seen.get(s["id"])}
+        if row["attendance"]:
+            row["state"] = "boarded"
+        elif s.get("is_open"):
+            row["state"] = "boarding"
+            until = class_open.on_time_until(s, config)
+            row["on_time_until"] = until.isoformat() if until else None
+            row["late_now"] = class_open.checkin_status(s, now, config) == "late"
+        elif s.get("end_time"):
+            row["state"] = "closed"
+        else:
+            row["state"] = "waiting"
+        board.append(row)
+    return board
+
+
+def board_hero(board):
+    """The pass shown big: the class boarding now, else the next one, else the last one."""
+    for state in ("boarding", "waiting"):
+        for row in board:
+            if row["state"] == state:
+                return row
+    return board[-1] if board else None
 
 
 def _has_legacy_enrollment(user_id):

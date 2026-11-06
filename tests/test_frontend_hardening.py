@@ -49,14 +49,18 @@ class FrontendHardeningTests(unittest.TestCase):
         self.assertNotIn("cdn.tailwindcss.com", read("app/__init__.py"))
         self.assertNotIn("tailwind.config", base, "no Play CDN runtime")
         head = base[:base.index("</head>")]
-        # Last in <head>, where the runtime used to add its <style>: same cascade.
-        self.assertTrue(head.rstrip().endswith("""filename='css/tailwind.css') }}">"""))
+        # Last shared stylesheet in <head>, where the runtime used to add its <style>:
+        # same cascade. Only the student world's pass.css may follow it, on purpose.
+        tail = head.rstrip().split("filename='css/tailwind.css') }}\">", 1)[1]
+        tail = " ".join(line for line in tail.splitlines() if "css/pass.css" not in line)
+        self.assertNotIn("<link", tail)
+        self.assertNotIn("<style", tail)
 
     def test_every_template_class_is_in_the_built_css(self):
         # Fails when a template gains a Tailwind class and tools/tailwind was not
         # rebuilt (npm run build there). Classes may also come from the custom CSS.
         css = read("app/static/css/tailwind.css")
-        custom = read("app/static/css/style.css") + read("app/static/css/modern.css")
+        custom = read("app/static/css/style.css") + read("app/static/css/modern.css") + read("app/static/css/pass.css")
         hooks = {"row-check", "todo"}   # JavaScript selectors/states, never styled
         escape = lambda t: re.sub(r'([:/.\[\]()%#!,=&@*+>~])', lambda m: chr(92) + m.group(1), t)
         missing = set()

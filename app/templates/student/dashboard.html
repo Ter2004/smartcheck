@@ -2,139 +2,107 @@
 {% block title %}หน้าหลัก — SmartCheck{% endblock %}
 
 {% block content %}
-<!-- Page header -->
-<div class="mb-8">
-    <h1 class="text-xl font-semibold text-slate-900">สวัสดี, {{ session.get('user_name', '').split()[0] }}</h1>
-    <p class="text-sm text-slate-500 mt-0.5">วันนี้ พร้อมเริ่มเรียนแล้วหรือยัง</p>
-</div>
+<div class="max-w-md mx-auto">
+<header class="pass-head">
+    <small>{{ today_label }}</small>
+    <h1>สวัสดี {{ session.get('user_name', '').split()[0] }}</h1>
+</header>
 
-<!-- Enrollment status banner -->
 {% if not enrolled %}
-<div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-4 mb-8">
-    <div class="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-        <svg class="w-4 h-4 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-    </div>
+<div class="tarmac-note mb-4" role="status">
+    <svg class="w-5 h-5 flex-shrink-0 mt-0.5" style="color:var(--gate)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     <div class="flex-1">
-        {% if needs_reenroll %}
-        <p class="text-sm font-medium text-amber-800">ระบบจดจำใบหน้าได้รับการปรับปรุง — ต้องลงทะเบียนใหม่</p>
-        <p class="text-sm text-amber-700 mt-0.5">ข้อมูลใบหน้าเดิมใช้กับระบบใหม่ไม่ได้ กรุณาลงทะเบียนใหม่ครั้งเดียวก่อนเช็คชื่อครั้งถัดไป</p>
-        {% else %}
-        <p class="text-sm font-medium text-amber-800">ยังไม่ได้ลงทะเบียนใบหน้า</p>
-        <p class="text-sm text-amber-700 mt-0.5">ลงทะเบียนใบหน้าเพื่อเริ่มใช้งานระบบเช็คชื่อ</p>
+        {% if needs_reenroll %}ระบบจดจำใบหน้าได้รับการปรับปรุง — ต้องลงทะเบียนใหม่
+        <small>ข้อมูลใบหน้าเดิมใช้กับระบบใหม่ไม่ได้ ลงทะเบียนใหม่ครั้งเดียวก่อนเช็คชื่อครั้งถัดไป</small>
+        {% else %}ยังไม่ได้ลงทะเบียนใบหน้า
+        <small>ลงทะเบียนครั้งเดียว แล้วเช็คชื่อด้วยใบหน้าได้ทุกคาบ</small>
         {% endif %}
+        <a href="{{ url_for('student.enroll_face') }}" class="btn-gate mt-3">{{ 'ลงทะเบียนใหม่' if needs_reenroll else 'ลงทะเบียนใบหน้า' }}</a>
     </div>
-    <a href="{{ url_for('student.enroll_face') }}"
-       class="flex-shrink-0 inline-flex items-center min-h-[44px] text-sm font-medium bg-amber-700 hover:bg-amber-800 text-white px-4 rounded-xl transition-colors">
-        {{ 'ลงทะเบียนใหม่' if needs_reenroll else 'เริ่มลงทะเบียน' }}
-    </a>
 </div>
 {% endif %}
 
-<!-- Action cards -->
-<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-
-    <!-- Check-in card -->
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col {% if not enrolled %}opacity-60{% endif %}">
-        <div class="flex items-center justify-between mb-4">
-            <div class="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
-                <svg class="w-5 h-5 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            </div>
-            {% if enrolled %}
-            <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-full">
-                <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                พร้อมใช้งาน
-            </span>
-            {% else %}
-            <span class="text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded-full">ยังไม่พร้อม</span>
-            {% endif %}
+{% if hero %}
+{% set a = hero.attendance %}
+<article class="pass" aria-label="คาบ {{ hero.code }}">
+    {% if hero.state == 'boarding' %}
+    <div class="pass-band" data-state="boarding" data-until="{{ hero.on_time_until or '' }}">
+        <span class="flip" data-band-label>{{ 'เปิดเช็คชื่อ · สาย' if hero.late_now else 'BOARDING · เปิดเช็คชื่อ' }}</span>
+        <span>{% if hero.on_time_until %}ทันเวลาถึง {{ hero.on_time_until | thai_time('%H:%M') }}{% endif %}</span>
+    </div>
+    {% elif hero.state == 'boarded' %}
+    <div class="pass-band" data-state="boarded">
+        <span>BOARDED · {{ 'มาสาย' if a.status == 'late' else 'มาเรียน' }}</span>
+        <span>{{ a.check_in_at | thai_time('%H:%M') }}</span>
+    </div>
+    {% elif hero.state == 'closed' %}
+    <div class="pass-band" data-state="closed"><span>CLOSED · ปิดแล้ว</span><span>ไม่ได้เช็คชื่อ</span></div>
+    {% else %}
+    <div class="pass-band" data-state="waiting"><span>รอเปิดคาบ</span><span>เริ่ม {{ hero.start_time | thai_time('%H:%M') }}</span></div>
+    {% endif %}
+    <div class="pass-body">
+        <p class="pass-code">{{ hero.code }}</p>
+        <p class="pass-name">{{ hero.name }}</p>
+        <div class="pass-grid">
+            <div><small>ห้อง</small><b>{{ hero.room or '—' }}</b></div>
+            <div><small>เริ่ม</small><b>{{ hero.start_time | thai_time('%H:%M') }}</b></div>
+            <div><small>{{ 'เหลือ' if hero.state == 'boarding' and hero.on_time_until else 'สถานะ' }}</small>
+                <b data-countdown>{% if hero.state == 'boarding' and hero.on_time_until %}—{% elif hero.state == 'boarded' %}{{ 'สาย' if a.status == 'late' else 'มา' }}{% elif hero.state == 'boarding' %}เปิด{% elif hero.state == 'closed' %}ปิด{% else %}รอ{% endif %}</b></div>
         </div>
-        <h2 class="text-base font-semibold text-slate-900 mb-1">เช็คชื่อเข้าเรียน</h2>
-        <p class="text-sm text-slate-500 mb-4 flex-1">อยู่ในห้องเรียน แล้วสแกนใบหน้า</p>
-        {% if enrolled %}
-        <a href="{{ url_for('student.checkin') }}"
-           class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-150">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            เช็คชื่อเลย
+    </div>
+    <div class="pass-perf" aria-hidden="true"></div>
+    <div class="pass-foot">
+        {% if hero.state == 'boarding' and enrolled %}
+        <a href="{{ url_for('student.checkin', session_id=hero.id) }}" class="btn-board">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="11" r="3.5"/><path d="M7.5 18a5 5 0 0 1 9 0"/></svg>
+            สแกนหน้าเช็คชื่อ
         </a>
+        {% elif hero.state == 'boarding' %}
+        <p>ลงทะเบียนใบหน้าก่อน จึงจะเช็คชื่อคาบนี้ได้</p>
+        {% elif hero.state == 'boarded' %}
+        <p>บันทึกแล้ว ไม่ต้องทำอะไรเพิ่ม</p>
+        {% elif hero.state == 'closed' %}
+        <p>คาบนี้ปิดการเช็คชื่อแล้ว</p>
         {% else %}
-        <button disabled class="inline-flex items-center justify-center gap-2 bg-slate-200 text-slate-400 text-sm font-medium py-2.5 px-4 rounded-xl cursor-not-allowed">
-            เช็คชื่อ
-        </button>
+        <p>เมื่ออาจารย์เปิดคาบ แอปจะแจ้งเตือนให้เช็คชื่อ</p>
         {% endif %}
     </div>
+</article>
+{% else %}
+<article class="pass" aria-label="วันนี้">
+    <div class="pass-band" data-state="closed"><span>วันนี้</span><span>ไม่มีคาบ</span></div>
+    <div class="pass-body"><p class="pass-code">ว่างทั้งวัน</p><p class="pass-name">ไม่มีคาบเรียนของคุณวันนี้</p></div>
+</article>
+{% endif %}
 
-    <!-- Enrollment card -->
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col">
-        <div class="flex items-center justify-between mb-4">
-            <div class="w-10 h-10 {% if enrolled %}bg-emerald-50{% else %}bg-slate-50{% endif %} rounded-xl flex items-center justify-center">
-                <svg class="w-5 h-5 {% if enrolled %}text-emerald-600{% else %}text-slate-600{% endif %}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
-            </div>
-            {% if enrolled %}
-            <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-full">
-                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-                ลงทะเบียนแล้ว
-            </span>
-            {% endif %}
-        </div>
-        <h2 class="text-base font-semibold text-slate-900 mb-1">ลงทะเบียนใบหน้า</h2>
-        <p class="text-sm text-slate-500 mb-4 flex-1">ใช้ใบหน้าของคุณเพื่อเช็คชื่อเข้าเรียน</p>
-        {% if not enrolled %}
-        <a href="{{ url_for('student.enroll_face') }}"
-           class="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-150 active:scale-95">
-            เริ่มลงทะเบียน
-        </a>
-        {% endif %}
-        {% if enrolled %}
-        <p class="mt-2 w-full text-center text-sm text-slate-500 py-1">
-            กรุณาติดต่อ admin หากต้องการถอนความยินยอม
-        </p>
-        {% endif %}
-        {% if config.LINE_BEACON_ENABLED %}
-        <!-- LINE Beacon: link this LINE account once; entering the room then sends a check-in button. -->
-        <div class="mt-3 border-t border-slate-100 pt-3">
-            <button type="button" id="lineLinkBtn"
-                    class="w-full text-xs font-medium text-emerald-700 border border-emerald-200 hover:bg-emerald-50 py-2 rounded-xl">
-                เชื่อมบัญชี LINE (เช็คชื่ออัตโนมัติเมื่อเข้าห้อง)
-            </button>
-            <p id="lineLinkOut" class="text-xs text-slate-600 mt-2 text-center" aria-live="polite"></p>
-        </div>
-        {% endif %}
-    </div>
-</div>
+<h2 class="board-title">เที่ยวบินวันนี้ <span>{{ board | length }} คาบ</span></h2>
+{% for row in board %}
+{% set a = row.attendance %}
+{% set clickable = row.state == 'boarding' and enrolled %}
+<{{ 'a' if clickable else 'div' }} class="board-row"{% if clickable %} href="{{ url_for('student.checkin', session_id=row.id) }}"{% endif %}>
+    <b>{{ row.start_time | thai_time('%H:%M') }}</b>
+    <span class="what">{{ row.code }}<small>{{ row.name }}{% if row.room %} · {{ row.room }}{% endif %}</small></span>
+    {% if row.state == 'boarded' %}<span class="chip {{ 'late' if a.status == 'late' else 'boarded' }}">{{ 'สาย' if a.status == 'late' else 'มา' }} {{ a.check_in_at | thai_time('%H:%M') }}</span>
+    {% elif row.state == 'boarding' %}<span class="chip boarding">BOARDING</span>
+    {% elif row.state == 'closed' %}<span class="chip closed">ปิดแล้ว</span>
+    {% else %}<span class="chip">รอเปิด</span>{% endif %}
+</{{ 'a' if clickable else 'div' }}>
+{% else %}
+<p class="board-empty">ไม่มีคาบวันนี้ — ดูตารางทั้งสัปดาห์ได้ที่แท็บ "เช็คชื่อ"</p>
+{% endfor %}
 
-<!-- Optional guidance -->
-<details class="help-disclosure">
-    <summary>วิธีเช็คชื่อ</summary>
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div class="flex items-start gap-3">
-            <div class="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span class="text-xs font-bold text-indigo-600">1</span>
-            </div>
-            <div>
-                <p class="text-sm font-medium text-slate-700">อยู่ในห้องเรียน</p>
-                <p class="text-sm text-slate-500 mt-0.5">แอปหาสัญญาณห้องเรียนให้เอง</p>
-            </div>
-        </div>
-        <div class="flex items-start gap-3">
-            <div class="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span class="text-xs font-bold text-indigo-600">2</span>
-            </div>
-            <div>
-                <p class="text-sm font-medium text-slate-700">สแกนใบหน้า</p>
-                <p class="text-sm text-slate-500 mt-0.5">มองกล้องตรงๆ นิ่งไว้ครู่เดียว</p>
-            </div>
-        </div>
-        <div class="flex items-start gap-3">
-            <div class="w-7 h-7 bg-emerald-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                <svg class="w-3.5 h-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-            </div>
-            <div>
-                <p class="text-sm font-medium text-slate-700">เช็คชื่อสำเร็จ</p>
-                <p class="text-sm text-slate-500 mt-0.5">ระบบบันทึกเวลาและสถานะ มา/สาย ให้เอง</p>
-            </div>
-        </div>
-    </div>
+<details class="mt-6 rounded-2xl" style="background:var(--tarmac-2);border:1px solid var(--tarmac-line)">
+    <summary class="px-4 py-3.5 text-[15px] font-medium cursor-pointer">วิธีเช็คชื่อ</summary>
+    <ol class="px-4 pb-4 space-y-2 text-[15px]" style="color:rgb(255 255 255 / 80%)">
+        <li>1. อาจารย์เปิดคาบ — แอปแจ้งเตือน แถบบนบัตรขึ้น BOARDING</li>
+        <li>2. อยู่ในห้องเรียน แตะ "สแกนหน้าเช็คชื่อ" — แอปหาสัญญาณห้องให้เอง</li>
+        <li>3. มองกล้องตรงๆ นิ่งไว้ครู่เดียว — บัตรเปลี่ยนเป็น BOARDED</li>
+    </ol>
 </details>
+{% if enrolled %}
+<p class="mt-4 text-sm text-center" style="color:rgb(255 255 255 / 70%)">ต้องการถอนความยินยอมข้อมูลใบหน้า กรุณาติดต่อ admin</p>
+{% endif %}
+</div>
 
 {% if enrolled %}
 <!-- ─── Withdraw Consent Modal ──────────────────────────────────────── -->
@@ -212,6 +180,32 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+// Gate display: the boarding band counts down to the end of the on-time window,
+// flips to CLOSING in the last minute and to "สาย" after it.
+(function () {
+    const band = document.querySelector('.pass-band[data-until]');
+    const out = document.querySelector('[data-countdown]');
+    if (!band || !band.dataset.until || !out) return;
+    const until = Date.parse(band.dataset.until), label = band.querySelector('[data-band-label]');
+    let shown = label.textContent;
+    function set(text, state) {
+        band.dataset.state = state;
+        if (text === shown) return;
+        label.textContent = text;
+        label.classList.remove('turn'); void label.offsetWidth; label.classList.add('turn');
+        shown = text;
+    }
+    function tick() {
+        const left = Math.max(0, Math.round((until - Date.now()) / 1000));
+        if (!left) { out.textContent = 'สาย'; set('เปิดเช็คชื่อ · สาย', 'closing'); return; }
+        out.textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+        set(left <= 60 ? 'CLOSING · อีก 1 นาทีสาย' : 'BOARDING · เปิดเช็คชื่อ', left <= 60 ? 'closing' : 'boarding');
+        setTimeout(tick, 1000);
+    }
+    tick();
+})();
+</script>
 {% if config.LINE_BEACON_ENABLED %}
 <script>
 document.getElementById('lineLinkBtn')?.addEventListener('click', async (e) => {

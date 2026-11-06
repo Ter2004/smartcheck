@@ -4,160 +4,107 @@
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" integrity="sha384-nKiz5QrpRlMQLw5nrZcprT7N9vmmAcIgV8TuGuep4x91V4JIPsXa+D44Wxj0guoa" crossorigin="anonymous"></script>
 <style>
-    /* ── Step indicators ───────────────────── */
-    .ci-dot {
-        width: 28px; height: 28px; border-radius: 50%;
-        background: #e2e8f0; color: #475569;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 0.8rem; font-weight: 600; flex-shrink: 0;
-        transition: background 0.3s, color 0.3s;
-    }
-    .ci-dot.active { background: var(--primary); color: #fff; }
-    .ci-dot.done   { background: #047857; color: #fff; }
-
-    /* ── Camera: same look as the v2 enrollment camera ── */
-    .ci-stage { position: relative; width: 100%; aspect-ratio: 3/4; max-height: 70vh;
-                background: #0f172a; border-radius: 16px; overflow: hidden; }
+    /* Check-in inside the boarding pass (pass.css holds the shared pass parts). */
+    .ci-steps { display: grid; grid-template-columns: auto auto 1fr auto auto 1fr auto auto; align-items: center; gap: 6px; margin-top: 16px; font-size: 13px; color: var(--pass-muted); }
+    .ci-line { height: 2px; background: var(--pass-rule); }
+    .ci-dot { width: 26px; height: 26px; border-radius: 50%; background: #E6EAF2; color: #475569;
+        display: flex; align-items: center; justify-content: center; font-family: 'Anuphan', sans-serif;
+        font-size: 13px; font-weight: 700; transition: background .3s, color .3s; }
+    .ci-dot.active { background: var(--gate); color: var(--pass-ink); }
+    .ci-dot.done { background: var(--go); color: #fff; }
+    .ci-note { font-size: 15px; color: var(--pass-muted); }
+    .ci-note:empty { display: none; }
+    .ci-label { display: block; font-family: 'Anuphan', sans-serif; font-weight: 600; font-size: 17px; margin-bottom: 4px; }
+    .ci-code { width: 100%; min-height: 56px; border: 1.5px solid var(--pass-rule); border-radius: 14px; text-align: center;
+        font-family: 'Anuphan', sans-serif; font-size: 28px; letter-spacing: .3em; font-variant-numeric: tabular-nums; }
+    .ci-code:focus { outline: 3px solid var(--gate); outline-offset: 1px; border-color: var(--pass-ink); }
+    .ci-warn { background: #FFF6E0; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; font-size: 15px; color: #6B4A00; text-align: left; }
+    .ci-status { font-size: 16px; font-weight: 500; text-align: center; min-height: 1.5em; }
+    /* Looking for the room board: three rings on the gate colour */
+    .ci-radar { position: relative; width: 84px; height: 84px; margin: 4px auto 14px; }
+    .ci-radar span { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--gate); opacity: 0; animation: ci-ping 1.8s cubic-bezier(.2,.7,.2,1) infinite; }
+    .ci-radar span:nth-child(2) { animation-delay: .6s; }
+    .ci-radar span:nth-child(3) { animation-delay: 1.2s; }
+    .ci-radar::after { content: ''; position: absolute; inset: 34px; border-radius: 50%; background: var(--gate); }
+    @keyframes ci-ping { 0% { transform: scale(.3); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
+    /* Camera: same as the v2 enrollment camera, on the tarmac */
+    .ci-stage { position: relative; width: 100%; aspect-ratio: 3/4; max-height: 62vh; background: var(--tarmac); border-radius: 16px; overflow: hidden; }
     /* Shown like a mirror; the frames sent to the server are drawn from the raw stream. */
     .ci-stage video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
     .ci-overlay { position: absolute; inset: 0; pointer-events: none; }
     .ci-ring { fill: none; stroke-width: 7; stroke-linecap: round; stroke: rgba(255,255,255,0.35); transition: stroke 0.2s; }
-    .ci-overlay.fail .ci-ring { stroke: #f87171; }
+    .ci-overlay.fail .ci-ring { stroke: #F87171; }
     /* Fills while the face holds still in the oval (ready frames). */
-    .ci-progress { stroke: #22c55e; stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset 0.1s linear; }
-    .ci-instruction { min-height: 3.2em; }
-
-    /* ── Checking bar: an estimate easing toward 90%, then 100% on the answer ── */
-    .ci-bar { height: 10px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 1rem 0 0.75rem; }
-    .ci-bar-fill { height: 100%; width: 0; background: var(--primary); border-radius: 999px; transition: width 0.25s linear; }
+    .ci-progress { stroke: var(--go); stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset 0.1s linear; }
+    .ci-instruction { min-height: 3em; text-align: center; font-family: 'Anuphan', sans-serif; font-weight: 600; font-size: 19px; margin-bottom: 10px; }
+    /* Checking bar: an estimate easing toward 90%, then 100% on the answer */
+    .ci-bar { height: 10px; background: #E6EAF2; border-radius: 999px; overflow: hidden; margin: 6px 0 10px; }
+    .ci-bar-fill { height: 100%; width: 0; background: var(--go); border-radius: 999px; transition: width 0.25s linear; }
+    .ci-result-icon { font-size: 52px; line-height: 1.2; margin-bottom: 6px; }
+    .ci-result-title { font-family: 'Anuphan', sans-serif; font-weight: 700; font-size: 22px; }
+    @media (prefers-reduced-motion: reduce) { .ci-radar span { animation: none; opacity: .5; } }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-lg mx-auto">
+<div class="max-w-md mx-auto">
 
-    <a href="{{ url_for('student.checkin') }}"
-       class="inline-flex items-center gap-1.5 min-h-[44px] -ml-1 px-1 text-sm text-slate-600 hover:text-slate-900 mb-2 transition-colors">
+    <a href="{{ url_for('student.checkin') }}" class="tarmac-back">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
         กลับไปเลือกคาบ
     </a>
-    <h1 id="checkinStageTitle" class="text-xl font-semibold text-slate-900 mb-2">หาสัญญาณห้องเรียน</h1>
-    <p id="checkinStageHelp" class="text-sm text-slate-500 mb-6">ยืนยันห้องเรียนของคาบที่เลือกก่อนเปิดกล้อง</p>
-
-    <!-- ─── ตารางเรียนสัปดาห์นี้ ─── -->
-    {% set day_names_short = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.'] %}
-    {% if week_schedules %}
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
-        <div class="px-5 py-4 border-b border-slate-100">
-            <h2 class="text-sm font-semibold text-slate-800">ตารางเรียนสัปดาห์นี้</h2>
-        </div>
-        <table class="w-full">
-            <thead>
-                <tr class="bg-slate-50 border-b border-slate-200">
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">วัน</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">วิชา</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5 hidden sm:table-cell">เวลา</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-2.5">สถานะ</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">
-            {% for sch in week_schedules %}
-                {% set ws = week_session_map.get(sch.course_id) %}
-                {% set is_today = (sch.day_of_week == today_dow) %}
-                <tr class="{% if is_today %}bg-indigo-50{% endif %} transition-colors">
-                    <td class="px-4 py-3 text-xs font-medium {% if is_today %}text-indigo-700{% else %}text-slate-600{% endif %}">
-                        {{ day_names_short[sch.day_of_week] }}
-                    </td>
-                    <td class="px-4 py-3">
-                        <p class="text-sm font-medium text-slate-800">{{ sch.courses.code }}</p>
-                        <p class="text-xs text-slate-400">{{ sch.beacons.room_name if sch.beacons else '—' }}</p>
-                    </td>
-                    <td class="px-4 py-3 hidden sm:table-cell">
-                        <span class="font-mono text-xs text-slate-500">{{ sch.start_time[:5] }}–{{ sch.end_time[:5] }}</span>
-                    </td>
-                    <td class="px-4 py-3">
-                        {% if not ws %}
-                        <span class="inline-flex items-center gap-1 text-xs text-slate-400">
-                            <span class="w-2 h-2 bg-slate-300 rounded-full"></span>ยังไม่เปิด
-                        </span>
-                        {% elif ws.is_open %}
-                        <div class="flex items-center gap-2">
-                            <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-                                <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>เปิดอยู่
-                            </span>
-                            <button onclick="var el=document.getElementById('checkin-camera');if(el)el.scrollIntoView({behavior:'smooth'})"
-                                    class="text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg transition-colors">
-                                เช็คชื่อ
-                            </button>
-                        </div>
-                        {% elif ws.id in checked_session_ids %}
-                        <span class="inline-flex items-center gap-1 text-xs font-medium text-indigo-600">
-                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>เช็คแล้ว
-                        </span>
-                        {% elif ws.end_time %}
-                        <span class="inline-flex items-center gap-1 text-xs text-rose-700">
-                            <span class="w-2 h-2 bg-rose-400 rounded-full"></span>ปิดแล้ว
-                        </span>
-                        {% else %}
-                        <span class="inline-flex items-center gap-1 text-xs text-slate-400">
-                            <span class="w-2 h-2 bg-slate-300 rounded-full"></span>ยังไม่เปิด
-                        </span>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% endif %}
 
     {% if not session_data %}
-    <div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3">
-        <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <p class="text-sm text-amber-800">ยังไม่มีคาบที่เปิดเช็คชื่อ</p>
+    <div class="pass" role="status">
+        <div class="pass-band" data-state="closed"><span>ยังไม่มีคาบเปิด</span><span></span></div>
+        <div class="pass-body"><p class="pass-code">รออาจารย์เปิดคาบ</p><p class="pass-name">เมื่ออาจารย์เปิดคาบ แอปจะแจ้งเตือนให้เช็คชื่อ</p></div>
     </div>
 
     {% elif already_checked %}
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
-        <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg class="w-8 h-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+    <div class="pass">
+        <div class="pass-band" data-state="boarded"><span>BOARDED · เช็คชื่อแล้ว</span><span>{{ session_data.beacons.room_name if session_data.beacons else '' }}</span></div>
+        <div class="pass-body">
+            <p class="pass-code">{{ session_data.courses.code }}</p>
+            <p class="pass-name">{{ session_data.courses.name }}</p>
         </div>
-        <h3 class="text-base font-semibold text-slate-800 mb-1">เช็คชื่อเสร็จแล้ว</h3>
-        <p class="text-sm text-slate-500 mb-6">
-            คุณเช็คชื่อคาบ <strong class="text-slate-700">{{ session_data.courses.code }} — {{ session_data.courses.name }}</strong> ไปแล้ว
-        </p>
-        <a href="{{ url_for('student.dashboard') }}"
-           class="inline-flex items-center justify-center w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
-            กลับหน้าหลัก
-        </a>
+        <div class="pass-perf" aria-hidden="true"></div>
+        <div class="pass-foot">
+            <p class="mb-3">คุณเช็คชื่อคาบนี้ไปแล้ว ไม่ต้องทำอะไรเพิ่ม</p>
+            <a href="{{ url_for('student.dashboard') }}" class="btn-quiet">กลับหน้าวันนี้</a>
+        </div>
     </div>
 
     {% else %}
+    <article class="pass">
+        <div class="pass-band" data-state="boarding">
+            <span id="checkinStageTitle">หาสัญญาณห้องเรียน</span>
+            <span>{{ session_data.beacons.room_name if session_data.beacons else '' }}</span>
+        </div>
+        <div class="pass-body">
+            <p class="pass-code">{{ session_data.courses.code }}</p>
+            <p class="pass-name">{{ session_data.courses.name }}</p>
+            <p id="checkinStageHelp" class="sr-only">ยืนยันห้องเรียนของคาบที่เลือกก่อนเปิดกล้อง</p>
 
-    <!-- Proximity → camera → result -->
-    <div id="checkin-camera" class="flex items-center gap-2 mb-6">
-        <div class="ci-dot active" id="dot1">1</div>
-        <div class="flex-1 h-0.5 bg-slate-200"></div>
-        <div class="ci-dot" id="dot2">2</div>
-        <div class="flex-1 h-0.5 bg-slate-200"></div>
-        <div class="ci-dot" id="dot3">3</div>
-    </div>
-    <p class="text-sm text-slate-500">1 หาสัญญาณ → 2 ยืนยันใบหน้า → 3 ผลเช็คชื่อ</p>
-    <p id="proximityStatus" role="status" class="text-sm text-slate-600"></p>
-    <p id="receiptCountdown" role="timer" class="text-sm text-slate-600"></p>
+            <!-- Proximity → camera → result -->
+            <div id="checkin-camera" class="ci-steps" aria-label="ขั้นตอน: 1 หาสัญญาณ 2 สแกนหน้า 3 ผล">
+                <div class="ci-dot active" id="dot1">1</div><span>หาสัญญาณ</span>
+                <div class="ci-line"></div>
+                <div class="ci-dot" id="dot2">2</div><span>สแกนหน้า</span>
+                <div class="ci-line"></div>
+                <div class="ci-dot" id="dot3">3</div><span>ผล</span>
+            </div>
+            <p id="proximityStatus" role="status" class="ci-note"></p>
+            <p id="receiptCountdown" role="timer" class="ci-note"></p>
+        </div>
+        <div class="pass-perf" aria-hidden="true"></div>
+        <div class="pass-foot">
 
-    <p class="text-sm text-slate-500 mb-4">
-        วิชา: <strong class="text-slate-700">{{ session_data.courses.code }} — {{ session_data.courses.name }}</strong>
-        &nbsp;·&nbsp; {{ session_data.title }}
-    </p>
-
-    <!-- ─── Step 1: BLE (ซ่อนไว้ Phase 3/4) ─── -->
+    <!-- ─── Step 1: BLE (hidden; kept for the flow) ─── -->
     <div id="stepBLE" style="display:none"></div>
 
     <!-- ─── Step 2: Face (no buttons; captures by itself) ─── -->
     <div id="stepVerify" style="display:none">
-        <p class="ci-instruction text-center text-lg font-semibold text-slate-800 mb-3"
-           id="verifyStatus" role="status" aria-live="polite" aria-atomic="true">กำลังเปิดกล้อง...</p>
+        <p class="ci-instruction" id="verifyStatus" role="status" aria-live="polite" aria-atomic="true">กำลังเปิดกล้อง...</p>
         <div class="ci-stage">
             <video id="videoVerify" autoplay playsinline muted></video>
             <!-- Brightness check only; not shown. -->
@@ -165,7 +112,7 @@
             <svg class="ci-overlay" id="faceGuideVerify" viewBox="0 0 300 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
                 <defs><mask id="ciMask"><rect width="300" height="400" fill="white"/>
                     <ellipse cx="150" cy="190" rx="98" ry="130" fill="black"/></mask></defs>
-                <rect width="300" height="400" fill="rgba(15,23,42,0.55)" mask="url(#ciMask)"/>
+                <rect width="300" height="400" fill="rgba(11,29,58,0.62)" mask="url(#ciMask)"/>
                 <path class="ci-ring" d="M150,54 A104,136 0 1,1 150,326 A104,136 0 1,1 150,54"/>
                 <path class="ci-ring ci-progress" id="faceProgressVerify" pathLength="100"
                       d="M150,54 A104,136 0 1,1 150,326 A104,136 0 1,1 150,54"/>
@@ -173,77 +120,67 @@
         </div>
     </div>
 
-    <form id="stepRoomCode" onsubmit="flow.submitRoomCode(event)" style="display:none"
-          class="bg-white rounded-xl border border-slate-200 p-8">
-        <label for="roomCode" class="block font-semibold mb-2">รหัสห้อง 6 หลัก</label>
-        <p id="roomCodeHelp" class="text-sm text-slate-500 mb-4">กรอกรหัสจากจอในห้องเรียน หากจอไม่ทำงานให้ติดต่ออาจารย์</p>
+    <form id="stepRoomCode" onsubmit="flow.submitRoomCode(event)" style="display:none">
+        <label for="roomCode" class="ci-label">รหัสห้อง 6 หลัก</label>
+        <p id="roomCodeHelp" class="ci-note mb-3">กรอกรหัสจากจอในห้องเรียน หากจอไม่ทำงานให้ติดต่ออาจารย์</p>
         <input id="roomCode" name="room_code" type="text" inputmode="numeric"
                autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required
                aria-describedby="roomCodeHelp" title="กรุณากรอกรหัสห้องเป็นตัวเลข 6 หลัก"
-               class="w-full border rounded-xl p-3 text-center text-2xl tracking-widest">
-        <button type="submit" class="w-full bg-indigo-600 text-white rounded-xl p-3 mt-4">ตรวจรหัสและเริ่มถ่ายภาพ</button>
+               class="ci-code">
+        <button type="submit" class="btn-board mt-3">ตรวจรหัสและเริ่มถ่ายภาพ</button>
     </form>
 
-    <div id="stepBleRoom" class="bg-white rounded-xl border border-slate-200 p-8 text-center" style="display:none">
-        <label class="block font-semibold mb-2">ค้นหาสัญญาณห้องเรียนด้วย Bluetooth</label>
-        <div id="bleUnsupportedWarning"
-             class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 text-sm text-amber-800 text-left"
-             style="display:{{ 'block' if ios_warning else 'none' }}">
+    <div id="stepBleRoom" style="display:none">
+        <p class="ci-label">ค้นหาสัญญาณห้องเรียนด้วย Bluetooth</p>
+        <div id="bleUnsupportedWarning" class="ci-warn" style="display:{{ 'block' if ios_warning else 'none' }}">
             {% if ios_warning %}
-            อุปกรณ์ของคุณดูเหมือนเป็น iPhone/iPad ซึ่ง<strong>ไม่รองรับ Web Bluetooth</strong> — กรุณาใช้คอมพิวเตอร์ที่ติดตั้ง Chrome หรือ Edge เพื่อเช็คชื่อ หรือแจ้งอาจารย์หากไม่มีอุปกรณ์ที่รองรับ
+            อุปกรณ์ของคุณดูเหมือนเป็น iPhone/iPad ซึ่ง<strong>ไม่รองรับ Web Bluetooth</strong> — ใช้รหัสจากจอของอาจารย์ด้านล่าง หรือแจ้งอาจารย์
             {% endif %}
         </div>
-        <p class="text-sm text-slate-500 mb-4">เปิด Bluetooth และอยู่ในห้องเรียน กดปุ่มด้านล่าง แล้วเลือกอุปกรณ์ของห้องนี้ในหน้าต่างที่เบราว์เซอร์เปิดขึ้น</p>
-        <button type="button" id="bleRoomBtn" onclick="flow.startBleRoomScan()"
-                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl p-3">หาอุปกรณ์ในห้อง</button>
-        <p id="bleRoomStatus" class="text-sm text-slate-500 mt-3 min-h-[1.4em]"></p>
+        <p class="ci-note mb-3">เปิด Bluetooth และอยู่ในห้องเรียน กดปุ่มด้านล่าง แล้วเลือกอุปกรณ์ของห้องนี้</p>
+        <button type="button" id="bleRoomBtn" onclick="flow.startBleRoomScan()" class="btn-board">หาอุปกรณ์ในห้อง</button>
+        <p id="bleRoomStatus" class="ci-note mt-3 min-h-[1.4em]"></p>
     </div>
 
     <!-- Broadcast board: the SmartCheck Android app scans by itself, no button or picker -->
-    <div id="stepBroadcastRoom" class="bg-white rounded-xl border border-slate-200 p-8 text-center" style="display:none">
-        <label class="block font-semibold mb-2">ค้นหาสัญญาณห้องเรียน</label>
-        <div id="broadcastUnsupportedWarning"
-             class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 text-sm text-amber-800 text-left"
-             style="display:none"></div>
-        <p id="broadcastStatus" role="status" class="text-sm text-slate-600 min-h-[1.4em]"></p>
-        <button type="button" id="broadcastRetryBtn" onclick="flow.startBroadcastScan()" style="display:none"
-                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl p-3 mt-4">สแกนอีกครั้ง</button>
+    <div id="stepBroadcastRoom" style="display:none">
+        <div class="ci-radar" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div id="broadcastUnsupportedWarning" class="ci-warn" style="display:none"></div>
+        <p id="broadcastStatus" role="status" class="ci-status"></p>
+        <button type="button" id="broadcastRetryBtn" onclick="flow.startBroadcastScan()" style="display:none" class="btn-board mt-4">ลองใหม่</button>
     </div>
 
     {% if config.CHECKIN_SESSION_CODE %}
-    <!-- Fallback: the 6-digit code / QR on the teacher's screen (no BLE or LINE needed) -->
-    <form id="stepSessionCode" onsubmit="flow.submitSessionCode(event)" style="display:none"
-          class="bg-white rounded-xl border border-slate-200 p-6 mt-3">
-        <label for="sessionCode" class="block font-semibold mb-1">ใช้ Bluetooth ไม่ได้?</label>
-        <p id="sessionCodeHelp" class="text-sm text-slate-500 mb-3">กรอกรหัส 6 หลักจากจอของอาจารย์ หรือสแกน QR บนจอด้วยกล้องมือถือ</p>
+    <!-- Fallback: the 6-digit code / QR on the teacher's screen -->
+    <form id="stepSessionCode" onsubmit="flow.submitSessionCode(event)" style="display:none" class="mt-4 pt-4 border-t border-dashed" >
+        <label for="sessionCode" class="ci-label">หาสัญญาณห้องไม่ได้?</label>
+        <p id="sessionCodeHelp" class="ci-note mb-3">กรอกรหัส 6 หลักจากจอของอาจารย์ หรือสแกน QR บนจอด้วยกล้องมือถือ</p>
         <input id="sessionCode" name="session_code" type="text" inputmode="numeric"
                autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required
                aria-describedby="sessionCodeHelp" title="กรุณากรอกรหัสเป็นตัวเลข 6 หลัก"
-               class="w-full border rounded-xl p-3 text-center text-2xl tracking-widest">
-        <button type="submit" class="w-full bg-slate-800 hover:bg-slate-900 text-white rounded-xl p-3 mt-3">ยืนยันรหัสและเริ่มถ่ายภาพ</button>
+               class="ci-code">
+        <button type="submit" class="btn-quiet mt-3">ยืนยันรหัสและเริ่มถ่ายภาพ</button>
     </form>
     {% endif %}
 
     <!-- ─── Step 3: Result ─── -->
-    <div id="stepDone" class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center" style="display:none">
+    <div id="stepDone" class="text-center" style="display:none">
         <div id="doneLoadingView">
             <div class="ci-bar" role="progressbar" aria-label="กำลังตรวจสอบใบหน้า"><div class="ci-bar-fill" id="doneBar"></div></div>
-            <p class="text-sm text-slate-500">กำลังตรวจสอบ...</p>
+            <p class="ci-note">กำลังตรวจสอบ...</p>
         </div>
         <div id="doneResultView" style="display:none">
-            <div class="text-5xl mb-3" id="doneIcon"></div>
-            <h3 class="text-base font-semibold text-slate-800" id="doneTitle"></h3>
-            <p id="doneMsg" class="text-sm text-slate-500 mt-1 mb-5"></p>
+            <div class="ci-result-icon" id="doneIcon"></div>
+            <h3 class="ci-result-title" id="doneTitle"></h3>
+            <p id="doneMsg" class="ci-note mt-1 mb-5"></p>
             <!-- Retry (shown when it helps) comes first: it is the action that fixes the failure. -->
-            <button id="doneRetry" class="w-full min-h-[48px] bg-indigo-600 hover:bg-indigo-700 text-white text-base font-medium py-3 rounded-xl transition-colors hidden mb-2"
-                    onclick="flow.retry()">ลองใหม่</button>
-            <a href="{{ url_for('student.dashboard') }}"
-               class="inline-flex items-center justify-center w-full min-h-[48px] border border-slate-200 hover:bg-slate-50 text-slate-700 text-base font-medium py-3 rounded-xl transition-colors">
-                กลับหน้าหลัก
-            </a>
+            <button id="doneRetry" class="btn-board hidden mb-2" onclick="flow.retry()">ลองใหม่</button>
+            <a href="{{ url_for('student.dashboard') }}" class="btn-quiet">กลับหน้าวันนี้</a>
         </div>
     </div>
 
+        </div>
+    </article>
     {% endif %}
 </div>
 {% endblock %}

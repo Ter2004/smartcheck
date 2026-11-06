@@ -9,7 +9,7 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <!-- Legacy styles (needed by camera pages only) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -45,9 +45,13 @@
     <!-- Tailwind, built ahead of time (tools/tailwind: npm run build). Last in <head>,
          where the Play CDN runtime used to add its <style>, so the cascade is unchanged. -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
+    {% if session.get('user_role') == 'student' %}
+    <!-- Student world: boarding passes on the tarmac (after Tailwind so it wins). -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pass.css') }}">
+    {% endif %}
 </head>
 
-<body class="bg-slate-50 text-slate-800 antialiased">
+<body class="bg-slate-50 text-slate-800 antialiased"{% if session.get('user_role') == 'student' %} data-world="pass"{% endif %}>
 
 {% set role = session.get('user_role') %}
 <div class="flex min-h-screen">
@@ -185,7 +189,7 @@
 <div class="{% if session.get('user_id') %}lg:ml-64{% endif %} flex-1 flex flex-col min-w-0">
 
     <!-- Mobile top bar (authenticated only) -->
-    {% if session.get('user_id') %}
+    {% if session.get('user_id') and role != 'student' %}
     <header class="lg:hidden sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
         <button id="menu-toggle" aria-label="เปิดเมนู" aria-controls="sidebar" aria-expanded="false" onclick="toggleSidebar()" class="w-11 h-11 -ml-2 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 transition-colors">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -205,6 +209,24 @@
         {% block content %}{% endblock %}
     </main>
 </div>
+
+{% if role == 'student' %}
+{# Students on phones move between screens with a tab bar instead of the menu. #}
+<nav class="tabbar" aria-label="เมนูนักศึกษา">
+    <a href="{{ url_for('student.dashboard') }}" {% if request.endpoint == 'student.dashboard' %}aria-current="page"{% endif %}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+        วันนี้
+    </a>
+    <a href="{{ url_for('student.checkin') }}" {% if request.endpoint == 'student.checkin' %}aria-current="page"{% endif %}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18v4a2 2 0 0 0 0 4v4H3v-4a2 2 0 0 0 0-4z"/><path d="M14 7v12" stroke-dasharray="2 2"/></svg>
+        เช็คชื่อ
+    </a>
+    <a href="{{ url_for('auth.change_password') }}" {% if request.endpoint == 'auth.change_password' %}aria-current="page"{% endif %}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>
+        บัญชี
+    </a>
+</nav>
+{% endif %}
 
 </div>{# end flex min-h-screen #}
 

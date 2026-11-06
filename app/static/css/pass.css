@@ -1,0 +1,107 @@
+/* Student world: each class is a boarding pass and the classroom is the gate.
+   Surface brief: .impeccable/surfaces/app-templates-student-dashboard-html.md
+   Loaded only for students (base.html, data-world="pass"). */
+:root {
+    --tarmac: #0B1D3A;
+    --tarmac-2: #12284D;
+    --tarmac-line: rgb(255 255 255 / 12%);
+    --gate: #FFB000;
+    --go: #19A974;
+    --go-deep: #12855B;
+    --stop: #E5484D;
+    --pass-ink: #0B1D3A;
+    --pass-muted: #51607A;
+    --pass-rule: #CBD3E1;
+}
+body[data-world="pass"] { background: var(--tarmac) !important; color: #fff; }
+[data-world="pass"] #main-content { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+[data-world="pass"] #toast-container { bottom: calc(92px + env(safe-area-inset-bottom)); }
+.pass-display { font-family: 'Anuphan', 'Noto Sans Thai', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+
+/* Page head on the tarmac */
+.pass-head { padding-top: 8px; margin-bottom: 18px; }
+.pass-head small { font-size: 14px; color: rgb(255 255 255 / 70%); }
+.pass-head h1 { font-family: 'Anuphan', 'Noto Sans Thai', sans-serif; font-size: 24px !important; font-weight: 600; color: #fff !important; letter-spacing: -.01em; line-height: 1.45; }
+
+/* The pass */
+.pass { background: #fff; color: var(--pass-ink); border-radius: 20px; overflow: hidden; }
+.pass-band { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 10px 18px; font-family: 'Anuphan', sans-serif; font-weight: 700; font-size: 14px;
+    letter-spacing: .03em; background: #E6EAF2; color: var(--pass-ink); }
+.pass-band[data-state="boarding"] { background: var(--gate); }
+.pass-band[data-state="closing"] { background: var(--stop); color: #fff; }
+.pass-band[data-state="boarded"] { background: var(--go); color: #fff; }
+.pass-band[data-state="closed"] { background: #E6EAF2; color: var(--pass-muted); }
+.pass-band .flip { display: inline-block; }
+.pass-band .flip.turn { animation: flip .32s cubic-bezier(.2,.7,.2,1); }
+@keyframes flip { 0% { transform: rotateX(90deg); opacity: .2; } 100% { transform: rotateX(0); opacity: 1; } }
+.pass-body { padding: 18px; }
+.pass-code { font-family: 'Anuphan', sans-serif; font-weight: 700; font-size: 30px; line-height: 1.3; }
+.pass-name { font-size: 15px; color: var(--pass-muted); }
+.pass-grid { display: grid; grid-template-columns: 1.35fr 1fr .9fr; gap: 10px; margin-top: 18px; }
+.pass-grid small { display: block; font-size: 13px; color: var(--pass-muted); }
+.pass-grid b { display: block; font-family: 'Anuphan', sans-serif; font-weight: 700; font-size: 21px; line-height: 1.35; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pass-perf { position: relative; border-top: 2px dashed var(--pass-rule); }
+.pass-perf::before, .pass-perf::after { content: ''; position: absolute; top: -12px; width: 22px; height: 22px;
+    border-radius: 50%; background: var(--tarmac); }
+.pass-perf::before { left: -11px; }
+.pass-perf::after { right: -11px; }
+.pass-foot { padding: 16px 18px 18px; }
+.pass-foot p { font-size: 15px; color: var(--pass-muted); }
+
+/* Actions */
+.btn-board { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 54px;
+    border-radius: 14px; background: var(--go); color: #fff; font-family: 'Anuphan', sans-serif;
+    font-weight: 600; font-size: 18px; transition: background .15s; }
+.btn-board:hover { background: var(--go-deep); }
+.btn-board:active { background: var(--go-deep); transform: translateY(1px); }
+.btn-quiet { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 50px;
+    border-radius: 14px; background: transparent; border: 1.5px solid var(--pass-rule); color: var(--pass-ink);
+    font-weight: 600; font-size: 16px; }
+.btn-gate { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 54px;
+    border-radius: 14px; background: var(--gate); color: var(--pass-ink); font-family: 'Anuphan', sans-serif;
+    font-weight: 700; font-size: 17px; }
+
+/* Departures board */
+.board-title { display: flex; justify-content: space-between; align-items: baseline; margin: 28px 2px 6px;
+    font-family: 'Anuphan', sans-serif; font-weight: 600; font-size: 17px; color: #fff; }
+.board-title span { font-family: 'Noto Sans Thai', sans-serif; font-weight: 400; font-size: 14px; color: rgb(255 255 255 / 70%); }
+.board-row { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 12px;
+    padding: 14px 2px; border-top: 1px solid var(--tarmac-line); color: #fff; }
+a.board-row:active { background: var(--tarmac-2); }
+.board-row b { font-family: 'Anuphan', sans-serif; font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; }
+.board-row .what { min-width: 0; font-size: 15px; }
+.board-row .what small { display: block; font-size: 13px; color: rgb(255 255 255 / 70%); }
+.chip { font-family: 'Anuphan', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: .03em;
+    padding: 4px 9px; border-radius: 7px; white-space: nowrap; background: rgb(255 255 255 / 14%); color: #fff; }
+.chip.boarding { background: var(--gate); color: var(--pass-ink); }
+.chip.boarded { background: var(--go); }
+.chip.late { background: #F08C2A; color: var(--pass-ink); }
+.chip.closed { background: rgb(229 72 77 / 85%); }
+.board-empty { padding: 18px 2px; color: rgb(255 255 255 / 75%); font-size: 15px; border-top: 1px solid var(--tarmac-line); }
+
+.tarmac-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: -4px 0 8px -4px; padding: 0 4px;
+    font-size: 15px; color: rgb(255 255 255 / 80%); }
+.tarmac-back:hover { color: #fff; }
+
+/* modern.css paints active step dots in Action Blue; in the pass the gate colour leads. */
+[data-world="pass"] .ci-dot.active { background: var(--gate); color: var(--pass-ink); }
+[data-world="pass"] .ci-dot.done { background: var(--go); color: #fff; }
+
+/* Notices on the tarmac */
+.tarmac-note { display: flex; gap: 12px; align-items: flex-start; background: var(--tarmac-2); border: 1px solid var(--tarmac-line);
+    border-radius: 16px; padding: 14px 16px; color: #fff; font-size: 15px; }
+.tarmac-note small { display: block; color: rgb(255 255 255 / 72%); font-size: 14px; margin-top: 2px; }
+.tarmac-link { color: #fff; text-decoration: underline; text-underline-offset: 4px; }
+
+/* Bottom tab bar (students, phones) */
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; justify-content: space-around;
+    background: var(--tarmac-2); border-top: 1px solid var(--tarmac-line);
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
+.tabbar a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 52px;
+    justify-content: center; border-radius: 12px; font-size: 12px; color: rgb(255 255 255 / 68%); }
+.tabbar a svg { width: 22px; height: 22px; }
+.tabbar a[aria-current="page"] { color: var(--gate); font-weight: 600; }
+.tabbar a:focus-visible { outline: 3px solid var(--gate); outline-offset: -3px; }
+@media (min-width: 1024px) { .tabbar { display: none; } [data-world="pass"] #main-content { padding-bottom: 48px; } }
+@media (prefers-reduced-motion: reduce) { .pass-band .flip.turn { animation: none; } }

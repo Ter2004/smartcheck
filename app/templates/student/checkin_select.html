@@ -1,60 +1,58 @@
 {% extends "base.html" %}
 {% block title %}เลือกคาบเรียน — SmartCheck{% endblock %}
 {% block content %}
-<div class="max-w-3xl mx-auto">
-    <a href="{{ url_for('student.dashboard') }}"
-       class="inline-flex items-center gap-1.5 min-h-[44px] -ml-1 px-1 text-sm text-slate-600 hover:text-slate-900">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
-        หน้าหลัก
-    </a>
-    <h1 class="text-xl font-semibold text-slate-900 mt-2 mb-2">เลือกคาบที่ต้องการเช็คชื่อ</h1>
-    <p class="text-sm text-slate-500 mb-6">แตะคาบที่เปิดอยู่ แล้วสแกนใบหน้าในห้องเรียน</p>
+{% set days = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'] %}
+{% set short_days = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'] %}
+<div class="max-w-md mx-auto">
+    <header class="pass-head">
+        <small>แตะคาบที่ขึ้น BOARDING แล้วสแกนหน้าในห้องเรียน</small>
+        <h1>เช็คชื่อ</h1>
+    </header>
 
-    <section class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-6" aria-labelledby="open-heading">
-        <h2 id="open-heading" class="px-5 py-4 border-b border-slate-100 text-base font-semibold text-slate-900">คาบที่เปิดเช็คชื่อวันนี้</h2>
-        {% if available_sessions %}
-        <ul class="divide-y divide-slate-100">
+    <section aria-labelledby="open-heading">
+        <h2 id="open-heading" class="sr-only">คาบที่เปิดเช็คชื่อวันนี้</h2>
         {% for item in available_sessions %}
-            <li class="px-5 py-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-                <div class="min-w-0">
-                    <p class="text-base font-semibold text-slate-900">{{ item.courses.code }} — {{ item.courses.name }}</p>
-                    <p class="text-sm text-slate-500 mt-0.5">{{ item.title }}{% if item.beacons %} · {{ item.beacons.room_name }}{% endif %}</p>
-                </div>
-                {% if item.id in checked_session_ids %}
-                <span class="inline-flex items-center gap-1.5 text-sm font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-full">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-                    เช็คชื่อแล้ว
-                </span>
+        {% set done = item.id in checked_session_ids %}
+        <article class="pass mb-4" aria-label="คาบ {{ item.courses.code }}">
+            <div class="pass-band" data-state="{{ 'boarded' if done else 'boarding' }}">
+                <span>{{ 'BOARDED · เช็คชื่อแล้ว' if done else 'BOARDING · เปิดเช็คชื่อ' }}</span>
+                <span>{{ item.beacons.room_name if item.beacons else '' }}</span>
+            </div>
+            <div class="pass-body">
+                <p class="pass-code">{{ item.courses.code }}</p>
+                <p class="pass-name">{{ item.courses.name }}</p>
+            </div>
+            <div class="pass-perf" aria-hidden="true"></div>
+            <div class="pass-foot">
+                {% if done %}
+                <p>บันทึกแล้ว ไม่ต้องทำอะไรเพิ่ม</p>
                 {% else %}
-                <a href="{{ url_for('student.checkin', session_id=item.id) }}" aria-label="เช็คชื่อคาบ {{ item.courses.code }} {{ item.title }}"
-                   class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-sm font-medium px-5 py-3 rounded-xl whitespace-nowrap transition-colors">
-                    เช็คชื่อ
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
-                </a>
+                <a href="{{ url_for('student.checkin', session_id=item.id) }}" class="btn-board"
+                   aria-label="เช็คชื่อคาบ {{ item.courses.code }} {{ item.title }}">สแกนหน้าเช็คชื่อ</a>
                 {% endif %}
-            </li>
-        {% endfor %}
-        </ul>
+            </div>
+        </article>
         {% else %}
-        <p class="px-5 py-6 text-sm text-slate-500" role="status">ยังไม่มีคาบที่เปิดเช็คชื่อสำหรับคุณในวันนี้ — เมื่ออาจารย์เปิดคาบ คาบจะขึ้นที่นี่</p>
-        {% endif %}
+        <div class="pass" role="status">
+            <div class="pass-band" data-state="closed"><span>ยังไม่มีคาบเปิด</span><span>วันนี้</span></div>
+            <div class="pass-body">
+                <p class="pass-code">รออาจารย์เปิดคาบ</p>
+                <p class="pass-name">เมื่ออาจารย์เปิดคาบ คาบจะขึ้นที่นี่ และแอปจะแจ้งเตือน</p>
+            </div>
+        </div>
+        {% endfor %}
     </section>
 
     {% if week_schedules %}
-    {% set days = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'] %}
-    <section class="bg-white border border-slate-200 rounded-xl overflow-hidden" aria-labelledby="week-heading">
-        <h2 id="week-heading" class="px-5 py-4 border-b border-slate-100 text-base font-semibold text-slate-900">ตารางเรียนของคุณ</h2>
-        <ul class="divide-y divide-slate-100">
+    <section aria-labelledby="week-heading">
+        <h2 id="week-heading" class="board-title">ตารางเรียนสัปดาห์นี้ <span>{{ week_schedules | length }} คาบ</span></h2>
         {% for sch in week_schedules %}
-            <li class="px-5 py-3.5 grid grid-cols-[5.5rem_1fr] gap-x-3 text-sm">
-                <span class="text-slate-500">{{ days[sch.day_of_week] }}</span>
-                <span class="min-w-0">
-                    <span class="block text-slate-900">{{ sch.courses.code }} — {{ sch.courses.name }}</span>
-                    <span class="block text-slate-500 mt-0.5"><span class="tabular-nums">{{ sch.start_time[:5] }}–{{ sch.end_time[:5] }}</span>{% if sch.beacons %} · {{ sch.beacons.room_name }}{% endif %}</span>
-                </span>
-            </li>
+        <div class="board-row">
+            <b>{{ sch.start_time[:5] }}</b>
+            <span class="what">{{ sch.courses.code }} — {{ sch.courses.name }}<small>วัน{{ days[sch.day_of_week] }} · ถึง {{ sch.end_time[:5] }}{% if sch.beacons %} · {{ sch.beacons.room_name }}{% endif %}</small></span>
+            <span class="chip">{{ short_days[sch.day_of_week] }}</span>
+        </div>
         {% endfor %}
-        </ul>
     </section>
     {% endif %}
 </div>

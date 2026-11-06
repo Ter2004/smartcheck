@@ -34,6 +34,11 @@ class EnrollmentPerformanceTests(unittest.TestCase):
             lambda *args, **kwargs: render_template_string("{{ can_enroll_face }}", **kwargs))
         self.render_patch.start()
         self.addCleanup(self.render_patch.stop)
+        # The home page's class board has its own reads; these tests count status queries.
+        board_patch = patch.object(student, "_today_board_reads",
+                                   return_value=([], [], __import__("datetime").datetime.now()))
+        board_patch.start()
+        self.addCleanup(board_patch.stop)
 
     def test_baseline_and_cached_query_counts(self):
         for cache, endpoint, expected in (

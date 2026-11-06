@@ -75,7 +75,7 @@
 </article>
 {% endif %}
 
-<h2 class="board-title">คาบเรียน <span>{{ board | length }} คาบ</span></h2>
+<h2 class="board-title" id="todayBoard" data-states='{{ (board_states or {}) | tojson }}' data-url="{{ url_for('student.today_states') }}">คาบเรียน <span>{{ board | length }} คาบ</span></h2>
 {% for row in board %}
 {% set a = row.attendance %}
 {% set clickable = row.state == 'boarding' and enrolled %}
@@ -204,6 +204,35 @@
         setTimeout(tick, 1000);
     }
     tick();
+})();
+</script>
+<script>
+// The class opening (or closing) shows up without a reload by hand: while any class
+// is still to open or open, ask the server every 15 s (and when the app comes back
+// to the front) and reload once a state has changed. Stops when nothing can change.
+(function () {
+    const el = document.getElementById('todayBoard');
+    if (!el) return;
+    const shown = JSON.parse(el.dataset.states || '{}');
+    const live = Object.values(shown).some(s => s === 'waiting' || s === 'boarding');
+    if (!live) return;
+    let busy = false;
+    async function check() {
+        if (busy || document.visibilityState !== 'visible') return;
+        busy = true;
+        try {
+            const res = await fetch(el.dataset.url, {headers: {'Accept': 'application/json'}});
+            if (!res.ok) return;
+            const data = await res.json();
+            const now = data.states || {};
+            const changed = Object.keys(now).length !== Object.keys(shown).length
+                || Object.keys(now).some(id => now[id] !== shown[id]);
+            if (changed) location.reload();
+        } catch (_) { /* offline for a moment: the next tick tries again */ }
+        finally { busy = false; }
+    }
+    setInterval(check, 15000);
+    document.addEventListener('visibilitychange', check);
 })();
 </script>
 {% if config.LINE_BEACON_ENABLED %}

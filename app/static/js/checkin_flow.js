@@ -43,6 +43,7 @@ class CheckinFlow {
         this.sessionId     = opts.sessionId;
         this.beaconUUID    = opts.beaconUUID;
         this.apiUrl        = opts.apiUrl || '/api/checkin';
+        this.todayUrl      = opts.todayUrl || '/student/today.json';
         this.proximityMethod = opts.proximityMethod || 'ble';
         this.expectedRoom  = typeof opts.expectedRoom === 'string' ? opts.expectedRoom : '';
         // 'head_turn': one server-chosen turn, re-checked by the server; 'passive': legacy.
@@ -872,7 +873,11 @@ class CheckinFlow {
             document.getElementById('doneLoadingView').style.display = 'none';
             document.getElementById('doneResultView').style.display  = 'block';
             console.error('Check-in response failed', {name: e.name, status: e.httpStatus});
-            this._showDone('error', e.userMessage || 'การเชื่อมต่อขาดหาย — ดูที่หน้าวันนี้ ถ้าคาบนี้ขึ้น "มา" พร้อมเวลาแสดงว่าบันทึกแล้ว ถ้ายังไม่ขึ้นให้กลับมาเช็คชื่อใหม่', false);
+            if (e.httpStatus === 401) {
+                this._showDone('error', e.userMessage, false);   // logged out: asking again cannot work
+            } else {
+                this._showDone('unknown', e.userMessage || 'การเชื่อมต่อขาดหายระหว่างส่งผล — กด "ตรวจสอบผลอีกครั้ง" เพื่อดูว่าบันทึกแล้วหรือยัง', false);
+            }
         }
     }
 
@@ -895,9 +900,9 @@ class CheckinFlow {
         try { json = await res.json(); } catch (_) {
             if (res.status === 429) fail('คำขอมากเกินไป กรุณารอสักครู่แล้วโหลดหน้าใหม่');
             if ([502, 503, 504, 520, 521, 522, 523, 524, 530].includes(res.status)) {
-                fail(`เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ (HTTP ${res.status}) — ดูที่หน้าวันนี้ว่าคาบนี้บันทึกแล้วหรือยัง ก่อนลองใหม่`);
+                fail(`เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ (HTTP ${res.status}) — กด "ตรวจสอบผลอีกครั้ง" เพื่อดูว่าบันทึกแล้วหรือยัง`);
             }
-            fail(`เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status}) — ดูที่หน้าวันนี้ว่าคาบนี้บันทึกแล้วหรือยัง`);
+            fail(`เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status}) — กด "ตรวจสอบผลอีกครั้ง" เพื่อดูว่าบันทึกแล้วหรือยัง`);
         }
         if (!json || typeof json !== 'object' || Array.isArray(json)) {
             fail(`เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status}) กรุณาโหลดหน้าใหม่`);
@@ -914,6 +919,7 @@ class CheckinFlow {
     static DONE_ICONS = {
         check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path class="draw" d="M7.5 12.5l3 3 6-6.5"/></svg>',
         cross: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>',
+        question: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
         retake: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.4-6.4L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.4 6.4L3 16"/><path d="M3 21v-5h5"/></svg>',
     };
 
@@ -936,6 +942,36 @@ class CheckinFlow {
         return 'เปิดกล้องไม่ได้ — ปิดแล้วเปิดแอปใหม่ แล้วลองอีกครั้ง';
     }
 
+    /** After a lost answer: was this check-in recorded? Green with the time, or a retry. */
+    async checkResult() {
+        const btn = document.getElementById('doneCheck');
+        if (!btn || btn.disabled) return;
+        btn.disabled = true;
+        btn.textContent = 'กำลังตรวจสอบ...';
+        try {
+            const res = await fetch(this.todayUrl, {headers: {'Accept': 'application/json'}});
+            if (res.redirected && new URL(res.url, location.href).pathname === '/login') {
+                this._showDone('error', 'เซสชันหมดอายุ — เข้าสู่ระบบใหม่ แล้วดูที่หน้าวันนี้ว่าคาบนี้บันทึกแล้วหรือยัง', false);
+                return;
+            }
+            const data = res.ok ? await res.json() : null;
+            if (!data || !data.ok) throw new Error('status ' + res.status);
+            const mine = (data.checked || {})[this.sessionId];
+            if (mine) {
+                this._clearNotification();
+                this._showDone('success', '', false, mine);
+            } else {
+                this._retryRoomCode = true;   // the room receipt may have expired meanwhile
+                this._showDone('error', 'ยังไม่ได้บันทึก — กด "ลองใหม่" เพื่อเช็คชื่ออีกครั้ง', true);
+            }
+        } catch (_) {
+            this._showDone('unknown', 'ยังเชื่อมต่อไม่ได้ — ตรวจสอบอินเทอร์เน็ตแล้วกด "ตรวจสอบผลอีกครั้ง" อีกครั้ง', false);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'ตรวจสอบผลอีกครั้ง';
+        }
+    }
+
     _showDone(state, message, canRetry, result = {}) {
         const late = result.status === 'late';
         const time = CheckinFlow.thaiTime(result.check_in_at);
@@ -950,6 +986,8 @@ class CheckinFlow {
                       msg: 'หันหน้าเข้าหาแสง ถือมือถือให้นิ่ง และใช้ใบหน้าจริง (ไม่ใช่รูปหรือหน้าจอ) แล้วกด "ลองใหม่"'},
             error:   {band: 'failed', label: 'ยังไม่ได้บันทึก', icon: 'cross', tone: 'stop',
                       title: 'เช็คชื่อไม่สำเร็จ', msg: message || 'กรุณาลองใหม่'},
+            unknown: {band: 'closed', label: 'ยังไม่ทราบผล', icon: 'question', tone: 'muted',
+                      title: 'ยังไม่ทราบว่าบันทึกแล้วหรือยัง', msg: message},
         };
         const v = views[state] || views.error;
         document.body.classList.remove('ci-focus');
@@ -979,9 +1017,11 @@ class CheckinFlow {
         titleEl.classList.toggle('is-time', state === 'success' && !!time);
         document.getElementById('doneMsg').textContent = v.msg;
         document.getElementById('doneRetry').style.display = canRetry ? 'block' : 'none';
-        // With no retry, going back to today is the one thing left to do.
+        const check = document.getElementById('doneCheck');
+        if (check) check.style.display = state === 'unknown' ? 'block' : 'none';
+        // With no retry (or check), going back to today is the one thing left to do.
         const back = document.getElementById('doneBack');
-        if (back) back.className = canRetry ? 'btn-quiet' : 'btn-board';
+        if (back) back.className = canRetry || state === 'unknown' ? 'btn-quiet' : 'btn-board';
         // Screen readers: land on the answer.
         titleEl.setAttribute('tabindex', '-1');
         titleEl.focus({preventScroll: true});

@@ -189,6 +189,8 @@
             <!-- Retry (shown when it helps) comes first: it is the action that fixes the failure.
                  Without a retry, "back to today" becomes the main (green) action. -->
             <button id="doneRetry" class="btn-board hidden mb-2" onclick="flow.retry()">ลองใหม่</button>
+            <!-- The answer was lost on the way back: ask the server whether it was recorded. -->
+            <button id="doneCheck" class="btn-board mb-2" style="display:none" onclick="flow.checkResult()">ตรวจสอบผลอีกครั้ง</button>
             <a href="{{ url_for('student.dashboard') }}" id="doneBack" class="btn-quiet">กลับหน้าวันนี้</a>
         </div>
     </div>
@@ -215,6 +217,7 @@
         beaconUUID:    "{{ session_data.beacons.uuid }}",
         debug:         {{ (request.args.get('debug') == '1') | tojson }},
         apiUrl:        "{{ url_for('api_checkin.checkin') }}",
+        todayUrl:      "{{ url_for('student.today_states') }}",
         proximityMethod: "{{ config.CHECKIN_PROXIMITY_METHOD }}",
         // Broadcast mode: ignore the board of the room next door.
         expectedRoom:  {{ ((session_data.beacons or {}).ble_room_code or '') | tojson }},

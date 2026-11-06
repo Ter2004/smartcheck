@@ -5,6 +5,7 @@ from flask import (Blueprint, render_template, request, redirect,
                    url_for, flash, session, jsonify, Response, abort, current_app)
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
+from app import limiter as _limiter
 from app.services import attendance_export, class_open, class_push
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
 
@@ -241,6 +242,9 @@ def live_counts(attendance, total):
 
 
 @teacher_bp.route("/session/<session_id>/live.json")
+# Own limit instead of the 200/hour default: the page polls every 10 s (360/hour),
+# which hit 429 at request 201, about 33 minutes into a class (measured 2026-11-06).
+@_limiter.limit("30 per minute")
 @login_required
 @role_required("teacher")
 def session_live(session_id):

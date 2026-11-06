@@ -168,7 +168,28 @@ def dashboard():
     board = today_board(sessions, attendance, now_th, current_app.config)
     return render_template("student/dashboard.html", enrolled=enrolled,
                            needs_reenroll=not enrolled and _has_legacy_enrollment(user_id),
-                           board=board, hero=board_hero(board), today_label=thai_day_label(now_th))
+                           board=board, hero=board_hero(board), today_label=thai_day_label(now_th),
+                           board_states={row["id"]: row["state"] for row in board})
+
+
+@student_bp.route("/today.json")
+# Own limit: the home page polls every 15 s while a class is still to open (240/hour
+# would pass the 200/hour default 50 minutes in).
+@_limiter.limit("20 per minute")
+@login_required
+@role_required("student")
+def today_states():
+    """{session id: state} for today's board, so the home page notices a class opening."""
+    try:
+        sessions, attendance, now_th = _today_board_reads(session["user_id"], supabase_admin)
+    except Exception as e:
+        _audit.warning("[DASHBOARD] today states read failed: %s", type(e).__name__)
+        return jsonify(ok=False), 503
+    board = today_board(sessions, attendance, now_th, current_app.config)
+    return jsonify(ok=True, states={row["id"]: row["state"] for row in board},
+                   checked={row["id"]: {"status": row["attendance"].get("status"),
+                                        "check_in_at": row["attendance"].get("check_in_at")}
+                            for row in board if row.get("attendance")})
 
 
 _TH_DAYS = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"]

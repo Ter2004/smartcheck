@@ -50,11 +50,19 @@ main :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([ty
     min-height: 44px; border-radius: 12px; border-color: #d2d2d7;
 }
 main :is(button, a).bg-indigo-600 { min-height: 44px; border-radius: 12px; }
-main .text-slate-400 { color: #76767c; }
+main .text-slate-400 { color: #6e6e73; }
+/* WCAG 1.4.3: Tailwind's 500/600 status tints are under 4.5:1 on white and on their
+   own washes; text uses the DESIGN.md status inks instead. */
+main .text-emerald-600 { color: #047857; }
+main .text-amber-600 { color: #b45309; }
+main :is(.text-rose-500, .text-red-500) { color: #be123c; }
+main .placeholder-slate-400::placeholder { color: #6e6e73; }
 main .text-slate-900, main .text-slate-800 { color: var(--text); }
 main th { background: #fafafa; text-transform: none; letter-spacing: 0; }
 main td { border-color: #eeeef0; }
 main .overflow-hidden:has(> table) { overflow-x: auto; }
+/* Badges and row links in tables never wrap mid-word ("เปิด/อยู่") on phones. */
+main td :is(.rounded-full, a) { white-space: nowrap; }
 .help-disclosure { margin-top: 24px; padding: 20px 24px; background: #fff; border: 1px solid var(--border); border-radius: 20px; }
 .help-disclosure summary { color: var(--text-2); font-size: 14px; font-weight: 500; }
 .help-disclosure[open] summary { margin-bottom: 24px; }

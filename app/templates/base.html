@@ -36,8 +36,8 @@
         .toast-item { animation: toastIn 0.3s ease forwards; }
 
         /* Active nav link */
-        .nav-active { background: #eef2ff; color: #4f46e5 !important; }
-        .nav-active svg { stroke: #4f46e5; }
+        .nav-active { background: #e6edf7; color: #0062c4 !important; }
+        .nav-active svg { stroke: currentColor; }
     </style>
 
     {% block head %}{% endblock %}
@@ -161,7 +161,7 @@
             </div>
             <div class="flex-1 min-w-0">
                 <p class="text-xs font-medium text-slate-800 truncate">{{ session.get('user_name','') }}</p>
-                <p class="text-xs text-slate-400 capitalize">{{ session.get('user_role','') }}</p>
+                <p class="text-xs text-slate-500">{{ {'student': 'นักศึกษา', 'teacher': 'อาจารย์', 'admin': 'ผู้ดูแลระบบ'}.get(session.get('user_role',''), session.get('user_role','')) }}</p>
             </div>
         </div>
         <a href="{{ url_for('auth.change_password') }}"
@@ -187,7 +187,7 @@
     <!-- Mobile top bar (authenticated only) -->
     {% if session.get('user_id') %}
     <header class="lg:hidden sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
-        <button id="menu-toggle" aria-label="เปิดเมนู" aria-controls="sidebar" aria-expanded="false" onclick="toggleSidebar()" class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors">
+        <button id="menu-toggle" aria-label="เปิดเมนู" aria-controls="sidebar" aria-expanded="false" onclick="toggleSidebar()" class="w-11 h-11 -ml-2 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 transition-colors">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <div class="flex items-center gap-2">

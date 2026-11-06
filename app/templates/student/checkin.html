@@ -7,13 +7,13 @@
     /* ── Step indicators ───────────────────── */
     .ci-dot {
         width: 28px; height: 28px; border-radius: 50%;
-        background: #e2e8f0; color: #94a3b8;
+        background: #e2e8f0; color: #475569;
         display: flex; align-items: center; justify-content: center;
         font-size: 0.8rem; font-weight: 600; flex-shrink: 0;
         transition: background 0.3s, color 0.3s;
     }
-    .ci-dot.active { background: #4f46e5; color: #fff; }
-    .ci-dot.done   { background: #22c55e; color: #fff; }
+    .ci-dot.active { background: var(--primary); color: #fff; }
+    .ci-dot.done   { background: #047857; color: #fff; }
 
     /* ── Camera: same look as the v2 enrollment camera ── */
     .ci-stage { position: relative; width: 100%; aspect-ratio: 3/4; max-height: 70vh;
@@ -29,7 +29,7 @@
 
     /* ── Checking bar: an estimate easing toward 90%, then 100% on the answer ── */
     .ci-bar { height: 10px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 1rem 0 0.75rem; }
-    .ci-bar-fill { height: 100%; width: 0; background: #4f46e5; border-radius: 999px; transition: width 0.25s linear; }
+    .ci-bar-fill { height: 100%; width: 0; background: var(--primary); border-radius: 999px; transition: width 0.25s linear; }
 </style>
 {% endblock %}
 
@@ -37,8 +37,8 @@
 <div class="max-w-lg mx-auto">
 
     <a href="{{ url_for('student.checkin') }}"
-       class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 mb-4 transition-colors">
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+       class="inline-flex items-center gap-1.5 min-h-[44px] -ml-1 px-1 text-sm text-slate-600 hover:text-slate-900 mb-2 transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
         กลับไปเลือกคาบ
     </a>
     <h1 id="checkinStageTitle" class="text-xl font-semibold text-slate-900 mb-2">หาสัญญาณห้องเรียน</h1>
@@ -64,7 +64,7 @@
             {% for sch in week_schedules %}
                 {% set ws = week_session_map.get(sch.course_id) %}
                 {% set is_today = (sch.day_of_week == today_dow) %}
-                <tr class="{% if is_today %}bg-indigo-50/50 border-l-2 border-l-indigo-400{% endif %} hover:bg-slate-50 transition-colors">
+                <tr class="{% if is_today %}bg-indigo-50{% endif %} transition-colors">
                     <td class="px-4 py-3 text-xs font-medium {% if is_today %}text-indigo-700{% else %}text-slate-600{% endif %}">
                         {{ day_names_short[sch.day_of_week] }}
                     </td>
@@ -95,7 +95,7 @@
                             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>เช็คแล้ว
                         </span>
                         {% elif ws.end_time %}
-                        <span class="inline-flex items-center gap-1 text-xs text-rose-500">
+                        <span class="inline-flex items-center gap-1 text-xs text-rose-700">
                             <span class="w-2 h-2 bg-rose-400 rounded-full"></span>ปิดแล้ว
                         </span>
                         {% else %}
@@ -142,11 +142,11 @@
         <div class="flex-1 h-0.5 bg-slate-200"></div>
         <div class="ci-dot" id="dot3">3</div>
     </div>
-    <p class="text-xs text-slate-500">1 หาสัญญาณ → 2 ยืนยันใบหน้า → 3 ผลเช็คชื่อ</p>
+    <p class="text-sm text-slate-500">1 หาสัญญาณ → 2 ยืนยันใบหน้า → 3 ผลเช็คชื่อ</p>
     <p id="proximityStatus" role="status" class="text-sm text-slate-600"></p>
     <p id="receiptCountdown" role="timer" class="text-sm text-slate-600"></p>
 
-    <p class="text-xs text-slate-500 mb-4">
+    <p class="text-sm text-slate-500 mb-4">
         วิชา: <strong class="text-slate-700">{{ session_data.courses.code }} — {{ session_data.courses.name }}</strong>
         &nbsp;·&nbsp; {{ session_data.title }}
     </p>
@@ -234,12 +234,13 @@
             <div class="text-5xl mb-3" id="doneIcon"></div>
             <h3 class="text-base font-semibold text-slate-800" id="doneTitle"></h3>
             <p id="doneMsg" class="text-sm text-slate-500 mt-1 mb-5"></p>
+            <!-- Retry (shown when it helps) comes first: it is the action that fixes the failure. -->
+            <button id="doneRetry" class="w-full min-h-[48px] bg-indigo-600 hover:bg-indigo-700 text-white text-base font-medium py-3 rounded-xl transition-colors hidden mb-2"
+                    onclick="flow.retry()">ลองใหม่</button>
             <a href="{{ url_for('student.dashboard') }}"
-               class="inline-flex items-center justify-center w-full border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-medium py-2.5 rounded-xl transition-colors mb-2">
+               class="inline-flex items-center justify-center w-full min-h-[48px] border border-slate-200 hover:bg-slate-50 text-slate-700 text-base font-medium py-3 rounded-xl transition-colors">
                 กลับหน้าหลัก
             </a>
-            <button id="doneRetry" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors hidden"
-                    onclick="flow.retry()">ลองใหม่</button>
         </div>
     </div>
 

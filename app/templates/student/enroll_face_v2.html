@@ -14,7 +14,7 @@
     /* Oval cut-out, a five-part ring (one part per pose) and the pose arrows, as an SVG on top of the video. */
     .ev2-overlay { position: absolute; inset: 0; pointer-events: none; }
     .ev2-seg { fill: none; stroke-width: 7; stroke-linecap: round; stroke: rgba(255,255,255,0.35); transition: stroke 0.2s; }
-    .ev2-seg.active { stroke: #818cf8; }
+    .ev2-seg.active { stroke: #5299f0; }
     .ev2-seg.done { stroke: #22c55e; }
     .ev2-arrow { opacity: 0; fill: #fde047; }
     .ev2-arrow.show { animation: ev2blink 0.9s ease-in-out infinite; }
@@ -23,35 +23,35 @@
     .ev2-instruction { min-height: 3.2em; }
     /* Checking bar: an estimate that eases toward 90% while the server works, then jumps to 100%. */
     .ev2-bar { height: 10px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 1.25rem 0 0.75rem; }
-    .ev2-bar-fill { height: 100%; width: 0; background: #4f46e5; border-radius: 999px; transition: width 0.25s linear; }
+    .ev2-bar-fill { height: 100%; width: 0; background: var(--primary); border-radius: 999px; transition: width 0.25s linear; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="max-w-md mx-auto">
     <a href="{{ url_for('student.dashboard') }}"
-       class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 mb-4 transition-colors">
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+       class="inline-flex items-center gap-1.5 min-h-[44px] -ml-1 px-1 text-sm text-slate-600 hover:text-slate-900 mb-2 transition-colors">
+        <svg class="w-4 h-4" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
         กลับหน้าหลัก
     </a>
     <h1 class="text-xl font-semibold text-slate-900 mb-4">ลงทะเบียนใบหน้า</h1>
 
     <!-- ── Screen 1: consent + start ── -->
     <section class="ev2-screen active bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="ev2Consent">
-        <h2 class="text-sm font-semibold text-slate-800 mb-2">ก่อนเริ่ม (PDPA)</h2>
+        <h2 class="text-base font-semibold text-slate-900 mb-2">ก่อนเริ่ม (PDPA)</h2>
         <ul class="text-sm text-slate-600 space-y-1.5 mb-3 list-disc pl-5">
             <li>ระบบเก็บ <b>ข้อมูลใบหน้าในรูปตัวเลข 7 ชุด</b> (หน้าตรง หันซ้าย หันขวา เงย ก้ม) และ <b>รูปหน้าตรง 1 รูป</b></li>
             <li>ใช้เพื่อยืนยันตัวตนตอนเช็คชื่อเท่านั้น อาจารย์ในรายวิชาของคุณเห็นรูปได้</li>
             <li>ถอนความยินยอมและให้ลบข้อมูลได้ทุกเมื่อ โดยแจ้งผู้ดูแลระบบ (admin)</li>
         </ul>
         <a href="{{ url_for('student.pdpa_notice') }}" target="_blank" rel="noopener"
-           class="text-sm text-indigo-600 underline">อ่านประกาศความเป็นส่วนตัวฉบับเต็ม</a>
-        <label class="flex items-start gap-2.5 cursor-pointer my-4">
-            <input type="checkbox" id="ev2ConsentCheck" class="w-4 h-4 mt-0.5 accent-indigo-600">
+           class="inline-flex items-center min-h-[44px] text-sm text-indigo-600 underline underline-offset-4">อ่านประกาศความเป็นส่วนตัวฉบับเต็ม</a>
+        <label class="flex items-start gap-3 cursor-pointer my-3 py-2 rounded-xl">
+            <input type="checkbox" id="ev2ConsentCheck" class="w-5 h-5 mt-0.5 flex-shrink-0 accent-indigo-600">
             <span class="text-sm text-slate-700">ข้าพเจ้ายินยอมให้ SmartCheck เก็บและใช้ข้อมูลใบหน้าตามประกาศข้างต้น</span>
         </label>
         <button id="ev2Start" disabled
-                class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">
+                class="w-full min-h-[48px] bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-500 text-white text-base font-medium py-3 rounded-xl transition-colors">
             เริ่มและเปิดกล้อง
         </button>
         <p id="ev2ConsentError" class="text-sm text-rose-600 mt-3" role="alert"></p>

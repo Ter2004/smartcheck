@@ -2,12 +2,12 @@
 {% block title %}ประกาศความเป็นส่วนตัว — ข้อมูลใบหน้า{% endblock %}
 
 {% block content %}
-<article class="max-w-2xl mx-auto bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-sm text-slate-700 space-y-4">
+<article class="max-w-2xl mx-auto bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-[15px] leading-7 text-slate-700 space-y-6">
     <h1 class="text-lg font-semibold text-slate-900">ประกาศความเป็นส่วนตัว: ข้อมูลใบหน้าสำหรับเช็คชื่อ</h1>
-    <p class="text-xs text-slate-400">ฉบับ {{ consent_version }}</p>
+    <p class="text-sm text-slate-500 -mt-4">ฉบับ {{ consent_version }}</p>
 
     <section>
-        <h2 class="font-semibold text-slate-800 mb-1">ข้อมูลที่เก็บ</h2>
+        <h2 class="text-base font-semibold text-slate-900 mb-1.5">ข้อมูลที่เก็บ</h2>
         <ul class="list-disc pl-5 space-y-1">
             <li>ข้อมูลใบหน้าในรูปตัวเลข (face template) 7 ชุด ชุดละ 512 ค่า สร้างจากภาพที่ถ่ายตอนลงทะเบียน (หน้าตรง 3 ภาพ หันซ้าย หันขวา เงย และก้ม อย่างละ 1 ภาพ) โดยโมเดล ArcFace</li>
             <li>รูปหน้าตรง 1 รูป ที่ชัดที่สุดจากการลงทะเบียน</li>
@@ -17,25 +17,25 @@
     </section>
 
     <section>
-        <h2 class="font-semibold text-slate-800 mb-1">วัตถุประสงค์</h2>
+        <h2 class="text-base font-semibold text-slate-900 mb-1.5">วัตถุประสงค์</h2>
         <p>ยืนยันว่าผู้เช็คชื่อเป็นเจ้าของบัญชี ตรวจว่าเป็นใบหน้าจริงไม่ใช่รูปถ่ายหรือหน้าจอ และป้องกันการลงทะเบียนใบหน้าเดียวกันหลายบัญชี</p>
     </section>
 
     <section>
-        <h2 class="font-semibold text-slate-800 mb-1">ผู้ที่เข้าถึงข้อมูล</h2>
+        <h2 class="text-base font-semibold text-slate-900 mb-1.5">ผู้ที่เข้าถึงข้อมูล</h2>
         <p>เซิร์ฟเวอร์ของระบบเท่านั้นที่อ่านข้อมูลตัวเลขใบหน้าได้ รูปหน้าตรงแสดงให้อาจารย์ในรายวิชาที่คุณลงทะเบียนและผู้ดูแลระบบเห็น ผ่านลิงก์ชั่วคราว</p>
     </section>
 
     <section>
-        <h2 class="font-semibold text-slate-800 mb-1">ระยะเวลาเก็บและการลบ</h2>
+        <h2 class="text-base font-semibold text-slate-900 mb-1.5">ระยะเวลาเก็บและการลบ</h2>
         <p>เก็บตลอดระยะเวลาที่คุณเป็นนักศึกษาที่ใช้ระบบนี้ คุณถอนความยินยอมได้ทุกเมื่อโดยแจ้งผู้ดูแลระบบ (admin) ซึ่งจะบันทึกการถอนและลบข้อมูลตัวเลขใบหน้าและรูปทันที บันทึกการให้และถอนความยินยอมเก็บไว้เป็นหลักฐานตามกฎหมาย</p>
     </section>
 
     <section>
-        <h2 class="font-semibold text-slate-800 mb-1">ข้อจำกัด</h2>
+        <h2 class="text-base font-semibold text-slate-900 mb-1.5">ข้อจำกัด</h2>
         <p>ข้อมูลตัวเลขใบหน้าย้อนกลับเป็นรูปโดยตรงไม่ได้ แต่ยังถือเป็นข้อมูลชีวมิติ จึงเก็บในฐานข้อมูลที่เข้าถึงได้เฉพาะเซิร์ฟเวอร์และมีการตรวจว่าไม่ถูกแก้ไข</p>
     </section>
 
-    <p><a href="{{ url_for('student.enroll_face') }}" class="text-indigo-600 underline">กลับไปหน้าลงทะเบียน</a></p>
+    <p class="pt-2"><a href="{{ url_for('student.enroll_face') }}" class="inline-flex items-center min-h-[44px] text-indigo-600 underline underline-offset-4">กลับไปหน้าลงทะเบียน</a></p>
 </article>
 {% endblock %}

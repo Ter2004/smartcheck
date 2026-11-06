@@ -475,6 +475,8 @@ def week_timetable(schedules, week_sessions, checked_ids, open_ids, now_th):
     th = timezone(timedelta(hours=7))
     slot_session = {}
     for s in week_sessions:
+        if not s.get("start_time"):
+            continue
         start = datetime.fromisoformat(s["start_time"].replace("Z", "+00:00")).astimezone(th)
         slot_session[(s["course_id"], start.weekday(), start.strftime("%H:%M"))] = s
     span = (TIMETABLE_LAST_HOUR - TIMETABLE_FIRST_HOUR) * 60

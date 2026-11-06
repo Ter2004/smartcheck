@@ -10,6 +10,7 @@
     --go: #12855B;           /* 4.65:1 with white text */
     --go-deep: #0E6B49;
     --stop: #C9343A;         /* 5.2:1 with white text */
+    --late: #F08C2A;         /* ink text on it */
     --pass-ink: #0B1D3A;
     --pass-muted: #51607A;
     --pass-rule: #CBD3E1;
@@ -32,6 +33,8 @@ body[data-world="pass"] { background: var(--tarmac) !important; color: #fff; }
 .pass-band[data-state="boarding"] { background: var(--gate); }
 .pass-band[data-state="closing"] { background: var(--stop); color: #fff; }
 .pass-band[data-state="boarded"] { background: var(--go); color: #fff; }
+.pass-band[data-state="late"] { background: var(--late); color: var(--pass-ink); }
+.pass-band[data-state="failed"] { background: var(--stop); color: #fff; }
 .pass-band[data-state="closed"] { background: #E6EAF2; color: var(--pass-muted); }
 .pass-band .flip { display: inline-block; }
 .pass-band .flip.turn { animation: flip .32s cubic-bezier(.2,.7,.2,1); }
@@ -81,7 +84,7 @@ a.board-row:active { background: var(--tarmac-2); }
     padding: 4px 9px; border-radius: 7px; white-space: nowrap; background: rgb(255 255 255 / 14%); color: #fff; }
 .chip.boarding { background: var(--gate); color: var(--pass-ink); }
 .chip.boarded { background: var(--go); }
-.chip.late { background: #F08C2A; color: var(--pass-ink); }
+.chip.late { background: var(--late); color: var(--pass-ink); }
 .chip.closed { background: var(--stop); }
 .board-empty { padding: 18px 2px; color: rgb(255 255 255 / 75%); font-size: 15px; border-top: 1px solid var(--tarmac-line); }
 
@@ -131,7 +134,7 @@ a.board-row:active { background: var(--tarmac-2); }
 .tt-block.open { background: var(--gate); box-shadow: 0 0 0 2px #fff; }
 .tt-block.open small { color: var(--pass-ink); }
 .tt-block.boarded { background: var(--go); color: #fff; }
-.tt-block.boarded small { color: rgb(255 255 255 / 88%); }
+.tt-block.boarded small { color: #fff; }
 .tt-block.closed { background: #4A5A78; color: #fff; }
 .tt-block.closed small { color: rgb(255 255 255 / 80%); }
 a.tt-block:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }

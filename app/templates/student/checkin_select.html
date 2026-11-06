@@ -5,7 +5,7 @@
 {% set short_days = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'] %}
 <div class="max-w-md mx-auto">
     <header class="pass-head">
-        <small>แตะคาบที่ขึ้น BOARDING แล้วสแกนหน้าในห้องเรียน</small>
+        <small>แตะคาบที่ "เปิดเช็คชื่อ" แล้วสแกนหน้าในห้องเรียน</small>
         <h1>เช็คชื่อ</h1>
     </header>
 
@@ -15,7 +15,7 @@
         {% set done = item.id in checked_session_ids %}
         <article class="pass mb-4" aria-label="คาบ {{ item.courses.code }}">
             <div class="pass-band" data-state="{{ 'boarded' if done else 'boarding' }}">
-                <span>{{ 'BOARDED · เช็คชื่อแล้ว' if done else 'BOARDING · เปิดเช็คชื่อ' }}</span>
+                <span>{{ 'เช็คชื่อแล้ว' if done else 'เปิดเช็คชื่อ' }}</span>
                 <span>{{ item.beacons.room_name if item.beacons else '' }}</span>
             </div>
             <div class="pass-body">

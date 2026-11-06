@@ -23,9 +23,9 @@
         {% for s in today_sessions %}
         <article class="pass pass-on-light" aria-label="คาบ {{ s.courses.code }}">
             {% if s.is_open %}
-            <div class="pass-band" data-state="boarding"><span>BOARDING · เปิดอยู่</span><span>{% if s.on_time_until %}ทันเวลาถึง {{ s.on_time_until | thai_time('%H:%M') }}{% endif %}</span></div>
+            <div class="pass-band" data-state="boarding"><span>เปิดเช็คชื่ออยู่</span><span>{% if s.on_time_until %}ทันเวลาถึง {{ s.on_time_until | thai_time('%H:%M') }}{% endif %}</span></div>
             {% elif s.end_time %}
-            <div class="pass-band" data-state="closed"><span>CLOSED · เสร็จแล้ว</span><span>{{ s.start_time | thai_time('%H:%M') }}</span></div>
+            <div class="pass-band" data-state="closed"><span>ปิดแล้ว</span><span>{{ s.start_time | thai_time('%H:%M') }}</span></div>
             {% else %}
             <div class="pass-band" data-state="waiting"><span>รอเปิดคาบ</span><span>เริ่ม {{ s.start_time | thai_time('%H:%M') }}</span></div>
             {% endif %}

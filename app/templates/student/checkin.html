@@ -62,7 +62,7 @@
 
     {% elif already_checked %}
     <div class="pass">
-        <div class="pass-band" data-state="boarded"><span>BOARDED · เช็คชื่อแล้ว</span><span>{{ session_data.beacons.room_name if session_data.beacons else '' }}</span></div>
+        <div class="pass-band" data-state="boarded"><span>เช็คชื่อแล้ว</span><span>{{ session_data.beacons.room_name if session_data.beacons else '' }}</span></div>
         <div class="pass-body">
             <p class="pass-code">{{ session_data.courses.code }}</p>
             <p class="pass-name">{{ session_data.courses.name }}</p>

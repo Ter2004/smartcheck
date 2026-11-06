@@ -26,17 +26,17 @@
 {% set a = hero.attendance %}
 <article class="pass" aria-label="คาบ {{ hero.code }}">
     {% if hero.state == 'boarding' %}
-    <div class="pass-band" data-state="boarding" data-until="{{ hero.on_time_until or '' }}">
-        <span class="flip" data-band-label>{{ 'เปิดเช็คชื่อ · สาย' if hero.late_now else 'BOARDING · เปิดเช็คชื่อ' }}</span>
+    <div class="pass-band" data-state="{{ 'late' if hero.late_now else 'boarding' }}" data-until="{{ hero.on_time_until or '' }}">
+        <span class="flip" data-band-label>{{ 'เปิดอยู่ · ตอนนี้นับสาย' if hero.late_now else 'เปิดเช็คชื่อ' }}</span>
         <span>{% if hero.on_time_until %}ทันเวลาถึง {{ hero.on_time_until | thai_time('%H:%M') }}{% endif %}</span>
     </div>
     {% elif hero.state == 'boarded' %}
-    <div class="pass-band" data-state="boarded">
-        <span>BOARDED · {{ 'มาสาย' if a.status == 'late' else 'มาเรียน' }}</span>
+    <div class="pass-band" data-state="{{ 'late' if a.status == 'late' else 'boarded' }}">
+        <span>{{ 'เช็คชื่อแล้ว · มาสาย' if a.status == 'late' else 'เช็คชื่อแล้ว · มาเรียน' }}</span>
         <span>{{ a.check_in_at | thai_time('%H:%M') }}</span>
     </div>
     {% elif hero.state == 'closed' %}
-    <div class="pass-band" data-state="closed"><span>CLOSED · ปิดแล้ว</span><span>ไม่ได้เช็คชื่อ</span></div>
+    <div class="pass-band" data-state="closed"><span>ปิดแล้ว</span><span>ไม่ได้เช็คชื่อ</span></div>
     {% else %}
     <div class="pass-band" data-state="waiting"><span>รอเปิดคาบ</span><span>เริ่ม {{ hero.start_time | thai_time('%H:%M') }}</span></div>
     {% endif %}
@@ -83,7 +83,7 @@
     <b>{{ row.start_time | thai_time('%H:%M') }}</b>
     <span class="what">{{ row.code }}<small>{{ row.name }}{% if row.room %} · {{ row.room }}{% endif %}</small></span>
     {% if row.state == 'boarded' %}<span class="chip {{ 'late' if a.status == 'late' else 'boarded' }}">{{ 'สาย' if a.status == 'late' else 'มา' }} {{ a.check_in_at | thai_time('%H:%M') }}</span>
-    {% elif row.state == 'boarding' %}<span class="chip boarding">BOARDING</span>
+    {% elif row.state == 'boarding' %}<span class="chip boarding">เปิดอยู่</span>
     {% elif row.state == 'closed' %}<span class="chip closed">ปิดแล้ว</span>
     {% else %}<span class="chip">รอเปิด</span>{% endif %}
 </{{ 'a' if clickable else 'div' }}>
@@ -94,9 +94,9 @@
 <details class="mt-6 rounded-2xl" style="background:var(--tarmac-2);border:1px solid var(--tarmac-line)">
     <summary class="px-4 py-3.5 text-[15px] font-medium cursor-pointer">วิธีเช็คชื่อ</summary>
     <ol class="px-4 pb-4 space-y-2 text-[15px]" style="color:rgb(255 255 255 / 80%)">
-        <li>1. อาจารย์เปิดคาบ — แอปแจ้งเตือน แถบบนบัตรขึ้น BOARDING</li>
+        <li>1. อาจารย์เปิดคาบ — แอปแจ้งเตือน แถบบนบัตรขึ้นสีเหลือง "เปิดเช็คชื่อ"</li>
         <li>2. อยู่ในห้องเรียน แตะ "สแกนหน้าเช็คชื่อ" — แอปหาสัญญาณห้องให้เอง</li>
-        <li>3. มองกล้องตรงๆ นิ่งไว้ครู่เดียว — บัตรเปลี่ยนเป็น BOARDED</li>
+        <li>3. มองกล้องตรงๆ นิ่งไว้ครู่เดียว — แถบเปลี่ยนเป็นสีเขียว "เช็คชื่อแล้ว"</li>
     </ol>
 </details>
 {% if enrolled %}
@@ -182,7 +182,7 @@
 {% block scripts %}
 <script>
 // Gate display: the boarding band counts down to the end of the on-time window,
-// flips to CLOSING in the last minute and to "สาย" after it.
+// turns red "ใกล้สาย" in the last minute and orange "นับสาย" after it.
 (function () {
     const band = document.querySelector('.pass-band[data-until]');
     const out = document.querySelector('[data-countdown]');
@@ -198,9 +198,9 @@
     }
     function tick() {
         const left = Math.max(0, Math.round((until - Date.now()) / 1000));
-        if (!left) { out.textContent = 'สาย'; set('เปิดเช็คชื่อ · สาย', 'closing'); return; }
+        if (!left) { out.textContent = 'สาย'; set('เปิดอยู่ · ตอนนี้นับสาย', 'late'); return; }
         out.textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
-        set(left <= 60 ? 'CLOSING · อีก 1 นาทีสาย' : 'BOARDING · เปิดเช็คชื่อ', left <= 60 ? 'closing' : 'boarding');
+        set(left <= 60 ? 'ใกล้สาย · รีบเช็คชื่อ' : 'เปิดเช็คชื่อ', left <= 60 ? 'closing' : 'boarding');
         setTimeout(tick, 1000);
     }
     tick();

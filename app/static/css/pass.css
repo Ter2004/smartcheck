@@ -97,7 +97,7 @@ a.board-row:active { background: var(--tarmac-2); }
 .tt-body { position: relative; display: grid; grid-template-columns: var(--tt-gutter) repeat(5, 1fr); gap: 4px;
     height: calc(var(--tt-hour) * 12); }
 .tt-hours { position: relative; }
-.tt-hours span { display: block; height: var(--tt-hour); margin-top: -7px; padding-right: 6px; text-align: right;
+.tt-hours span { display: block; height: var(--tt-hour); transform: translateY(-7px); padding-right: 6px; text-align: right;
     font-family: 'Anuphan', sans-serif; font-size: 11px; color: rgb(255 255 255 / 62%); font-variant-numeric: tabular-nums; }
 .tt-hours span:last-child { height: 0; }
 .tt-day { position: relative; border-radius: 8px;

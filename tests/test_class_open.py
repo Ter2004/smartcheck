@@ -165,7 +165,10 @@ class TeacherOpenRouteTests(unittest.TestCase):
             return self.client.post("/teacher/session/s1/open", data={"csrf_token": "c", "minutes": minutes})
 
     def test_opens_with_the_chosen_minutes(self):
-        self.assertEqual(self.press().status_code, 302)
+        response = self.press()
+        self.assertEqual(response.status_code, 302)
+        # Lands on the live head-count, not back on the dashboard.
+        self.assertTrue(response.location.endswith("/teacher/session/s1"))
         changes = self.query.update.call_args.args[0]
         self.assertEqual(changes, {"is_open": True, "opened_at": at(-5).isoformat(),
                                    "opened_by": "teacher-1", "present_minutes": 10})

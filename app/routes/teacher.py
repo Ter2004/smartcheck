@@ -192,7 +192,7 @@ def session_view(session_id):
     )
     sess = sess.data if sess else None
     if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
-        flash("ไม่พบ session หรือไม่มีสิทธิ์", "danger")
+        flash("ไม่พบคาบนี้หรือไม่มีสิทธิ์", "danger")
         return redirect(url_for("teacher.dashboard"))
 
     attendance = (
@@ -215,6 +215,7 @@ def session_view(session_id):
 
     # att_map: student_id → attendance row (สร้างใน Python เพื่อใช้ใน template)
     att_map = {a["student_id"]: a for a in attendance}
+    sess["on_time_until"] = _iso(class_open.on_time_until(sess, current_app.config)) if sess.get("is_open") else None
 
     return render_template(
         "teacher/session_view.html",
@@ -222,8 +223,40 @@ def session_view(session_id):
         attendance=attendance,
         all_students=all_students,
         att_map=att_map,
+        counts=live_counts(attendance, len(all_students)),
         photos=_enrollment_photos([s["student_id"] for s in all_students]),
     )
+
+
+CHECKED_STATUSES = ("present", "late", "manual")
+
+
+def live_counts(attendance, total):
+    """Head-count for the teacher's live view. "rest" is not checked in yet while the
+    class is open, and absent once it has closed (the template words it)."""
+    checked = [a for a in attendance if a.get("status") in CHECKED_STATUSES]
+    late = sum(1 for a in checked if a.get("status") == "late")
+    return {"total": total, "checked": len(checked), "late": late,
+            "present": len(checked) - late, "rest": max(0, total - len(checked))}
+
+
+@teacher_bp.route("/session/<session_id>/live.json")
+@login_required
+@role_required("teacher")
+def session_live(session_id):
+    """Counts and per-student status for the open-class view (polled; no page reload)."""
+    sess = _owned_session(session_id, session["user_id"])
+    if not sess:
+        return jsonify(ok=False, error="ไม่พบคาบนี้หรือไม่มีสิทธิ์"), 403
+    attendance = (supabase_admin.table("attendance")
+                  .select("student_id, status, check_in_at")
+                  .eq("session_id", session_id).execute().data or [])
+    enrolled = (supabase_admin.table("course_enrollments")
+                .select("student_id").eq("course_id", sess["course_id"]).execute().data or [])
+    return jsonify(ok=True, is_open=bool(sess.get("is_open")),
+                   counts=live_counts(attendance, len(enrolled)),
+                   rows={a["student_id"]: {"status": a.get("status"), "check_in_at": a.get("check_in_at")}
+                         for a in attendance})
 
 
 def _now():
@@ -248,7 +281,7 @@ def session_open(session_id):
            .eq("id", session_id).maybe_single().execute())
     sess = res.data if res else None
     if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
-        flash("ไม่พบ session หรือไม่มีสิทธิ์", "danger")
+        flash("ไม่พบคาบนี้หรือไม่มีสิทธิ์", "danger")
         return redirect(url_for("teacher.dashboard"))
     minutes = class_open.parse_minutes(request.form.get("minutes"), config)
     if minutes is None:
@@ -271,8 +304,10 @@ def session_open(session_id):
                     session_id=session_id, new_value="opened", metadata={"present_minutes": minutes})
     class_push.class_opened(session_id, now, minutes, config)
     until = (now + timedelta(minutes=minutes)).astimezone(timezone(timedelta(hours=7)))
-    flash(f"เปิดคาบ {sess['courses']['code']} แล้ว — เช็คชื่อทันเวลาได้ถึง {until:%H:%M}", "success")
-    return redirect(url_for("teacher.dashboard"))
+    sent = " · ส่งแจ้งเตือนถึงนักศึกษาแล้ว" if class_push.enabled(config) else ""
+    flash(f"เปิดคาบ {sess['courses']['code']} แล้ว — เช็คชื่อทันเวลาได้ถึง {until:%H:%M}{sent}", "success")
+    # Land on the live head-count, which is what the teacher watches next.
+    return redirect(url_for("teacher.session_view", session_id=session_id))
 
 
 def _owned_session(session_id, teacher_id):
@@ -301,7 +336,7 @@ def session_code_screen(session_id):
         abort(404)
     sess = _owned_session(session_id, session["user_id"])
     if not sess:
-        flash("ไม่พบ session หรือไม่มีสิทธิ์", "danger")
+        flash("ไม่พบคาบนี้หรือไม่มีสิทธิ์", "danger")
         return redirect(url_for("teacher.dashboard"))
     return render_template("teacher/session_code.html", sess=sess)
 
@@ -314,7 +349,7 @@ def session_code_json(session_id):
         abort(404)
     sess = _owned_session(session_id, session["user_id"])
     if not sess:
-        return jsonify(ok=False, error="ไม่พบ session หรือไม่มีสิทธิ์"), 403
+        return jsonify(ok=False, error="ไม่พบคาบนี้หรือไม่มีสิทธิ์"), 403
     if not sess.get("is_open"):
         return jsonify(ok=False, closed=True, error="คาบนี้ปิดการเช็คชื่อแล้ว")
     from app.services import session_code

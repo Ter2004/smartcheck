@@ -460,7 +460,7 @@ def _eligible(data):
         )
     if not sess_res or not sess_res.data:
         reject("session_missing")
-        return None, (jsonify({"ok": False, "error": "ไม่พบ session"}), 404)
+        return None, (jsonify({"ok": False, "error": "ไม่พบคาบเรียนนี้"}), 404)
     sess = sess_res.data
     if not sess.get("is_open"):
         reject("session_closed")

@@ -1,242 +1,215 @@
 ---
 name: SmartCheck
-description: Classroom attendance in seconds — room board plus face, on the student's phone.
+description: Classroom attendance in seconds. Each class is a boarding pass, the classroom is the gate.
 colors:
-  action-blue: "#0071e3"
-  action-blue-deep: "#0062c4"
-  action-blue-wash: "#eaf3ff"
-  canvas: "#f5f5f7"
-  surface: "#ffffff"
-  ink: "#1d1d1f"
-  ink-secondary: "#424245"
-  ink-muted: "#6e6e73"
-  hairline: "#e5e5ea"
-  field-stroke: "#d2d2d7"
-  present-green: "#047857"
-  present-wash: "#ecfdf5"
-  late-amber: "#b45309"
-  late-wash: "#fffbeb"
-  error-rose: "#be123c"
-  error-wash: "#fff1f2"
+  tarmac: "#0B1D3A"
+  tarmac-2: "#12284D"
+  tarmac-line: "rgb(255 255 255 / 12%)"
+  gate: "#FFB000"
+  go: "#12855B"
+  go-deep: "#0E6B49"
+  stop: "#C9343A"
+  late: "#F08C2A"
+  pass: "#FFFFFF"
+  pass-band-neutral: "#E6EAF2"
+  pass-ink: "#0B1D3A"
+  pass-muted: "#51607A"
+  pass-rule: "#CBD3E1"
+  work-ground: "#F3F5FA"
+  navy-500: "#2E4A7A"
+  navy-600: "#12284D"
+  navy-700: "#0B1D3A"
 typography:
-  headline:
-    fontFamily: "Noto Sans Thai, system-ui, sans-serif"
+  display:
+    fontFamily: "Anuphan, Noto Sans Thai, system-ui, sans-serif"
+    fontWeight: 700
+    note: "pass codes, band labels, times, page titles"
+  pass-code:
+    fontFamily: "Anuphan"
+    fontSize: "30px"
+    fontWeight: 700
+    lineHeight: 1.3
+  band:
+    fontFamily: "Anuphan"
+    fontSize: "14px"
+    fontWeight: 700
+    letterSpacing: "0.03em"
+  page-title:
+    fontFamily: "Anuphan"
     fontSize: "clamp(1.65rem, 3vw, 2.2rem)"
     fontWeight: 600
-    lineHeight: 1.45
-    letterSpacing: "-0.035em"
-  title:
-    fontFamily: "Noto Sans Thai, system-ui, sans-serif"
-    fontSize: "1rem"
-    fontWeight: 600
-    lineHeight: 1.5
+    lineHeight: 1.4
   body:
     fontFamily: "Noto Sans Thai, system-ui, sans-serif"
-    fontSize: "0.875rem"
-    fontWeight: 400
+    fontSize: "15px"
     lineHeight: 1.6
-  label:
-    fontFamily: "Noto Sans Thai, system-ui, sans-serif"
-    fontSize: "0.75rem"
-    fontWeight: 500
-    lineHeight: 1.5
   mono:
     fontFamily: "JetBrains Mono, ui-monospace, monospace"
-    fontSize: "0.875rem"
-    fontWeight: 500
+    note: "IDs, UUIDs, dates in admin tables only"
 rounded:
+  pass: "20px"
+  button: "14px"
+  chip: "7px"
+  timetable-block: "8px"
   control: "12px"
-  card: "22px"
-  pill: "9999px"
 spacing:
-  control-height: "44px"
-  card-padding: "26px"
-  card-padding-phone: "20px"
+  pass-padding: "18px"
+  board-action-height: "54px"
+  quiet-action-height: "50px"
+  tab-height: "52px"
 components:
-  button-primary:
-    backgroundColor: "{colors.action-blue}"
-    textColor: "{colors.surface}"
-    rounded: "{rounded.control}"
-    height: "{spacing.control-height}"
-    padding: "10px 16px"
-  button-primary-hover:
-    backgroundColor: "{colors.action-blue-deep}"
-  input-field:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.control}"
-    height: "{spacing.control-height}"
-    padding: "10px 16px"
-  card:
-    backgroundColor: "{colors.surface}"
-    rounded: "{rounded.card}"
-    padding: "{spacing.card-padding}"
-  status-present:
-    backgroundColor: "{colors.present-wash}"
-    textColor: "{colors.present-green}"
-    rounded: "{rounded.pill}"
-  status-late:
-    backgroundColor: "{colors.late-wash}"
-    textColor: "{colors.late-amber}"
-    rounded: "{rounded.pill}"
-  status-error:
-    backgroundColor: "{colors.error-wash}"
-    textColor: "{colors.error-rose}"
-    rounded: "{rounded.pill}"
+  pass-band:
+    states: { boarding: "{colors.gate} + ink", closing: "{colors.stop} + white", boarded: "{colors.go} + white", closed: "{colors.pass-band-neutral} + muted", waiting: "{colors.pass-band-neutral} + ink" }
+  btn-board:
+    backgroundColor: "{colors.go}"
+    hover: "{colors.go-deep}"
+    textColor: "#FFFFFF"
+    height: "{spacing.board-action-height}"
+    rounded: "{rounded.button}"
+  btn-quiet:
+    backgroundColor: "transparent"
+    border: "1.5px {colors.pass-rule}"
+    textColor: "{colors.pass-ink}"
+    height: "{spacing.quiet-action-height}"
+  btn-gate:
+    backgroundColor: "{colors.gate}"
+    textColor: "{colors.pass-ink}"
+  admin-primary:
+    backgroundColor: "{colors.navy-600}"
+    hover: "{colors.navy-700}"
+    note: "Tailwind indigo-* classes are remapped to this navy scale"
 ---
 
 # Design System: SmartCheck
 
 ## Overview
 
-**Creative North Star: "The Classroom Door That Opens Itself"**
+**Creative North Star: "Each class is a boarding pass; the classroom is the gate."**
 
-SmartCheck should feel like walking through a door that opens as you arrive. It is quiet, clean and fast. At each moment it shows only the next thing to do. Students and teachers arrive at a screen, get its one job done, and leave. Nothing on the page competes with the job.
+The student opens the app the way a traveller checks a departures board: what is boarding now, what is next, am I on it. The page answers that in one glance and offers one action. The airport world gives the product a vocabulary every student already reads without instruction:
+- **Pass:** one class.
+- **Band:** its state right now.
+- **Gate amber:** "open now, go".
+- **Green:** "you're on board".
 
-The system is calm and Apple-adjacent:
-- a soft gray canvas;
-- white cards with generous corners;
-- one blue for every action;
-- Thai text set in Noto Sans Thai.
+This replaced the earlier Apple-blue system (Nov 2026 redesign, Phase 7). The old look is in git history and is an anti-reference: no soft gray canvas with one blue, and no generic white cards.
 
-Colour carries meaning, not decoration. Blue means "do this". Green, amber and rose are reserved for the attendance truth: present, late, failed. Density is low on student screens, which are used one-handed on a phone. It is moderate on teacher and admin tables.
+**Two grounds, one world**
+- **Students, phone-first:** the *tarmac*, a deep navy page. White passes sit on it, with a departures board and a bottom tab bar (วันนี้ / เช็คชื่อ / บัญชี).
+- **Teachers and admins, desk and phone:** a light *work ground* (#F3F5FA) for scanning tables. They share the same navy sidebar, amber active state, navy actions and Anuphan titles. The teacher's "คาบวันนี้" are passes on the light ground (`.pass-on-light`).
 
-**Key Characteristics:**
-- One action color (Action Blue); status colors only for status.
-- White cards on a gray canvas, 22px corners, near-invisible shadow.
-- 44px minimum controls, 12px control corners.
-- Thai-first typography; headline tracking tightened, body left at normal tracking.
+**Key characteristics**
+- The pass is the signature component: band, body, perforation with notches, foot.
+- Colour is state, never decoration:
+  - amber = boarding/open;
+  - green = checked in / do the check-in;
+  - red = closing/closed;
+  - orange = late;
+  - neutral = waiting or done.
+- Anuphan for anything you read at a glance: codes, times, bands, titles. Noto Sans Thai for sentences.
+- Big targets: the main action is 54px tall and full width inside the pass.
 
 ## Colors
 
-The palette is a near-neutral gray canvas with a single saturated blue for action, plus three status hues used only for attendance outcomes.
+### Ground
+- **Tarmac #0B1D3A:** the student page background, sidebar and top bar. Also the ink colour on passes, so the pass reads as cut from the same world.
+- **Tarmac-2 #12284D:** raised surfaces on the tarmac (notes, tab bar, timetable frame).
+- **Tarmac line (white 12%):** rules between departures-board rows.
+- **Work ground #F3F5FA:** teacher/admin page background.
 
-### Primary
-- **Action Blue** (#0071e3): buttons, links, the active nav item, focus rings, progress rings and step dots. It is the only color that says "tap here". In Tailwind it is `indigo-600`, because the `indigo` scale is remapped to this blue in `tools/tailwind/tailwind.config.js`.
-- **Action Blue Deep** (#0062c4): hover and pressed state of primary actions, and active nav text.
-- **Action Blue Wash** (#eaf3ff): selected or active backgrounds and info notes.
+### State
+| Token | Value | Meaning | Text on it |
+|---|---|---|---|
+| gate | #FFB000 | boarding / open now, active nav item | ink #0B1D3A |
+| go | #12855B | checked in; the "board" action | white (4.65:1) |
+| stop | #C9343A | closing (last 60 s), closed/missed | white (5.2:1) |
+| late | #F08C2A | checked in late | ink |
+| band neutral | #E6EAF2 | waiting / finished | ink or muted |
 
-### Neutral
-- **Canvas** (#f5f5f7): the page background behind every card.
-- **Surface** (#ffffff): cards, forms, the mobile top bar, the login form panel.
-- **Ink** (#1d1d1f): headings and primary text.
-- **Ink Secondary** (#424245): secondary text and help summaries.
-- **Ink Muted** (#6e6e73): captions, timestamps, helper text.
-- **Hairline** (#e5e5ea): card borders and dividers.
-- **Field Stroke** (#d2d2d7): input and select borders.
+go and stop were darkened from #19A974 / #E5484D after a contrast check: white text measured 3.0:1 and 3.9:1, below WCAG AA.
 
-### Status (attendance truth)
-- **Present Green** (#047857 on #ecfdf5): "มา", success, the open-class pulse.
-- **Late Amber** (#b45309 on #fffbeb): "สาย", warnings such as "turn on Location".
-- **Error Rose** (#be123c on #fff1f2): failed check-in, errors, destructive actions such as log out on hover.
+### Navy action scale (teacher/admin)
+Tailwind's `indigo-*` classes are remapped in `tools/tailwind/tailwind.config.js` to navy:
+- 50 #EEF2F8
+- 100 #DDE5F1
+- 200 #BCC9DE
+- 300 #8FA2C3
+- 400 #5B729B
+- 500 #2E4A7A
+- 600 #12284D
+- 700 #0B1D3A
+- 800 #071328
+- 900 #040B18
 
-### Named Rules
-**The One Blue Rule.** Every tappable primary action is Action Blue. The legacy indigo (#4f46e5, `--primary` in `style.css`, the `brand` scale) is retired. Any screen still showing it is a bug to fix, not a second accent.
+Every existing `bg-indigo-600` button became navy without template edits. Rebuild Tailwind after changing it (`cd tools/tailwind && npm run build`).
 
-**The Status-Only Rule.** Green, amber and rose appear only when they mean present, late or failed (or success, warning, error). Never use them as decoration.
+### Named rules
+- **One meaning per colour.** Amber is never used for "warning text", and green is never a decorative accent.
+- **No side stripes.** State fills the whole band or block, never a coloured left border.
 
 ## Typography
 
-**Body Font:** Noto Sans Thai (with system-ui, sans-serif)
-**Mono Font:** JetBrains Mono (with ui-monospace), for codes, room IDs and timestamps that need fixed width
-
-**Character:** one humanist Thai sans for everything, with weight and size doing the hierarchy. Mono appears only where characters must line up or be read exactly, such as room codes.
-
-### Hierarchy
-- **Headline** (600, clamp(1.65rem, 3vw, 2.2rem), 1.45): page titles (`main h1`). Thai needs the tall line height for its upper vowels and tone marks.
-- **Title** (600, 1rem, 1.5): card and section titles, course codes in lists.
-- **Body** (400, 0.875rem, 1.6): content and descriptions.
-- **Label** (500, 0.75rem, 1.5): field labels, table headers, badges and meta lines.
-- **Mono** (500, 0.875rem): room codes, the session code, technical IDs.
-
-### Named Rules
-**The Thai Line-Height Rule.** Never set Thai text below line-height 1.45, or upper vowels and tone marks collide with the line above.
-
-**The Phone Floor Rule.** On student screens, any text a student must read to act is at least 0.875rem. This includes errors, the next step and status. Use 0.75rem only for meta that no one needs to act on.
+- **Display: Anuphan** (Google Fonts, weights 600/700). Used for pass codes (30px/700), band labels (14px/700, +0.03em), departures-board times, page titles and button labels on `.btn-board`. Times use `font-variant-numeric: tabular-nums` so countdowns do not jitter.
+- **Body: Noto Sans Thai** for sentences, labels and helper text, at 15px on student screens and 14px in admin tables.
+- **Mono: JetBrains Mono** only for IDs, UUIDs and dates in admin/teacher tables.
+- **Page titles** (`main h1`) force `line-height: 1.4 !important`. Tailwind's `text-xl` line-height would otherwise let Thai upper marks hit the subtitle.
 
 ## Layout
 
-- **Signed-in pages:**
-  - Desktop (lg and up): a fixed 256px frosted sidebar on the left.
-  - Phones: a sticky white top bar with a menu button.
-- **Content:** a centered `max-w-5xl` column, padded 16px on phones and 32px on desktop, with 48px top padding on desktop and 28px on tablets.
-- **Login:**
-  - Desktop: a two-column screen, with a gray intro panel on the left and the white form panel on the right.
-  - Phones: the intro panel is hidden.
-- **Spacing rhythm:** 4px Tailwind steps. Stacks inside cards use 16–24px; cards are 26px inside (20px on phones).
-- **Tables:** scroll sideways inside their card on small screens; the page itself never scrolls sideways.
-
-## Elevation & Depth
-
-Depth comes mostly from tonal layering: white surfaces on a gray canvas, separated by a hairline border. Shadows are ambient and nearly invisible.
-
-### Shadow Vocabulary
-- **Card ambient** (`box-shadow: 0 4px 24px rgb(0 0 0 / 3%)`): every bordered card.
-- **Login symbol** (`box-shadow: 0 12px 40px rgb(0 0 0 / 5%)`): the one lifted object, on the login intro.
-- **Sidebar glass** (`backdrop-filter: blur(24px)` over rgb(250 250 252 / 94%)): the sidebar only.
-
-### Named Rules
-**The Flat Card Rule.** Cards never get stronger shadows on hover. State is shown with color (blue wash, border) rather than lift.
-
-## Shapes
-
-Generous, friendly corners, scaled by object size:
-- 22px for cards and large containers;
-- 20px for camera frames and help panels;
-- 12px for buttons, inputs and nav items;
-- full pills for status badges and avatar circles.
-
-The camera stage uses a soft oval face guide with a fill ring. It is the only non-rectangular silhouette in the system.
+- **Student pages:** a single column. Head = small grey date line + white title; then the hero pass; then the board. `#main-content` gets bottom padding for the fixed tab bar. The tab bar hides at ≥1024px, where the sidebar takes over.
+- **Weekly timetable** (เช็คชื่อ tab):
+  - days are rows (Mon–Fri), hours are columns (07:00–19:00);
+  - it scrolls sideways with the day names sticky;
+  - blocks are positioned by % of the 12-hour span, from `week_timetable()` in `app/routes/student.py`;
+  - classes outside 07–19 or at weekends are listed under "นอกตาราง".
+- **Teacher/admin:** the existing sidebar + content layout. Tables sit in white rounded containers on the work ground.
 
 ## Components
 
-### Buttons
-- **Shape:** gently rounded (12px), at least 44px tall.
-- **Primary:** Action Blue fill, white text, medium weight. On a phone, a form's main action is full width.
-- **Hover / Pressed:** darkens to Action Blue Deep (`indigo-700`, then `indigo-800` when pressed). The focus ring is a 3px Action Blue outline, offset 3px.
-- **Secondary:** white with a Hairline border and Ink Secondary text (for example "ดูผล").
-- **Disabled:** Canvas or slate-100 fill with muted text and a not-allowed cursor.
+### Pass (`.pass`)
+White card, 20px radius, overflow hidden. Parts:
+1. `.pass-band`: state strip. Left = state label (e.g. `BOARDING · เปิดเช็คชื่อ`), right = time or room. `data-state` = boarding / closing / boarded / closed / waiting. The label flips (`.flip.turn`, rotateX) when the countdown changes it.
+2. `.pass-body`: `.pass-code` (course code), `.pass-name`, optional `.pass-grid` of three fields (ห้อง / เริ่ม / เหลือ-สถานะ).
+3. `.pass-perf`: 2px dashed rule with two notches, coloured as the ground. `.pass-on-light` recolours the notches for the light ground.
+4. `.pass-foot`: one action, or a one-line explanation.
 
-### Cards / Containers
-- **Corner Style:** 22px.
-- **Background:** Surface on Canvas.
-- **Shadow Strategy:** card ambient only (see Elevation & Depth).
-- **Border:** 1px Hairline.
-- **Internal Padding:** 26px (20px on phones).
+### Actions
+- `.btn-board`: green, 54px, full width, Anuphan 18px. The one thing to do (check in, open class, sign in).
+- `.btn-quiet`: outlined, 50px. Secondary (view results, log out).
+- `.btn-gate`: amber, for an "open now" jump on the tarmac.
+- Admin/teacher primary: navy (`bg-indigo-600`, remapped).
 
-### Inputs / Fields
-- **Style:** white, 1px Field Stroke, 12px corners, at least 44px tall; 16px text on phones so iOS does not zoom.
-- **Focus:** a 2px Action Blue ring, and the border goes transparent.
-- **Icons:** an optional leading 16px line icon in muted ink.
+### Departures board (`.board-title`, `.board-row`, `.chip`)
+Rows of time / class + room / chip. The chips:
+- `boarding`: amber;
+- `boarded`: green, "มา 07:58";
+- `late`: orange, "สาย 10:07";
+- `closed`: red;
+- default: translucent white, "รอเปิด".
 
-### Status badges
-- **Style:** pill, wash background, matching deep text, 0.75rem medium weight.
-- **Variants:** "เปิดอยู่" / "มา" (green), "สาย" (amber), "ไม่สำเร็จ" (rose), "เสร็จแล้ว" / "ยังไม่เริ่ม" (slate).
+### Check-in flow
+The whole flow lives inside one pass:
+- the band (`#checkinStageTitle`) names the step;
+- `.ci-steps` dots show progress (amber active, green done);
+- `.ci-radar` shows while scanning for the room board;
+- `.ci-code` holds the fallback code inputs.
+
+The camera opens only after the room board is found.
 
 ### Navigation
-- **Sidebar links:** 44px rows with 12px corners, a 16px line icon and a 14px label.
-- **Active link:** #e6edf7 background, Action Blue Deep text, semibold.
-- **Phones:** the sidebar slides in over a 40% black overlay.
-
-### Check-in camera stage (signature)
-- A dark 3:4 stage with mirrored video.
-- An SVG oval face guide that turns green or red.
-- A progress ring that fills while the face is held still.
-- A thin progress bar while the server checks the face.
-- It must look ready the moment it appears: no spinner over a live camera.
+- **Student phone:** bottom `.tabbar`. Active tab is amber with `aria-current="page"`. Logout lives in the บัญชี tab.
+- **Sidebar (all roles, ≥1024px):** navy. The active item has an amber label/icon on a tarmac-2 pill. The logo tile is amber.
 
 ## Do's and Don'ts
 
-### Do:
-- **Do** use Action Blue (#0071e3) for every primary action and nothing else.
-- **Do** keep every tappable control at least 44px tall, and a phone form's main action full width.
-- **Do** write every error as the fix, in Thai: what to turn on, where to stand, what to press.
-- **Do** keep Thai text at line-height 1.45 or more.
-- **Do** rebuild `app/static/css/tailwind.css` (`npm run build` in `tools/tailwind`) after adding a Tailwind class.
+### Do
+- Put any new per-class surface in a pass, with a band that states its state in words.
+- Keep one green action per screen.
+- Check white-on-colour contrast before adding a state colour (≥4.5:1 for text under 24px).
+- Restart the Flask server after template edits; templates are cached.
 
-### Don't:
-- **Don't** reintroduce the legacy indigo (#4f46e5) or a second accent color.
-- **Don't** use green, amber or rose for anything but attendance or result status.
-- **Don't** add hover lift or heavy shadows to cards.
-- **Don't** put text a student needs to act on below 0.875rem on student screens.
-- **Don't** change element ids used by `checkin_flow.js`, `enrollment_v2.js` or `push_notifications.js` while restyling.
+### Don't
+- Reintroduce the Apple-blue #0071e3 or plain gray-canvas cards.
+- Use airport words the student must decode in Thai-only places. The badges are still English (BOARDING/BOARDED/CLOSING/CLOSED) plus Thai; switching them to Thai only is an open question for the owner.
+- Use loaded or militaristic aviation imagery. The world is a civilian airport only.
+- Add coloured left-border stripes, gradients on text, or decorative glass blur.

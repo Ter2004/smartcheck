@@ -1,14 +1,15 @@
 /* Student world: each class is a boarding pass and the classroom is the gate.
    Surface brief: .impeccable/surfaces/app-templates-student-dashboard-html.md
-   Loaded only for students (base.html, data-world="pass"). */
+   Linked for every role (base.html); the navy ground applies only to students (body[data-world="pass"]).
+   Teacher/admin pages use passes on their light ground via .pass-on-light. */
 :root {
     --tarmac: #0B1D3A;
     --tarmac-2: #12284D;
     --tarmac-line: rgb(255 255 255 / 12%);
     --gate: #FFB000;
-    --go: #19A974;
-    --go-deep: #12855B;
-    --stop: #E5484D;
+    --go: #12855B;           /* 4.65:1 with white text */
+    --go-deep: #0E6B49;
+    --stop: #C9343A;         /* 5.2:1 with white text */
     --pass-ink: #0B1D3A;
     --pass-muted: #51607A;
     --pass-rule: #CBD3E1;
@@ -81,7 +82,7 @@ a.board-row:active { background: var(--tarmac-2); }
 .chip.boarding { background: var(--gate); color: var(--pass-ink); }
 .chip.boarded { background: var(--go); }
 .chip.late { background: #F08C2A; color: var(--pass-ink); }
-.chip.closed { background: rgb(229 72 77 / 85%); }
+.chip.closed { background: var(--stop); }
 .board-empty { padding: 18px 2px; color: rgb(255 255 255 / 75%); font-size: 15px; border-top: 1px solid var(--tarmac-line); }
 
 .tarmac-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: -4px 0 8px -4px; padding: 0 4px;

@@ -2,12 +2,17 @@
 {% block title %}คำขอมากเกินไป — SmartCheck{% endblock %}
 
 {% block content %}
-<div class="bg-white rounded-xl border border-slate-200 shadow-sm px-6 py-8 text-center">
-    <h1 class="text-lg font-semibold text-slate-900">คำขอมากเกินไป</h1>
-    <p class="text-sm text-slate-500 mt-2">กรุณารอสักครู่แล้วลองใหม่อีกครั้ง</p>
-    <a href="{{ request.full_path }}"
-       class="inline-flex items-center justify-center min-h-[44px] mt-5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-5 rounded-xl transition-colors">
-        ลองใหม่
-    </a>
+<div class="max-w-md mx-auto pt-6">
+    <article class="pass{% if session.get('user_role') != 'student' %} pass-on-light{% endif %}" aria-labelledby="rl-title">
+        <div class="pass-band" data-state="closed"><span>รอสักครู่</span><span>429</span></div>
+        <div class="pass-body">
+            <h1 id="rl-title" class="pass-code" style="font-size:24px">คำขอมากเกินไป</h1>
+            <p class="pass-name mt-1">ระบบรับคำขอจากเครื่องนี้ถี่เกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง</p>
+        </div>
+        <div class="pass-perf" aria-hidden="true"></div>
+        <div class="pass-foot">
+            <a href="{{ request.full_path }}" class="btn-board">ลองใหม่</a>
+        </div>
+    </article>
 </div>
 {% endblock %}

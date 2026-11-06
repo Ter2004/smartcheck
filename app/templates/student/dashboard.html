@@ -75,7 +75,7 @@
 </article>
 {% endif %}
 
-<h2 class="board-title">เที่ยวบินวันนี้ <span>{{ board | length }} คาบ</span></h2>
+<h2 class="board-title">คาบเรียน <span>{{ board | length }} คาบ</span></h2>
 {% for row in board %}
 {% set a = row.attendance %}
 {% set clickable = row.state == 'boarding' and enrolled %}

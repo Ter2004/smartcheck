@@ -36,7 +36,7 @@
         .toast-item { animation: toastIn 0.3s ease forwards; }
 
         /* Active nav link */
-        .nav-active { background: #e6edf7; color: #0062c4 !important; }
+        .nav-active { background: #12284D; color: #FFB000 !important; }
         .nav-active svg { stroke: currentColor; }
     </style>
 
@@ -45,10 +45,9 @@
     <!-- Tailwind, built ahead of time (tools/tailwind: npm run build). Last in <head>,
          where the Play CDN runtime used to add its <style>, so the cascade is unchanged. -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
-    {% if session.get('user_role') == 'student' %}
-    <!-- Student world: boarding passes on the tarmac (after Tailwind so it wins). -->
+    <!-- Boarding-pass components for every role; students also get the tarmac page
+         (data-world="pass" on <body>). After Tailwind so it wins. -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pass.css') }}">
-    {% endif %}
 </head>
 
 <body class="bg-slate-50 text-slate-800 antialiased"{% if session.get('user_role') == 'student' %} data-world="pass"{% endif %}>
@@ -190,7 +189,7 @@
 
     <!-- Mobile top bar (authenticated only) -->
     {% if session.get('user_id') and role != 'student' %}
-    <header class="lg:hidden sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
+    <header class="app-topbar lg:hidden sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
         <button id="menu-toggle" aria-label="เปิดเมนู" aria-controls="sidebar" aria-expanded="false" onclick="toggleSidebar()" class="w-11 h-11 -ml-2 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 transition-colors">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>

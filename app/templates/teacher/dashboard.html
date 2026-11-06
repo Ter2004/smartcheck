@@ -12,73 +12,53 @@
     </div>
 </div>
 
-<!-- ─── คาบวันนี้ ─────────────────────────────────────────────── -->
-<div class="mb-6">
+<!-- ─── คาบวันนี้: each class is a gate the teacher opens ─────────── -->
+<div class="mb-8">
     <div class="flex items-center gap-2 mb-3">
-        <h2 class="text-base font-semibold text-slate-900">คาบวันนี้</h2>
-        <span class="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{{ today }}</span>
+        <h2 class="text-lg font-semibold text-slate-900">คาบวันนี้</h2>
+        <span class="text-sm text-slate-500">{{ today }}</span>
     </div>
     {% if today_sessions %}
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div class="divide-y divide-slate-100">
+    <div class="grid gap-4 md:grid-cols-2">
         {% for s in today_sessions %}
-        <div class="px-5 py-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-            <div class="flex items-center gap-3 min-w-0">
-                {% if s.is_open %}
-                <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full flex-shrink-0 animate-pulse"></span>
-                {% elif s.end_time %}
-                <span class="w-2.5 h-2.5 bg-slate-400 rounded-full flex-shrink-0"></span>
-                {% else %}
-                <span class="w-2.5 h-2.5 bg-slate-300 rounded-full flex-shrink-0"></span>
-                {% endif %}
-                <div class="min-w-0">
-                    <p class="text-base font-medium text-slate-900 truncate">
-                        {{ s.courses.code }} — {{ s.courses.name }}
-                    </p>
-                    <p class="text-sm text-slate-500 mt-0.5">
-                        {{ s.start_time | thai_time('%H:%M') }}{% if s.beacons %} · {{ s.beacons.room_name }}{% endif %}
-                    </p>
-                </div>
+        <article class="pass pass-on-light" aria-label="คาบ {{ s.courses.code }}">
+            {% if s.is_open %}
+            <div class="pass-band" data-state="boarding"><span>BOARDING · เปิดอยู่</span><span>{% if s.on_time_until %}ทันเวลาถึง {{ s.on_time_until | thai_time('%H:%M') }}{% endif %}</span></div>
+            {% elif s.end_time %}
+            <div class="pass-band" data-state="closed"><span>CLOSED · เสร็จแล้ว</span><span>{{ s.start_time | thai_time('%H:%M') }}</span></div>
+            {% else %}
+            <div class="pass-band" data-state="waiting"><span>รอเปิดคาบ</span><span>เริ่ม {{ s.start_time | thai_time('%H:%M') }}</span></div>
+            {% endif %}
+            <div class="pass-body">
+                <p class="pass-code">{{ s.courses.code }}</p>
+                <p class="pass-name">{{ s.courses.name }}{% if s.beacons %} · {{ s.beacons.room_name }}{% endif %}</p>
             </div>
-            <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end">
-                {% if s.end_time and not s.is_open %}
-                <span class="text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">เสร็จแล้ว</span>
-                {% elif s.is_open and s.on_time_until %}
-                <span class="text-sm text-emerald-700">ทันเวลาถึง {{ s.on_time_until | thai_time('%H:%M') }}</span>
-                {% elif open_mode_teacher and not s.is_open %}
-                <form method="post" action="{{ url_for('teacher.session_open', session_id=s.id) }}"
-                      class="flex flex-1 sm:flex-none items-center gap-2">
+            <div class="pass-perf" aria-hidden="true"></div>
+            <div class="pass-foot flex flex-col gap-2">
+                {% if open_mode_teacher and not s.is_open and not s.end_time %}
+                <form method="post" action="{{ url_for('teacher.session_open', session_id=s.id) }}" class="flex items-center gap-2">
                     <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
                     <label class="text-sm text-slate-600" for="minutes-{{ s.id }}">ทันเวลา</label>
                     <input id="minutes-{{ s.id }}" type="number" name="minutes" min="1" max="{{ on_time_max }}"
                            value="{{ on_time_default }}" required
-                           class="w-16 min-h-[44px] text-base text-center border border-slate-200 rounded-xl px-2">
+                           class="w-16 min-h-[48px] text-lg text-center border border-slate-300 rounded-xl px-2 pass-display">
                     <span class="text-sm text-slate-600">นาที</span>
                     {% if s.can_open %}
-                    <button type="submit"
-                            class="flex-1 sm:flex-none min-h-[44px] text-sm font-medium bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-4 rounded-xl transition-colors">
-                        เปิดคาบ
-                    </button>
+                    <button type="submit" class="btn-board flex-1">เปิดคาบ</button>
                     {% else %}
-                    <button type="button" disabled
-                            class="flex-1 sm:flex-none min-h-[44px] text-sm font-medium bg-slate-100 text-slate-600 px-4 rounded-xl cursor-not-allowed">
-                        เปิดได้ {{ s.opens_from | thai_time('%H:%M') }}
-                    </button>
+                    <button type="button" disabled class="btn-quiet flex-1 cursor-not-allowed" style="color:var(--pass-muted)">เปิดได้ {{ s.opens_from | thai_time('%H:%M') }}</button>
                     {% endif %}
                 </form>
                 {% endif %}
-                <a href="{{ url_for('teacher.session_view', session_id=s.id) }}"
-                   class="inline-flex items-center justify-center min-h-[44px] text-sm font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 rounded-xl transition-colors">
-                    ดูผล
-                </a>
+                <a href="{{ url_for('teacher.session_view', session_id=s.id) }}" class="btn-quiet">ดูผลการเช็คชื่อ</a>
             </div>
-        </div>
+        </article>
         {% endfor %}
-        </div>
     </div>
     {% else %}
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-10 text-center">
-        <p class="text-sm text-slate-400">ไม่มีคาบเรียนวันนี้</p>
+    <div class="pass pass-on-light">
+        <div class="pass-band" data-state="closed"><span>วันนี้</span><span>ไม่มีคาบ</span></div>
+        <div class="pass-body"><p class="pass-code">ไม่มีคาบเรียนวันนี้</p><p class="pass-name">คาบที่ตั้งไว้ในตารางจะขึ้นที่นี่ในวันที่มีเรียน</p></div>
     </div>
     {% endif %}
 </div>

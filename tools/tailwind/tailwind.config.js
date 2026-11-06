@@ -10,7 +10,9 @@ module.exports = {
             mono: ["'JetBrains Mono'", 'ui-monospace', 'monospace'],
         },
         colors: {
-            indigo: {50: '#eef5ff', 100: '#deecff', 200: '#bedaff', 300: '#91bfff', 400: '#5299f0', 500: '#187de0', 600: '#0071e3', 700: '#0062c4', 800: '#004f9e', 900: '#003c78'},
+            // The app's action scale. Since Phase 7c (boarding-pass world) it is tarmac navy,
+            // so every existing bg-indigo-600 button and text-indigo-600 link follows.
+            indigo: {50: '#EEF2F8', 100: '#DDE5F1', 200: '#BCC9DE', 300: '#8FA2C3', 400: '#5B729B', 500: '#2E4A7A', 600: '#12284D', 700: '#0B1D3A', 800: '#071328', 900: '#040B18'},
             brand: {50: '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 800: '#3730a3'},
         },
     }},

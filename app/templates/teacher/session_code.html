@@ -14,7 +14,7 @@
     </a>
     <h1 class="text-2xl font-semibold text-slate-900">{{ sess.title }}</h1>
     <p class="text-sm text-slate-500 mb-6">
-        {{ sess.courses.code }} · ห้อง {{ sess.beacons.room_name if sess.beacons else '—' }}
+        {{ sess.courses.code }} · ห้อง {{ sess.beacons.room_name | replace('ห้อง ', '') if sess.beacons else '—' }}
     </p>
 
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-10">

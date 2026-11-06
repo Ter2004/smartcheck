@@ -22,7 +22,7 @@
             <p class="text-sm text-slate-500 mt-1">
                 {{ sess.courses.code }}{% if sess.courses.section %} sec {{ sess.courses.section }}{% endif %}
                 &nbsp;·&nbsp; {{ sess.courses.name }}
-                &nbsp;·&nbsp; ห้อง {{ sess.beacons.room_name if sess.beacons else '—' }}
+                &nbsp;·&nbsp; ห้อง {{ sess.beacons.room_name | replace('ห้อง ', '') if sess.beacons else '—' }}
                 &nbsp;·&nbsp; <span class="font-mono">{{ sess.start_time | thai_time }}</span>
             </p>
         </div>
@@ -52,10 +52,9 @@
 
 <!-- Status badge -->
 {% if sess.is_open %}
-<div class="flex items-center gap-2 mb-6 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-    <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-    <span class="text-sm font-medium text-emerald-700">คาบเรียนเปิดอยู่ — กำลังรับเช็คชื่อ</span>
-    <span class="ml-auto text-xs text-emerald-600">รีเฟรชอัตโนมัติทุก 30 วินาที</span>
+<div class="pass-band mb-6 rounded-xl flex-wrap" data-state="boarding">
+    <span>BOARDING · กำลังรับเช็คชื่อ</span>
+    <span class="font-normal text-sm">รีเฟรชอัตโนมัติทุก 30 วินาที</span>
 </div>
 {% endif %}
 

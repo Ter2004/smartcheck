@@ -7,15 +7,15 @@
 <style>
     .ev2-screen { display: none; }
     .ev2-screen.active { display: block; }
-    .ev2-stage { position: relative; width: 100%; aspect-ratio: 3/4; max-height: 70vh;
-                 background: #0f172a; border-radius: 16px; overflow: hidden; }
+    .ev2-stage { position: relative; width: 100%; aspect-ratio: 3/4; max-height: 62vh;
+                 background: #0B1D3A; border-radius: 16px; overflow: hidden; }
     /* Shown like a mirror; the frames sent to the server are drawn from the raw stream. */
     .ev2-stage video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
     /* Oval cut-out, a five-part ring (one part per pose) and the pose arrows, as an SVG on top of the video. */
     .ev2-overlay { position: absolute; inset: 0; pointer-events: none; }
     .ev2-seg { fill: none; stroke-width: 7; stroke-linecap: round; stroke: rgba(255,255,255,0.35); transition: stroke 0.2s; }
-    .ev2-seg.active { stroke: #5299f0; }
-    .ev2-seg.done { stroke: #22c55e; }
+    .ev2-seg.active { stroke: #FFB000; }
+    .ev2-seg.done { stroke: #19A974; }
     .ev2-arrow { opacity: 0; fill: #fde047; }
     .ev2-arrow.show { animation: ev2blink 0.9s ease-in-out infinite; }
     @keyframes ev2blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
@@ -23,22 +23,25 @@
     .ev2-instruction { min-height: 3.2em; }
     /* Checking bar: an estimate that eases toward 90% while the server works, then jumps to 100%. */
     .ev2-bar { height: 10px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 1.25rem 0 0.75rem; }
-    .ev2-bar-fill { height: 100%; width: 0; background: var(--primary); border-radius: 999px; transition: width 0.25s linear; }
+    .ev2-bar-fill { height: 100%; width: 0; background: #19A974; border-radius: 999px; transition: width 0.25s linear; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="max-w-md mx-auto">
-    <a href="{{ url_for('student.dashboard') }}"
-       class="inline-flex items-center gap-1.5 min-h-[44px] -ml-1 px-1 text-sm text-slate-600 hover:text-slate-900 mb-2 transition-colors">
+    <a href="{{ url_for('student.dashboard') }}" class="tarmac-back">
         <svg class="w-4 h-4" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
         กลับหน้าหลัก
     </a>
-    <h1 class="text-xl font-semibold text-slate-900 mb-4">ลงทะเบียนใบหน้า</h1>
+    <header class="pass-head">
+        <small>ครั้งเดียว ใช้เช็คชื่อได้ทุกคาบ</small>
+        <h1>ลงทะเบียนใบหน้า</h1>
+    </header>
 
     <!-- ── Screen 1: consent + start ── -->
-    <section class="ev2-screen active bg-white rounded-xl border border-slate-200 shadow-sm p-5" id="ev2Consent">
-        <h2 class="text-base font-semibold text-slate-900 mb-2">ก่อนเริ่ม (PDPA)</h2>
+    <section class="ev2-screen active pass" id="ev2Consent">
+        <div class="pass-band" data-state="waiting"><span>ก่อนเริ่ม</span><span>PDPA</span></div>
+        <div class="pass-body">
         <ul class="text-sm text-slate-600 space-y-1.5 mb-3 list-disc pl-5">
             <li>ระบบเก็บ <b>ข้อมูลใบหน้าในรูปตัวเลข 7 ชุด</b> (หน้าตรง หันซ้าย หันขวา เงย ก้ม) และ <b>รูปหน้าตรง 1 รูป</b></li>
             <li>ใช้เพื่อยืนยันตัวตนตอนเช็คชื่อเท่านั้น อาจารย์ในรายวิชาของคุณเห็นรูปได้</li>
@@ -51,14 +54,15 @@
             <span class="text-sm text-slate-700">ข้าพเจ้ายินยอมให้ SmartCheck เก็บและใช้ข้อมูลใบหน้าตามประกาศข้างต้น</span>
         </label>
         <button id="ev2Start" disabled
-                class="w-full min-h-[48px] bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-500 text-white text-base font-medium py-3 rounded-xl transition-colors">
+                class="btn-board disabled:opacity-40 disabled:cursor-not-allowed">
             เริ่มและเปิดกล้อง
         </button>
         <p id="ev2ConsentError" class="text-sm text-rose-600 mt-3" role="alert"></p>
+        </div>
     </section>
 
     <!-- ── Screen 2: camera session (no buttons) ── -->
-    <section class="ev2-screen" id="ev2Camera">
+    <section class="ev2-screen pass" id="ev2Camera" style="padding:16px">
         <p id="ev2Instruction" class="ev2-instruction text-center text-lg font-semibold text-slate-800 mb-3"
            role="status" aria-live="polite">กำลังเปิดกล้อง...</p>
         <div class="ev2-stage">
@@ -83,7 +87,7 @@
     </section>
 
     <!-- ── Screen 3: result ── -->
-    <section class="ev2-screen bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center" id="ev2Result">
+    <section class="ev2-screen pass text-center" id="ev2Result" style="padding:20px">
         <div id="ev2Checking">
             <div class="ev2-bar" role="progressbar" aria-label="กำลังตรวจสอบใบหน้า"><div class="ev2-bar-fill" id="ev2Bar"></div></div>
             <p class="text-sm text-slate-500">กำลังตรวจสอบใบหน้า...</p>

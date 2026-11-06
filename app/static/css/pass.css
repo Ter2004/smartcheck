@@ -49,6 +49,10 @@ body[data-world="pass"] { background: var(--tarmac) !important; color: #fff; }
 .pass-foot { padding: 16px 18px 18px; }
 .pass-foot p { font-size: 15px; color: var(--pass-muted); }
 
+/* A pass on the light working ground (teacher / admin pages): its notches cut to that ground. */
+.pass-on-light { border: 1px solid #DCE2EE; box-shadow: 0 6px 20px rgb(11 29 58 / 6%); }
+.pass-on-light .pass-perf::before, .pass-on-light .pass-perf::after { background: var(--bg, #F3F5FA); border: 1px solid #DCE2EE; }
+
 /* Actions */
 .btn-board { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 54px;
     border-radius: 14px; background: var(--go); color: #fff; font-family: 'Anuphan', sans-serif;

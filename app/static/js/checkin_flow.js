@@ -126,6 +126,8 @@ class CheckinFlow {
             if (dot) {
                 dot.classList.toggle('active', i <= n);
                 dot.classList.toggle('done',   i < n);
+                // Screen readers: which step is now, not only a colour.
+                if (i === n) dot.setAttribute('aria-current', 'step'); else dot.removeAttribute('aria-current');
             }
         }
     }
@@ -287,7 +289,8 @@ class CheckinFlow {
             if (!verified && !countingDown) {
                 const reason = status.textContent;
                 this._stopStream(this._camStream);
-                status.textContent = 'หมดเวลาถ่ายภาพ — ' + reason;
+                status.textContent = 'ถ่ายภาพไม่ทันใน 40 วินาที' + (reason ? ` (ล่าสุด: ${reason})` : '')
+                    + ' — หันหน้าเข้าหาแสง ให้หน้าอยู่กลางกรอบ แล้วกด "ลองใหม่"';
                 guide.classList.remove('ok');
                 guide.classList.add('fail');
                 console.info('step=capture_timeout result=reject details={}');
@@ -557,14 +560,19 @@ class CheckinFlow {
             document.getElementById('broadcastStatus').textContent = '';
             document.getElementById('broadcastRetryBtn').style.display = 'none';
             const warn = document.getElementById('broadcastUnsupportedWarning');
+            const radar = document.querySelector('.ci-radar');
             if (typeof BroadcastRoomScanner !== 'undefined' && BroadcastRoomScanner.available()) {
                 warn.style.display = 'none';
+                if (radar) radar.style.display = '';
                 this.startBroadcastScan();
             } else {
                 warn.textContent = this.sessionCodeEnabled
-                    ? 'การหาสัญญาณห้องอัตโนมัติใช้ได้ในแอป SmartCheck บน Android — บนเครื่องนี้ให้ใช้รหัสจากจอของอาจารย์ด้านล่าง'
+                    ? 'เครื่องนี้หาสัญญาณห้องอัตโนมัติไม่ได้ (ใช้ได้ในแอป SmartCheck บน Android) — ใช้รหัสจากจอของอาจารย์แทน'
                     : 'การหาสัญญาณห้องอัตโนมัติใช้ได้ในแอป SmartCheck บน Android เท่านั้น — กรุณาเปิดหน้านี้ในแอป หรือแจ้งอาจารย์';
                 warn.style.display = 'block';
+                // Nothing is searching here: no rings, and the band names the real step.
+                if (radar) radar.style.display = 'none';
+                if (this.sessionCodeEnabled) document.getElementById('checkinStageTitle').textContent = 'ยืนยันห้องด้วยรหัส';
             }
         } else {
             document.getElementById('stepRoomCode').style.display = 'block';
@@ -572,10 +580,45 @@ class CheckinFlow {
             document.getElementById('roomCode').focus();
         }
         const codeForm = document.getElementById('stepSessionCode');
+        clearTimeout(this._codeRevealTimer);
         if (codeForm && this.sessionCodeEnabled) {
-            codeForm.style.display = 'block';
             document.getElementById('sessionCode').value = '';
+            const scanner = this.proximityMethod === 'broadcast'
+                && typeof BroadcastRoomScanner !== 'undefined' && BroadcastRoomScanner.available();
+            // One path at a time: while the phone is scanning by itself, the code waits
+            // until the scan finds nothing or takes longer than CODE_REVEAL_MS. Where the
+            // phone cannot scan (iPhone, browser), the code is the main step.
+            this._setCodePrimary(this.proximityMethod === 'broadcast' && !scanner);
+            codeForm.style.display = scanner ? 'none' : 'block';
+            if (scanner) this._codeRevealTimer = setTimeout(() => this._revealCodeFallback(), CheckinFlow.CODE_REVEAL_MS);
         }
+    }
+
+    static CODE_REVEAL_MS = 8000;
+
+    /** Show the teacher-code fallback, but only while still on the room step. */
+    _revealCodeFallback() {
+        const codeForm = document.getElementById('stepSessionCode');
+        const roomStep = document.getElementById('stepBroadcastRoom');
+        if (!codeForm || !this.sessionCodeEnabled || !roomStep || roomStep.style.display !== 'block') return;
+        codeForm.style.display = 'block';
+    }
+
+    /** The code form as the main step (no scanner) or as the fallback under the scan. */
+    _setCodePrimary(primary) {
+        const form = document.getElementById('stepSessionCode');
+        const label = document.getElementById('sessionCodeLabel');
+        const help = document.getElementById('sessionCodeHelp');
+        const btn = document.getElementById('sessionCodeBtn');
+        if (!form || !label || !btn) return;
+        label.textContent = primary ? 'กรอกรหัส 6 หลักจากจอของอาจารย์' : 'หาสัญญาณห้องไม่ได้?';
+        if (help) help.textContent = primary
+            ? 'ดูรหัสบนจอหน้าห้อง หรือสแกน QR บนจอด้วยกล้องมือถือ'
+            : 'กรอกรหัส 6 หลักจากจอของอาจารย์ หรือสแกน QR บนจอด้วยกล้องมือถือ';
+        btn.className = (primary ? 'btn-board' : 'btn-quiet') + ' mt-3';
+        form.classList.toggle('border-t', !primary);
+        form.classList.toggle('border-dashed', !primary);
+        form.classList.toggle('pt-4', !primary);
     }
 
     async submitSessionCode(event) {
@@ -660,6 +703,8 @@ class CheckinFlow {
                 ? 'ไม่พบสัญญาณห้องเรียน — กรุณาอยู่ภายในระยะสัญญาณของห้องเรียน แล้วกด "ลองใหม่"'
                 : result.error;
             document.getElementById('broadcastRetryBtn').style.display = 'block';
+            clearTimeout(this._codeRevealTimer);
+            this._revealCodeFallback();
             // Not searching any more: stop the rings so the screen does not look busy.
             document.querySelector('.ci-radar')?.classList.add('is-idle');
             return;
@@ -991,6 +1036,10 @@ class CheckinFlow {
         };
         const v = views[state] || views.error;
         document.body.classList.remove('ci-focus');
+        // Face could not be confirmed twice in a row: the teacher can record it instead.
+        this._failures = (state === 'error' || state === 'spoof') ? (this._failures || 0) + 1 : 0;
+        const help = document.getElementById('doneHelp');
+        if (help) help.style.display = this._failures >= 2 ? 'block' : 'none';
         const recorded = state === 'success' || state === 'info';
 
         const band = document.getElementById('checkinBand');

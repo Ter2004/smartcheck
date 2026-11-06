@@ -99,8 +99,8 @@
             <p id="checkinStageHelp" class="sr-only">ยืนยันห้องเรียนของคาบที่เลือกก่อนเปิดกล้อง</p>
 
             <!-- Proximity → camera → result -->
-            <div id="checkin-camera" class="ci-steps" aria-label="ขั้นตอน: 1 หาสัญญาณ 2 สแกนหน้า 3 ผล">
-                <div class="ci-dot active" id="dot1">1</div><span>หาสัญญาณ</span>
+            <div id="checkin-camera" class="ci-steps" role="group" aria-label="ขั้นตอน: 1 ยืนยันห้อง 2 สแกนหน้า 3 ผล">
+                <div class="ci-dot active" id="dot1">1</div><span>ยืนยันห้อง</span>
                 <div class="ci-line"></div>
                 <div class="ci-dot" id="dot2">2</div><span>สแกนหน้า</span>
                 <div class="ci-line"></div>
@@ -166,13 +166,13 @@
     {% if config.CHECKIN_SESSION_CODE %}
     <!-- Fallback: the 6-digit code / QR on the teacher's screen -->
     <form id="stepSessionCode" onsubmit="flow.submitSessionCode(event)" style="display:none" class="mt-4 pt-4 border-t border-dashed" >
-        <label for="sessionCode" class="ci-label">หาสัญญาณห้องไม่ได้?</label>
+        <label for="sessionCode" id="sessionCodeLabel" class="ci-label">หาสัญญาณห้องไม่ได้?</label>
         <p id="sessionCodeHelp" class="ci-note mb-3">กรอกรหัส 6 หลักจากจอของอาจารย์ หรือสแกน QR บนจอด้วยกล้องมือถือ</p>
         <input id="sessionCode" name="session_code" type="text" inputmode="numeric"
                autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required
                aria-describedby="sessionCodeHelp" title="กรุณากรอกรหัสเป็นตัวเลข 6 หลัก"
                class="ci-code">
-        <button type="submit" class="btn-quiet mt-3">ยืนยันรหัสและเริ่มถ่ายภาพ</button>
+        <button type="submit" id="sessionCodeBtn" class="btn-quiet mt-3">ยืนยันรหัสและเริ่มถ่ายภาพ</button>
     </form>
     {% endif %}
 
@@ -186,6 +186,7 @@
             <div class="ci-result-icon" id="doneIcon" aria-hidden="true"></div>
             <h3 class="ci-result-title" id="doneTitle"></h3>
             <p id="doneMsg" class="ci-note mt-1 mb-5"></p>
+            <p id="doneHelp" class="ci-note -mt-3 mb-5" style="display:none">ยังไม่ได้? แจ้งอาจารย์ให้บันทึกการเข้าเรียนแทนได้ — อาจารย์แก้สถานะได้ในหน้าผลการเช็คชื่อ</p>
             <!-- Retry (shown when it helps) comes first: it is the action that fixes the failure.
                  Without a retry, "back to today" becomes the main (green) action. -->
             <button id="doneRetry" class="btn-board hidden mb-2" onclick="flow.retry()">ลองใหม่</button>

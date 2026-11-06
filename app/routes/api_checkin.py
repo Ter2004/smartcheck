@@ -275,7 +275,7 @@ def checkin():
     user_device = ((user_res and user_res.data) or {}).get("device_id") or ""
     if user_device and device_id and user_device != device_id:
         reject("device_binding_mismatch")
-        return jsonify({"ok": False, "error": "Device ไม่ตรง — ต้องใช้อุปกรณ์ที่ผูกไว้"}), 400
+        return jsonify({"ok": False, "error": "เครื่องนี้ไม่ใช่เครื่องที่ผูกกับบัญชีของคุณ — เช็คชื่อด้วยเครื่องเดิม หรือแจ้งผู้ดูแลระบบ"}), 400
     # Bind device on first check-in
     # M5: verify device_id not already bound to another student before binding
     if not user_device and device_id:
@@ -348,7 +348,7 @@ def _verify_face_v2(student_id, raw_frame, enrollment_read=None):
     _log.info(f"[FACE] engine=arcface best={score:.4f} threshold={threshold} pass={score >= threshold}")
     if score < threshold:
         reject("face_mismatch")
-        return None, (jsonify({"ok": False, "error": "ใบหน้าไม่ตรง — กรุณาถ่ายรูปใหม่", "retry_face": True}), 400)
+        return None, (jsonify({"ok": False, "error": "ใบหน้าไม่ตรงกับที่ลงทะเบียนไว้ — ถอดหน้ากาก/แว่นกันแดด หันหน้าเข้าหาแสง แล้วกด \"ลองใหม่\"", "retry_face": True}), 400)
     return score, None
 
 

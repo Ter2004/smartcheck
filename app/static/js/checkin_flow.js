@@ -107,6 +107,9 @@ class CheckinFlow {
         if (help) help.textContent = ['', 'ตรวจสอบว่าคุณอยู่ในห้องเรียนของคาบที่เลือก', 'จัดใบหน้าในกรอบ ระบบจะถ่ายภาพและเช็คชื่อให้อัตโนมัติ', 'ระบบตรวจสอบใบหน้าและบันทึกการเข้าเรียน'][n];
         const band = document.getElementById('checkinBand');
         if (band) band.dataset.state = 'boarding';
+        // Camera and checking: hide the tab bar and back link so a thumb cannot
+        // leave the scan by accident (the result screen brings them back).
+        document.body.classList.toggle('ci-focus', n >= 2);
         // 1=proximity, 2=camera, 3=result.
         const firstStep = {ble: 'stepBleRoom', broadcast: 'stepBroadcastRoom'}[this.proximityMethod] || 'stepRoomCode';
         const steps = [firstStep, 'stepVerify', 'stepDone'];
@@ -742,11 +745,15 @@ class CheckinFlow {
                 this._debug.receiptDue = this._proximity.deadline;
                 this._debug.event('new receipt');
             }
-            status.textContent = 'ยืนยันห้องแล้ว 90 วินาที — ถ่ายภาพได้รอบละ 40 วินาที';
+            status.textContent = 'ยืนยันห้องแล้ว';
+            // The room receipt lasts 90 s. Say so only near the end (last 15 s),
+            // and write the timer only when the number changes.
+            const countdown = document.getElementById('receiptCountdown');
             this._receiptTimer = setInterval(() => {
                 if (!this._proximity) return;
                 const seconds = Math.max(0, Math.ceil((this._proximity.deadline - performance.now()) / 1000));
-                document.getElementById('receiptCountdown').textContent = `เวลายืนยันตำแหน่งคงเหลือ ${seconds} วินาที`;
+                const text = seconds <= 15 ? `อีก ${seconds} วินาทีต้องหาสัญญาณห้องใหม่` : '';
+                if (countdown.textContent !== text) countdown.textContent = text;
                 if (!seconds) this._expireProximity();
             }, 250);
             await (capture || this._startVerify());
@@ -945,6 +952,7 @@ class CheckinFlow {
                       title: 'เช็คชื่อไม่สำเร็จ', msg: message || 'กรุณาลองใหม่'},
         };
         const v = views[state] || views.error;
+        document.body.classList.remove('ci-focus');
         const recorded = state === 'success' || state === 'info';
 
         const band = document.getElementById('checkinBand');

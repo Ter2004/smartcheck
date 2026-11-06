@@ -30,7 +30,11 @@
     .ci-radar.is-idle::after { background: var(--pass-rule); }
     @keyframes ci-ping { 0% { transform: scale(.3); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
     /* Camera: same as the v2 enrollment camera, on the tarmac */
-    .ci-stage { position: relative; width: 100%; aspect-ratio: 3/4; max-height: 62vh; background: var(--tarmac); border-radius: 16px; overflow: hidden; }
+    /* Focus mode during camera + checking (checkin_flow.js _goToStep). */
+    body.ci-focus .tabbar, body.ci-focus .tarmac-back { display: none; }
+    body.ci-focus #main-content { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+    body.ci-focus .pass { margin-top: 8px; }
+    .ci-stage { position: relative; width: 100%; aspect-ratio: 3/4; max-height: min(62vh, max(280px, calc(100dvh - 330px))); background: var(--tarmac); border-radius: 16px; overflow: hidden; }
     /* Shown like a mirror; the frames sent to the server are drawn from the raw stream. */
     .ci-stage video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
     .ci-overlay { position: absolute; inset: 0; pointer-events: none; }
@@ -103,7 +107,7 @@
                 <div class="ci-dot" id="dot3">3</div><span>ผล</span>
             </div>
             <p id="proximityStatus" role="status" class="ci-note"></p>
-            <p id="receiptCountdown" role="timer" class="ci-note"></p>
+            <p id="receiptCountdown" role="status" class="ci-note" style="color:var(--stop)"></p>
         </div>
         <div class="pass-perf" aria-hidden="true"></div>
         <div class="pass-foot">

@@ -30,10 +30,11 @@
                 <span><b id="liveChecked">{{ counts.checked }}</b><span class="live-total">/{{ counts.total }}</span></span>
             </p>
         </div>
-        <div class="pass-grid">
-            <div><small>มาเรียน</small><b id="livePresent" style="color:var(--go)">{{ counts.present }}</b></div>
-            <div><small>มาสาย</small><b id="liveLate" style="color:#B45309">{{ counts.late }}</b></div>
-            <div><small id="liveRestLabel">{{ 'ยังไม่เช็ค' if is_open else 'ขาด' }}</small><b id="liveRest" {% if not is_open %}style="color:var(--stop)"{% endif %}>{{ counts.rest }}</b></div>
+        <!-- Tap a count to list only those students (tap again for everyone). -->
+        <div class="pass-grid" role="group" aria-label="กรองรายชื่อตามสถานะ">
+            <button type="button" class="live-filter" data-filter="present" aria-pressed="false"><small>มาเรียน</small><b id="livePresent" style="color:var(--go)">{{ counts.present }}</b></button>
+            <button type="button" class="live-filter" data-filter="late" aria-pressed="false"><small>มาสาย</small><b id="liveLate" style="color:var(--late-ink)">{{ counts.late }}</b></button>
+            <button type="button" class="live-filter" data-filter="rest" aria-pressed="false"><small id="liveRestLabel">{{ 'ยังไม่เช็ค' if is_open else 'ขาด' }}</small><b id="liveRest" {% if not is_open %}style="color:var(--stop)"{% endif %}>{{ counts.rest }}</b></button>
         </div>
     </div>
     <div class="pass-perf" aria-hidden="true"></div>
@@ -101,7 +102,7 @@
             {% for s in all_students %}
                 {% set u = s.users %}
                 {% set a = att_map.get(u.id) %}
-                <tr class="hover:bg-slate-50 transition-colors" data-student="{{ u.id }}" data-search="{{ u.full_name|lower }} {{ u.student_id or '' }}">
+                <tr class="hover:bg-slate-50 transition-colors" data-student="{{ u.id }}" data-status="{{ a.status if a else 'none' }}" data-search="{{ u.full_name|lower }} {{ u.student_id or '' }}">
                     <td class="c-check px-5 py-3.5">
                         <label class="ck-hit"><input type="checkbox" class="row-check w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                                value="{{ u.id }}" aria-label="เลือก {{ u.full_name }}"></label>
@@ -220,6 +221,10 @@
     .live-count b { font-family: 'Anuphan', sans-serif; font-weight: 700; font-size: 44px; font-variant-numeric: tabular-nums; color: var(--pass-ink); }
     .live-total { font-family: 'Anuphan', sans-serif; font-weight: 600; font-size: 22px; color: var(--pass-muted); }
     #liveUpdated { color: var(--pass-muted); }
+    .live-filter { text-align: left; border-radius: 12px; padding: 6px 8px; margin: -6px -8px; min-height: 44px; }
+    .live-filter:hover { background: #F3F5FA; }
+    .live-filter[aria-pressed="true"] { background: #E6EAF2; box-shadow: inset 0 0 0 1.5px var(--pass-ink); }
+    .live-filter:focus-visible { outline: 3px solid var(--gate); outline-offset: 2px; }
     /* 44 px tap area around a 20 px box */
     .ck-hit { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin: -12px; cursor: pointer; }
     /* Phones: each student is a card (photo + name, then status · time · id), no sideways scroll */
@@ -256,13 +261,28 @@ function hideModal() {
     modal.classList.add('opacity-0','pointer-events-none');
     card.classList.add('scale-95');
 }
-function filterTable(q) {
-    const rows = document.querySelectorAll('#attendBody tr[data-search]');
-    q = q.toLowerCase();
-    rows.forEach(r => {
-        r.style.display = r.dataset.search.includes(q) ? '' : 'none';
+// Search text and the tapped count filter together.
+let statusFilter = null;
+const FILTER_MATCH = {
+    present: s => s === 'present' || s === 'manual',
+    late:    s => s === 'late',
+    rest:    s => !['present', 'manual', 'late'].includes(s),
+};
+function applyFilters() {
+    const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    document.querySelectorAll('#attendBody tr[data-search]').forEach(r => {
+        const okText = r.dataset.search.includes(q);
+        const okStatus = !statusFilter || FILTER_MATCH[statusFilter](r.dataset.status || 'none');
+        r.style.display = okText && okStatus ? '' : 'none';
     });
 }
+function filterTable() { applyFilters(); }
+document.querySelectorAll('.live-filter').forEach(btn => btn.addEventListener('click', () => {
+    statusFilter = statusFilter === btn.dataset.filter ? null : btn.dataset.filter;
+    document.querySelectorAll('.live-filter').forEach(b =>
+        b.setAttribute('aria-pressed', String(b.dataset.filter === statusFilter)));
+    applyFilters();
+}));
 
 // Bulk override
 const overrideUrl = "{{ url_for('teacher.override_attendance', session_id=sess.id) }}";
@@ -348,6 +368,7 @@ async function submitBulk() {
             set('liveLate', c.late); set('liveRest', c.rest);
             document.querySelectorAll('#attendBody tr[data-student]').forEach(tr => {
                 const row = data.rows[tr.dataset.student];
+                tr.dataset.status = row ? row.status : 'none';
                 const status = tr.querySelector('.c-status');
                 const time = tr.querySelector('.c-time span');
                 const html = row ? (CHIPS[row.status] || chip('bg-slate-100 text-slate-600', row.status))
@@ -357,6 +378,7 @@ async function submitBulk() {
                 if (time && time.textContent !== t) time.textContent = t;
             });
             set('liveUpdated', 'อัปเดตเองทุก 10 วินาที · ล่าสุด ' + fmt.format(new Date()));
+            applyFilters();
             if (!data.is_open) closed();
         } catch (_) {
             set('liveUpdated', 'อัปเดตไม่สำเร็จ — จะลองใหม่อัตโนมัติ');

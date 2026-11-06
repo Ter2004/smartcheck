@@ -572,6 +572,7 @@ class CheckinFlow {
                 warn.style.display = 'block';
                 // Nothing is searching here: no rings, and the band names the real step.
                 if (radar) radar.style.display = 'none';
+                document.getElementById('broadcastHint')?.setAttribute('hidden', '');
                 if (this.sessionCodeEnabled) document.getElementById('checkinStageTitle').textContent = 'ยืนยันห้องด้วยรหัส';
             }
         } else {
@@ -688,6 +689,7 @@ class CheckinFlow {
         document.getElementById('broadcastRetryBtn').style.display = 'none';
         status.textContent = 'กำลังหาสัญญาณห้องเรียน...';
         document.querySelector('.ci-radar')?.classList.remove('is-idle');
+        document.getElementById('broadcastHint')?.removeAttribute('hidden');
         // Board first: no camera, no face scan until the phone is in the room's range.
         let result;
         try {
@@ -703,6 +705,7 @@ class CheckinFlow {
                 ? 'ไม่พบสัญญาณห้องเรียน — กรุณาอยู่ภายในระยะสัญญาณของห้องเรียน แล้วกด "ลองใหม่"'
                 : result.error;
             document.getElementById('broadcastRetryBtn').style.display = 'block';
+            document.getElementById('broadcastHint')?.setAttribute('hidden', '');
             clearTimeout(this._codeRevealTimer);
             this._revealCodeFallback();
             // Not searching any more: stop the rings so the screen does not look busy.
@@ -1023,7 +1026,8 @@ class CheckinFlow {
         const views = {
             success: {band: late ? 'late' : 'boarded', label: late ? 'เช็คชื่อแล้ว · มาสาย' : 'เช็คชื่อแล้ว · มาเรียน',
                       icon: 'check', tone: 'go', title: time || (late ? 'มาสาย' : 'มาเรียน'),
-                      msg: `บันทึกแล้ว${late ? ' (มาสาย)' : ''} ไม่ต้องทำอะไรเพิ่ม`},
+                      msg: time ? `บันทึกเวลาเช็คชื่อแล้ว${late ? ' (มาสาย)' : ''} ไม่ต้องทำอะไรเพิ่ม`
+                                : `บันทึกแล้ว${late ? ' (มาสาย)' : ''} ไม่ต้องทำอะไรเพิ่ม`},
             info:    {band: late ? 'late' : 'boarded', label: 'เช็คชื่อแล้ว', icon: 'check', tone: 'go',
                       title: 'เช็คชื่อไว้แล้ว', msg: message || 'คาบนี้บันทึกไว้แล้ว ไม่ต้องทำอะไรเพิ่ม'},
             spoof:   {band: 'closed', label: 'ถ่ายใหม่อีกครั้ง', icon: 'retake', tone: 'muted',

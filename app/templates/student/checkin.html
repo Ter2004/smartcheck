@@ -42,6 +42,8 @@
     .ci-overlay.fail .ci-ring { stroke: var(--stop); }
     /* Fills while the face holds still in the oval (ready frames). */
     .ci-progress { stroke: var(--go); stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset 0.1s linear; }
+    .ci-cancel { display: flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 8px;
+        font-size: 15px; color: var(--pass-muted); text-decoration: underline; text-underline-offset: 3px; }
     .ci-instruction { min-height: 3em; text-align: center; font-family: 'Anuphan', sans-serif; font-weight: 600; font-size: 19px; margin-bottom: 10px; }
     /* Checking bar: an estimate easing toward 90%, then 100% on the answer */
     .ci-bar { height: 10px; background: #E6EAF2; border-radius: 999px; overflow: hidden; margin: 6px 0 10px; }
@@ -131,6 +133,8 @@
                       d="M150,54 A104,136 0 1,1 150,326 A104,136 0 1,1 150,54"/>
             </svg>
         </div>
+        <!-- The tab bar is hidden here (focus mode): this is the way out. Leaving stops the camera. -->
+        <a href="{{ url_for('student.dashboard') }}" class="ci-cancel">ยกเลิก กลับหน้าวันนี้</a>
     </div>
 
     <form id="stepRoomCode" onsubmit="flow.submitRoomCode(event)" style="display:none">
@@ -160,6 +164,7 @@
         <div class="ci-radar" aria-hidden="true"><span></span><span></span><span></span></div>
         <div id="broadcastUnsupportedWarning" class="ci-warn" style="display:none"></div>
         <p id="broadcastStatus" role="status" class="ci-status"></p>
+        <p id="broadcastHint" class="ci-note text-center mt-1">อยู่ในห้องเรียน เปิด Bluetooth และตำแหน่ง (Location) ไว้ — ในห้องมักเจอภายในไม่กี่วินาที</p>
         <button type="button" id="broadcastRetryBtn" onclick="flow.startBroadcastScan()" style="display:none" class="btn-board mt-4">ลองใหม่</button>
     </div>
 

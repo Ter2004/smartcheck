@@ -11,6 +11,7 @@
     --go-deep: #0E6B49;
     --stop: #C9343A;         /* 5.2:1 with white text */
     --late: #F08C2A;         /* ink text on it */
+    --late-ink: #B45309;     /* late as text on white (5.0:1) */
     --pass-ink: #0B1D3A;
     --pass-muted: #51607A;
     --pass-rule: #CBD3E1;

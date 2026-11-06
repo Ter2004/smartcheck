@@ -169,7 +169,8 @@ def dashboard():
     return render_template("student/dashboard.html", enrolled=enrolled,
                            needs_reenroll=not enrolled and _has_legacy_enrollment(user_id),
                            board=board, hero=board_hero(board), today_label=thai_day_label(now_th),
-                           board_states={row["id"]: row["state"] for row in board})
+                           board_states={row["id"]: row["state"] for row in board},
+                           board_starts=[row["start_time"] for row in board if row["state"] == "waiting"])
 
 
 @student_bp.route("/account")

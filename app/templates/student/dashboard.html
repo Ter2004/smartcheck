@@ -71,11 +71,12 @@
 {% else %}
 <article class="pass" aria-label="วันนี้">
     <div class="pass-band" data-state="closed"><span>วันนี้</span><span>ไม่มีคาบ</span></div>
-    <div class="pass-body"><p class="pass-code">ว่างทั้งวัน</p><p class="pass-name">ไม่มีคาบเรียนของคุณวันนี้</p></div>
+    <div class="pass-body"><p class="pass-code">ว่างทั้งวัน</p><p class="pass-name">ดูตารางทั้งสัปดาห์ได้ที่แท็บ "เช็คชื่อ"</p></div>
 </article>
 {% endif %}
 
-<h2 class="board-title" id="todayBoard" data-states='{{ (board_states or {}) | tojson }}' data-url="{{ url_for('student.today_states') }}">คาบเรียน <span>{{ board | length }} คาบ</span></h2>
+{% if board %}
+<h2 class="board-title" id="todayBoard" data-states='{{ (board_states or {}) | tojson }}' data-starts='{{ (board_starts or []) | tojson }}' data-url="{{ url_for('student.today_states') }}">คาบเรียน <span>{{ board | length }} คาบ</span></h2>
 {% for row in board %}
 {% set a = row.attendance %}
 {% set clickable = row.state == 'boarding' and enrolled %}
@@ -87,9 +88,8 @@
     {% elif row.state == 'closed' %}<span class="chip closed">ปิดแล้ว</span>
     {% else %}<span class="chip">รอเปิด</span>{% endif %}
 </{{ 'a' if clickable else 'div' }}>
-{% else %}
-<p class="board-empty">ไม่มีคาบวันนี้ — ดูตารางทั้งสัปดาห์ได้ที่แท็บ "เช็คชื่อ"</p>
 {% endfor %}
+{% endif %}
 
 <details class="mt-6 rounded-2xl" style="background:var(--tarmac-2);border:1px solid var(--tarmac-line)">
     <summary class="px-4 py-3.5 text-[15px] font-medium cursor-pointer">วิธีเช็คชื่อ</summary>
@@ -123,7 +123,8 @@
     function tick() {
         const left = Math.max(0, Math.round((until - Date.now()) / 1000));
         if (!left) { out.textContent = 'สาย'; set('เปิดอยู่ · ตอนนี้นับสาย', 'late'); return; }
-        out.textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+        // Minutes while there is time, seconds only in the last minute ("3:04" read as hours).
+        out.textContent = left > 60 ? Math.ceil(left / 60) + ' นาที' : left + ' วิ';
         set(left <= 60 ? 'ใกล้สาย · รีบเช็คชื่อ' : 'เปิดเช็คชื่อ', left <= 60 ? 'closing' : 'boarding');
         setTimeout(tick, 1000);
     }
@@ -155,7 +156,13 @@
         } catch (_) { /* offline for a moment: the next tick tries again */ }
         finally { busy = false; }
     }
-    setInterval(check, 15000);
+    // Every 5 s while a class is open or about to start (20 min either side of its
+    // start time), else every 15 s. Limit: 20/min on the server.
+    const starts = JSON.parse(el.dataset.starts || '[]').map(Date.parse).filter(Boolean);
+    const near = () => Object.values(shown).includes('boarding')
+        || starts.some(t => Math.abs(Date.now() - t) < 20 * 60 * 1000);
+    const loop = () => { check(); setTimeout(loop, near() ? 5000 : 15000); };
+    setTimeout(loop, near() ? 5000 : 15000);
     document.addEventListener('visibilitychange', check);
 })();
 </script>

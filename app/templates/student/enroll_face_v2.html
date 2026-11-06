@@ -15,15 +15,15 @@
     .ev2-overlay { position: absolute; inset: 0; pointer-events: none; }
     .ev2-seg { fill: none; stroke-width: 7; stroke-linecap: round; stroke: rgba(255,255,255,0.35); transition: stroke 0.2s; }
     .ev2-seg.active { stroke: #FFB000; }
-    .ev2-seg.done { stroke: #19A974; }
-    .ev2-arrow { opacity: 0; fill: #fde047; }
+    .ev2-seg.done { stroke: var(--go); }
+    .ev2-arrow { opacity: 0; fill: var(--gate); }
     .ev2-arrow.show { animation: ev2blink 0.9s ease-in-out infinite; }
     @keyframes ev2blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
     @media (prefers-reduced-motion: reduce) { .ev2-arrow.show { animation: none; opacity: 1; } }
     .ev2-instruction { min-height: 3.2em; }
     /* Checking bar: an estimate that eases toward 90% while the server works, then jumps to 100%. */
     .ev2-bar { height: 10px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 1.25rem 0 0.75rem; }
-    .ev2-bar-fill { height: 100%; width: 0; background: #19A974; border-radius: 999px; transition: width 0.25s linear; }
+    .ev2-bar-fill { height: 100%; width: 0; background: var(--go); border-radius: 999px; transition: width 0.25s linear; }
 </style>
 {% endblock %}
 

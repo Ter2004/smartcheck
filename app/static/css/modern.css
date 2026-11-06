@@ -38,6 +38,8 @@ main h1, main h2, .login-intro h2, .login-wordmark { font-family: 'Anuphan', 'No
 #sidebar :is(.border-slate-100, .border-slate-200) { border-color: rgb(255 255 255 / 10%) !important; }
 #sidebar :is(.text-slate-900, .text-slate-800) { color: #fff; }
 #sidebar :is(.text-slate-400, .text-slate-500, .text-slate-600) { color: rgb(255 255 255 / 72%); }
+/* slate-500 on the light work ground (#F3F5FA) measured 4.4:1; this shade is ~5:1 (critique 2026-11-06). */
+body:not([data-world="pass"]) .text-slate-500 { color: #5C6B80; }
 #sidebar a:hover, #sidebar button:hover { background: #12284D !important; color: #fff !important; }
 /* The logo tile: gate amber with a tarmac tick, on the sidebar and the phone top bar. */
 :is(#sidebar, .app-topbar) .bg-indigo-600 { background: #FFB000; }

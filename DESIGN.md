@@ -59,7 +59,7 @@ spacing:
   tab-height: "52px"
 components:
   pass-band:
-    states: { boarding: "{colors.gate} + ink", closing: "{colors.stop} + white", boarded: "{colors.go} + white", closed: "{colors.pass-band-neutral} + muted", waiting: "{colors.pass-band-neutral} + ink" }
+    states: { boarding: "{colors.gate} + ink", closing: "{colors.stop} + white", late: "{colors.late} + ink", boarded: "{colors.go} + white", failed: "{colors.stop} + white", closed: "{colors.pass-band-neutral} + muted", waiting: "{colors.pass-band-neutral} + ink" }
   btn-board:
     backgroundColor: "{colors.go}"
     hover: "{colors.go-deep}"
@@ -122,8 +122,8 @@ This replaced the earlier Apple-blue system (Nov 2026 redesign, Phase 7). The ol
 |---|---|---|---|
 | gate | #FFB000 | boarding / open now, active nav item | ink #0B1D3A |
 | go | #12855B | checked in; the "board" action | white (4.65:1) |
-| stop | #C9343A | closing (last 60 s), closed/missed | white (5.2:1) |
-| late | #F08C2A | checked in late | ink |
+| stop | #C9343A | last minute before late; check-in failed (nothing recorded) | white (5.2:1) |
+| late | #F08C2A | still open but now counts as late; checked in late | ink (6.8:1) |
 | band neutral | #E6EAF2 | waiting / finished | ink or muted |
 
 go and stop were darkened from #19A974 / #E5484D after a contrast check: white text measured 3.0:1 and 3.9:1, below WCAG AA.
@@ -168,7 +168,16 @@ Every existing `bg-indigo-600` button became navy without template edits. Rebuil
 
 ### Pass (`.pass`)
 White card, 20px radius, overflow hidden. Parts:
-1. `.pass-band`: state strip. Left = state label (e.g. `BOARDING · เปิดเช็คชื่อ`), right = time or room. `data-state` = boarding / closing / boarded / closed / waiting. The label flips (`.flip.turn`, rotateX) when the countdown changes it.
+1. `.pass-band`: state strip. Left = state label in Thai, right = time or room. `data-state` values:
+   - boarding: เปิดเช็คชื่อ
+   - closing: ใกล้สาย, the last minute
+   - late: เปิดอยู่ · ตอนนี้นับสาย / เช็คชื่อแล้ว · มาสาย
+   - boarded: เช็คชื่อแล้ว
+   - failed: ยังไม่ได้บันทึก
+   - closed: ปิดแล้ว / ถ่ายใหม่อีกครั้ง
+   - waiting: รอเปิดคาบ
+
+   The label flips (`.flip.turn`, rotateX) when the countdown or the result changes it. Status words are Thai only (owner decision 2026-11-06); the airport world lives in the shapes, not in English words.
 2. `.pass-body`: `.pass-code` (course code), `.pass-name`, optional `.pass-grid` of three fields (ห้อง / เริ่ม / เหลือ-สถานะ).
 3. `.pass-perf`: 2px dashed rule with two notches, coloured as the ground. `.pass-on-light` recolours the notches for the light ground.
 4. `.pass-foot`: one action, or a one-line explanation.
@@ -189,12 +198,27 @@ Rows of time / class + room / chip. The chips:
 
 ### Check-in flow
 The whole flow lives inside one pass:
-- the band (`#checkinStageTitle`) names the step;
+- the band (`#checkinBand`, `#checkinStageTitle`) names the step;
 - `.ci-steps` dots show progress (amber active, green done);
-- `.ci-radar` shows while scanning for the room board;
+- `.ci-radar` shows while scanning for the room board (stops when nothing was found);
 - `.ci-code` holds the fallback code inputs.
 
 The camera opens only after the room board is found.
+
+During camera + checking, `body.ci-focus` hides the tab bar and back link, so a stray thumb cannot leave the scan. The room-receipt time is mentioned only in its last 15 s.
+
+The result is the band itself:
+- green "เช็คชื่อแล้ว · มาเรียน" (orange when late) with the recorded time large;
+- red "ยังไม่ได้บันทึก" on failure;
+- neutral "ถ่ายใหม่อีกครั้ง" when a live face could not be confirmed. Never accuse ("cheating").
+
+Icons are drawn SVG, not emoji. With no retry, "กลับหน้าวันนี้" is the green action.
+
+### Teacher live view (`teacher/session_view.html`)
+- **Hero:** one pass with the band (เปิดเช็คชื่ออยู่ · ทันเวลาถึง HH:MM) and a big "เช็คแล้ว N/M", plus มาเรียน / มาสาย / ยังไม่เช็ค. The last becomes ขาด only after close.
+- **Live updates:** the page polls `/teacher/session/<id>/live.json` every 10 s while visible, with no full reload.
+- **Phones:** rows become cards.
+- **After opening:** opening a class lands here.
 
 ### Navigation
 - **Student phone:** bottom `.tabbar`. Active tab is amber with `aria-current="page"`. Logout lives in the บัญชี tab.
@@ -210,6 +234,6 @@ The camera opens only after the room board is found.
 
 ### Don't
 - Reintroduce the Apple-blue #0071e3 or plain gray-canvas cards.
-- Use airport words the student must decode in Thai-only places. The badges are still English (BOARDING/BOARDED/CLOSING/CLOSED) plus Thai; switching them to Thai only is an open question for the owner.
+- Put English airport words (BOARDING, CLOSED…) in status labels. Students read Thai at a glance; the metaphor is carried by the pass, band and board shapes.
 - Use loaded or militaristic aviation imagery. The world is a civilian airport only.
 - Add coloured left-border stripes, gradients on text, or decorative glass blur.

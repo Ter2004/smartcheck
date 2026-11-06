@@ -26,6 +26,8 @@
     .ci-radar span:nth-child(2) { animation-delay: .6s; }
     .ci-radar span:nth-child(3) { animation-delay: 1.2s; }
     .ci-radar::after { content: ''; position: absolute; inset: 34px; border-radius: 50%; background: var(--gate); }
+    .ci-radar.is-idle span { animation: none; opacity: 0; }
+    .ci-radar.is-idle::after { background: var(--pass-rule); }
     @keyframes ci-ping { 0% { transform: scale(.3); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
     /* Camera: same as the v2 enrollment camera, on the tarmac */
     .ci-stage { position: relative; width: 100%; aspect-ratio: 3/4; max-height: 62vh; background: var(--tarmac); border-radius: 16px; overflow: hidden; }
@@ -33,16 +35,23 @@
     .ci-stage video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
     .ci-overlay { position: absolute; inset: 0; pointer-events: none; }
     .ci-ring { fill: none; stroke-width: 7; stroke-linecap: round; stroke: rgba(255,255,255,0.35); transition: stroke 0.2s; }
-    .ci-overlay.fail .ci-ring { stroke: #F87171; }
+    .ci-overlay.fail .ci-ring { stroke: var(--stop); }
     /* Fills while the face holds still in the oval (ready frames). */
     .ci-progress { stroke: var(--go); stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset 0.1s linear; }
     .ci-instruction { min-height: 3em; text-align: center; font-family: 'Anuphan', sans-serif; font-weight: 600; font-size: 19px; margin-bottom: 10px; }
     /* Checking bar: an estimate easing toward 90%, then 100% on the answer */
     .ci-bar { height: 10px; background: #E6EAF2; border-radius: 999px; overflow: hidden; margin: 6px 0 10px; }
     .ci-bar-fill { height: 100%; width: 0; background: var(--go); border-radius: 999px; transition: width 0.25s linear; }
-    .ci-result-icon { font-size: 52px; line-height: 1.2; margin-bottom: 6px; }
-    .ci-result-title { font-family: 'Anuphan', sans-serif; font-weight: 700; font-size: 22px; }
-    @media (prefers-reduced-motion: reduce) { .ci-radar span { animation: none; opacity: .5; } }
+    .ci-result-icon { display: flex; justify-content: center; margin-bottom: 8px; }
+    .ci-result-icon svg { width: 56px; height: 56px; }
+    .ci-result-icon[data-tone="go"] { color: var(--go); }
+    .ci-result-icon[data-tone="stop"] { color: var(--stop); }
+    .ci-result-icon[data-tone="muted"] { color: var(--pass-muted); }
+    .ci-result-title { font-family: 'Anuphan', sans-serif; font-weight: 700; font-size: 22px; font-variant-numeric: tabular-nums; }
+    .ci-result-title.is-time { font-size: 40px; line-height: 1.2; }
+    .ci-result-icon svg .draw { stroke-dasharray: 30; stroke-dashoffset: 30; animation: ci-draw .45s cubic-bezier(.2,.7,.2,1) .1s forwards; }
+    @keyframes ci-draw { to { stroke-dashoffset: 0; } }
+    @media (prefers-reduced-motion: reduce) { .ci-radar span { animation: none; opacity: .5; } .ci-result-icon svg .draw { animation: none; stroke-dashoffset: 0; } }
 </style>
 {% endblock %}
 
@@ -76,9 +85,9 @@
 
     {% else %}
     <article class="pass">
-        <div class="pass-band" data-state="boarding">
-            <span id="checkinStageTitle">หาสัญญาณห้องเรียน</span>
-            <span>{{ session_data.beacons.room_name if session_data.beacons else '' }}</span>
+        <div class="pass-band" id="checkinBand" data-state="boarding">
+            <span id="checkinStageTitle" class="flip">หาสัญญาณห้องเรียน</span>
+            <span id="checkinStageMeta">{{ (session_data.beacons.room_name if session_data.beacons else '') | replace('ห้อง ', '') }}</span>
         </div>
         <div class="pass-body">
             <p class="pass-code">{{ session_data.courses.code }}</p>
@@ -170,12 +179,13 @@
             <p class="ci-note">กำลังตรวจสอบ...</p>
         </div>
         <div id="doneResultView" style="display:none">
-            <div class="ci-result-icon" id="doneIcon"></div>
+            <div class="ci-result-icon" id="doneIcon" aria-hidden="true"></div>
             <h3 class="ci-result-title" id="doneTitle"></h3>
             <p id="doneMsg" class="ci-note mt-1 mb-5"></p>
-            <!-- Retry (shown when it helps) comes first: it is the action that fixes the failure. -->
+            <!-- Retry (shown when it helps) comes first: it is the action that fixes the failure.
+                 Without a retry, "back to today" becomes the main (green) action. -->
             <button id="doneRetry" class="btn-board hidden mb-2" onclick="flow.retry()">ลองใหม่</button>
-            <a href="{{ url_for('student.dashboard') }}" class="btn-quiet">กลับหน้าวันนี้</a>
+            <a href="{{ url_for('student.dashboard') }}" id="doneBack" class="btn-quiet">กลับหน้าวันนี้</a>
         </div>
     </div>
 

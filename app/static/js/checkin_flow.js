@@ -103,8 +103,10 @@ class CheckinFlow {
         const title = document.getElementById('checkinStageTitle');
         const help = document.getElementById('checkinStageHelp');
         const scansBoard = this.proximityMethod === 'ble' || this.proximityMethod === 'broadcast';
-        if (title) title.textContent = ['', scansBoard ? 'หาสัญญาณห้องเรียน' : 'ยืนยันรหัสห้องเรียน', 'ยืนยันตัวตนด้วยใบหน้า', 'ผลการเช็คชื่อ'][n];
+        if (title) title.textContent = ['', scansBoard ? 'หาสัญญาณห้องเรียน' : 'ยืนยันรหัสห้องเรียน', 'ยืนยันตัวตนด้วยใบหน้า', 'กำลังตรวจสอบ'][n];
         if (help) help.textContent = ['', 'ตรวจสอบว่าคุณอยู่ในห้องเรียนของคาบที่เลือก', 'จัดใบหน้าในกรอบ ระบบจะถ่ายภาพและเช็คชื่อให้อัตโนมัติ', 'ระบบตรวจสอบใบหน้าและบันทึกการเข้าเรียน'][n];
+        const band = document.getElementById('checkinBand');
+        if (band) band.dataset.state = 'boarding';
         // 1=proximity, 2=camera, 3=result.
         const firstStep = {ble: 'stepBleRoom', broadcast: 'stepBroadcastRoom'}[this.proximityMethod] || 'stepRoomCode';
         const steps = [firstStep, 'stepVerify', 'stepDone'];
@@ -198,7 +200,13 @@ class CheckinFlow {
         const video    = document.getElementById('videoVerify');
         const canvas   = document.getElementById('canvasVerify');
         const guide    = document.getElementById('faceGuideVerify');
-        const status   = document.getElementById('verifyStatus');
+        const statusEl = document.getElementById('verifyStatus');
+        // Write only when the words change: the live region re-announces every write,
+        // and the face loop sets the same hint on almost every frame.
+        const status = {
+            get textContent() { return statusEl.textContent; },
+            set textContent(t) { if (statusEl.textContent !== t) statusEl.textContent = t; },
+        };
         const ring     = document.getElementById('faceProgressVerify');
         // Ring around the oval: 0..100 = how far the still-face count has got.
         const setProgress = p => { if (ring) ring.style.strokeDashoffset = String(100 - p); };
@@ -247,16 +255,16 @@ class CheckinFlow {
             if (!active()) return;
             if (vcCheck.blocked) {
                 this._camStream.getTracks().forEach(t => t.stop());
-                status.textContent = 'ตรวจพบกล้องเสมือน — กรุณาใช้กล้องจริงเท่านั้น';
-                alert(`ไม่อนุญาตให้ใช้กล้องเสมือน (${vcCheck.label}) — กรุณาใช้กล้องจริงเท่านั้น`);
-                throw new Error('Virtual Camera Detected');
+                const vc = new Error('Virtual Camera Detected');
+                vc.name = 'VirtualCameraError';
+                throw vc;
             }
             video.srcObject = this._camStream;
         } catch (e) {
             if (!active()) return;
             this._stopStream(this._camStream);
             console.info('step=camera_open result=error details={}');
-            status.textContent = 'ไม่สามารถเปิดกล้องได้: ' + e.message;
+            status.textContent = CheckinFlow.cameraErrorText(e);
             this._goToStep(3);
             document.getElementById('doneLoadingView').style.display = 'none';
             document.getElementById('doneResultView').style.display = 'block';
@@ -632,6 +640,7 @@ class CheckinFlow {
         const status = document.getElementById('broadcastStatus');
         document.getElementById('broadcastRetryBtn').style.display = 'none';
         status.textContent = 'กำลังหาสัญญาณห้องเรียน...';
+        document.querySelector('.ci-radar')?.classList.remove('is-idle');
         // Board first: no camera, no face scan until the phone is in the room's range.
         let result;
         try {
@@ -647,6 +656,8 @@ class CheckinFlow {
                 ? 'ไม่พบสัญญาณห้องเรียน — กรุณาอยู่ภายในระยะสัญญาณของห้องเรียน แล้วกด "ลองใหม่"'
                 : result.error;
             document.getElementById('broadcastRetryBtn').style.display = 'block';
+            // Not searching any more: stop the rings so the screen does not look busy.
+            document.querySelector('.ci-radar')?.classList.add('is-idle');
             return;
         }
         console.info('step=broadcast_scan result=pass details={}');
@@ -841,9 +852,9 @@ class CheckinFlow {
             this._retryRoomCode = json.retry_room_code === true;
             if (json.ok || json.already_checked) this._clearNotification();
             if (json.ok) {
-                this._showDone('success', json.message || 'เช็คชื่อสำเร็จ!', false);
+                this._showDone('success', json.message, false, json);
             } else if (json.already_checked) {
-                this._showDone('info', json.error, false);
+                this._showDone('info', json.error, false, json);
             } else if (json.spoof) {
                 this._showDone('spoof', json.error, true);
             } else {
@@ -854,7 +865,7 @@ class CheckinFlow {
             document.getElementById('doneLoadingView').style.display = 'none';
             document.getElementById('doneResultView').style.display  = 'block';
             console.error('Check-in response failed', {name: e.name, status: e.httpStatus});
-            this._showDone('error', e.userMessage || 'การเชื่อมต่อขาดหาย กรุณาตรวจประวัติเช็คชื่อก่อนลองใหม่ หากยังไม่ได้บันทึกให้โหลดหน้าใหม่', false);
+            this._showDone('error', e.userMessage || 'การเชื่อมต่อขาดหาย — ดูที่หน้าวันนี้ ถ้าคาบนี้ขึ้น "มา" พร้อมเวลาแสดงว่าบันทึกแล้ว ถ้ายังไม่ขึ้นให้กลับมาเช็คชื่อใหม่', false);
         }
     }
 
@@ -871,15 +882,15 @@ class CheckinFlow {
             throw error;
         };
         if (res.status === 401 || (res.redirected && new URL(res.url, location.href).pathname === '/login')) {
-            fail('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่แล้วตรวจประวัติเช็คชื่อ');
+            fail('เซสชันหมดอายุ — เข้าสู่ระบบใหม่ แล้วดูที่หน้าวันนี้ว่าคาบนี้บันทึกแล้วหรือยัง');
         }
         let json;
         try { json = await res.json(); } catch (_) {
             if (res.status === 429) fail('คำขอมากเกินไป กรุณารอสักครู่แล้วโหลดหน้าใหม่');
             if ([502, 503, 504, 520, 521, 522, 523, 524, 530].includes(res.status)) {
-                fail(`เว็บเชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ (HTTP ${res.status}) กรุณาตรวจประวัติเช็คชื่อก่อนลองใหม่`);
+                fail(`เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ (HTTP ${res.status}) — ดูที่หน้าวันนี้ว่าคาบนี้บันทึกแล้วหรือยัง ก่อนลองใหม่`);
             }
-            fail(`เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status}) กรุณาโหลดหน้าใหม่และตรวจประวัติเช็คชื่อ`);
+            fail(`เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status}) — ดูที่หน้าวันนี้ว่าคาบนี้บันทึกแล้วหรือยัง`);
         }
         if (!json || typeof json !== 'object' || Array.isArray(json)) {
             fail(`เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status}) กรุณาโหลดหน้าใหม่`);
@@ -890,22 +901,82 @@ class CheckinFlow {
 
     // ─── Result ──────────────────────────────────────────
 
-    _showDone(state, message, canRetry) {
-        const icons  = { success: '✅', info: 'ℹ️', error: '❌', spoof: '⚠️' };
-        const titles = { success: 'เช็คชื่อสำเร็จ!', info: 'เช็คชื่อแล้ว', error: 'เช็คชื่อไม่สำเร็จ', spoof: 'ตรวจพบการโกง!' };
+    // Result: the pass band becomes the answer, like a gate display. Green "เช็คชื่อแล้ว"
+    // (orange when late) with the recorded time; red when nothing was recorded; neutral
+    // "ถ่ายใหม่" when the photo could not be confirmed as a live face (never "cheating").
+    static DONE_ICONS = {
+        check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path class="draw" d="M7.5 12.5l3 3 6-6.5"/></svg>',
+        cross: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>',
+        retake: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.4-6.4L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.4 6.4L3 16"/><path d="M3 21v-5h5"/></svg>',
+    };
+
+    /** "08:03" in Thai time from an ISO timestamp ('' when missing or bad). */
+    static thaiTime(iso) {
+        const d = new Date(iso);
+        if (!iso || Number.isNaN(d.getTime())) return '';
+        return new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).format(d);
+    }
+
+    /** Camera failures in Thai, each with the step that fixes it. */
+    static cameraErrorText(e) {
+        const name = e && e.name;
+        if (name === 'VirtualCameraError') return 'ตรวจพบกล้องเสมือน — กรุณาใช้กล้องหน้าของเครื่องจริง';
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+            return 'ยังไม่ได้อนุญาตให้ใช้กล้อง — เปิดการตั้งค่าเครื่อง > แอป > SmartCheck > สิทธิ์ > กล้อง เลือก "อนุญาต" แล้วกดลองใหม่';
+        }
+        if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'ไม่พบกล้องหน้าในเครื่องนี้ — กรุณาใช้มือถือที่มีกล้องหน้า';
+        if (name === 'NotReadableError' || name === 'AbortError') return 'กล้องถูกแอปอื่นใช้อยู่ — ปิดแอปที่ใช้กล้องแล้วกดลองใหม่';
+        return 'เปิดกล้องไม่ได้ — ปิดแล้วเปิดแอปใหม่ แล้วลองอีกครั้ง';
+    }
+
+    _showDone(state, message, canRetry, result = {}) {
+        const late = result.status === 'late';
+        const time = CheckinFlow.thaiTime(result.check_in_at);
+        const views = {
+            success: {band: late ? 'late' : 'boarded', label: late ? 'เช็คชื่อแล้ว · มาสาย' : 'เช็คชื่อแล้ว · มาเรียน',
+                      icon: 'check', tone: 'go', title: time || (late ? 'มาสาย' : 'มาเรียน'),
+                      msg: `บันทึกแล้ว${late ? ' (มาสาย)' : ''} ไม่ต้องทำอะไรเพิ่ม`},
+            info:    {band: late ? 'late' : 'boarded', label: 'เช็คชื่อแล้ว', icon: 'check', tone: 'go',
+                      title: 'เช็คชื่อไว้แล้ว', msg: message || 'คาบนี้บันทึกไว้แล้ว ไม่ต้องทำอะไรเพิ่ม'},
+            spoof:   {band: 'closed', label: 'ถ่ายใหม่อีกครั้ง', icon: 'retake', tone: 'muted',
+                      title: 'ยังยืนยันใบหน้าไม่ได้',
+                      msg: 'หันหน้าเข้าหาแสง ถือมือถือให้นิ่ง และใช้ใบหน้าจริง (ไม่ใช่รูปหรือหน้าจอ) แล้วกด "ลองใหม่"'},
+            error:   {band: 'failed', label: 'ยังไม่ได้บันทึก', icon: 'cross', tone: 'stop',
+                      title: 'เช็คชื่อไม่สำเร็จ', msg: message || 'กรุณาลองใหม่'},
+        };
+        const v = views[state] || views.error;
+        const recorded = state === 'success' || state === 'info';
+
+        const band = document.getElementById('checkinBand');
+        const label = document.getElementById('checkinStageTitle');
+        if (band) band.dataset.state = v.band;
+        if (label) {
+            label.textContent = v.label;
+            label.classList.remove('turn'); void label.offsetWidth; label.classList.add('turn');
+        }
+        for (let i = 1; i <= 3; i++) {
+            const dot = document.getElementById('dot' + i);
+            if (dot) dot.classList.toggle('done', i < 3 || recorded);
+        }
+        // The room-receipt countdown means nothing once there is an answer.
+        clearInterval(this._receiptTimer);
+        document.getElementById('receiptCountdown').textContent = '';
+        document.getElementById('proximityStatus').textContent = '';
+
         const iconEl  = document.getElementById('doneIcon');
         const titleEl = document.getElementById('doneTitle');
-        iconEl.textContent  = icons[state]  || '❌';
-        titleEl.textContent = titles[state] || 'เกิดข้อผิดพลาด';
-        if (state === 'spoof') {
-            iconEl.style.color  = '#f59e0b';
-            titleEl.style.color = '#b45309';
-        } else {
-            iconEl.style.color  = '';
-            titleEl.style.color = '';
-        }
-        document.getElementById('doneMsg').textContent   = message;
+        iconEl.innerHTML = CheckinFlow.DONE_ICONS[v.icon];
+        iconEl.dataset.tone = v.tone;
+        titleEl.textContent = v.title;
+        titleEl.classList.toggle('is-time', state === 'success' && !!time);
+        document.getElementById('doneMsg').textContent = v.msg;
         document.getElementById('doneRetry').style.display = canRetry ? 'block' : 'none';
+        // With no retry, going back to today is the one thing left to do.
+        const back = document.getElementById('doneBack');
+        if (back) back.className = canRetry ? 'btn-quiet' : 'btn-board';
+        // Screen readers: land on the answer.
+        titleEl.setAttribute('tabindex', '-1');
+        titleEl.focus({preventScroll: true});
     }
 
     // ─── Helpers ─────────────────────────────────────────

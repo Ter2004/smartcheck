@@ -369,7 +369,10 @@ def _record_attendance(sess, session_id, student_id, score, antispoof_pass, live
         )
     if dup and dup.data:
         reject("already_checked")
-        return jsonify({"ok": False, "already_checked": True, "error": f"เช็คชื่อแล้ว (สถานะ: {dup.data[0]['status']})"}), 400
+        prior = dup.data[0].get("status")
+        prior_label = {"present": "มาเรียน", "late": "มาสาย"}.get(prior, prior)
+        return jsonify({"ok": False, "already_checked": True, "status": prior,
+                        "error": f"เช็คชื่อคาบนี้ไว้แล้ว ({prior_label})"}), 400
 
     # ─── 8. Determine attendance status (present / late) ─────────────────────
     # Inside the teacher's on-time window present, after it late (class_open.py).
@@ -417,7 +420,9 @@ def _record_attendance(sess, session_id, student_id, score, antispoof_pass, live
     )
 
     status_label = "มาเรียน" if status == "present" else "มาสาย"
-    return jsonify({"ok": True, "message": f"เช็คชื่อสำเร็จ — {status_label}"})
+    # status + check_in_at let the result screen show the recorded time (Phase 8b).
+    return jsonify({"ok": True, "message": f"เช็คชื่อสำเร็จ — {status_label}",
+                    "status": status, "check_in_at": now.isoformat()})
 
 
 # ─── Head-turn challenge for check-in liveness ───────────────────────────────

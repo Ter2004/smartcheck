@@ -44,7 +44,7 @@
         <p class="pass-code">{{ hero.code }}</p>
         <p class="pass-name">{{ hero.name }}</p>
         <div class="pass-grid">
-            <div><small>ห้อง</small><b>{{ hero.room or '—' }}</b></div>
+            <div><small>ห้อง</small><b>{{ (hero.room or '—') | replace('ห้อง ', '') }}</b></div>
             <div><small>เริ่ม</small><b>{{ hero.start_time | thai_time('%H:%M') }}</b></div>
             <div><small>{{ 'เหลือ' if hero.state == 'boarding' and hero.on_time_until else 'สถานะ' }}</small>
                 <b data-countdown>{% if hero.state == 'boarding' and hero.on_time_until %}—{% elif hero.state == 'boarded' %}{{ 'สาย' if a.status == 'late' else 'มา' }}{% elif hero.state == 'boarding' %}เปิด{% elif hero.state == 'closed' %}ปิด{% else %}รอ{% endif %}</b></div>

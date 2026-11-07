@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ชุดทดสอบภาคสนาม SmartCheck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@600;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4; margin: 11mm 13mm; }
+  :root { --ink: #0B1D3A; --muted: #51607A; --rule: #CBD3E1; --band: #E6EAF2; --gate: #FFB000; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Noto Sans Thai', sans-serif; font-size: 10pt; line-height: 1.45; color: var(--ink); margin: 0; }
+  h1, h2, h3 { font-family: 'Anuphan', 'Noto Sans Thai', sans-serif; line-height: 1.3; margin: 0; }
+  h1 { font-size: 18pt; }
+  h2 { font-size: 12.5pt; margin: 10px 0 5px; padding-bottom: 3px; border-bottom: 2px solid var(--ink); }
+  h3 { font-size: 11pt; margin: 10px 0 4px; }
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 4px solid var(--gate); padding-bottom: 6px; margin-bottom: 8px; }
+  .head small { color: var(--muted); font-size: 9pt; }
+  p { margin: 4px 0; }
+  ol, ul { margin: 4px 0; padding-left: 20px; }
+  li { margin: 1px 0; }
+  .muted { color: var(--muted); }
+  .box { border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+  .goal { background: var(--band); border: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 10pt; }
+  th, td { border: 1px solid var(--rule); padding: 3px 6px; text-align: left; vertical-align: top; }
+  th { background: var(--band); font-weight: 600; }
+  td.blank { height: 22px; }
+  .tall td.blank { height: 27px; }
+  .tick { display: inline-block; width: 12px; height: 12px; border: 1.5px solid var(--ink); border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+  .sign { display: flex; gap: 24px; margin-top: 18px; }
+  .sign div { flex: 1; }
+  .line { border-bottom: 1px solid var(--ink); height: 26px; margin-bottom: 2px; }
+  code { font-family: 'Consolas', monospace; font-size: 9pt; background: #F3F5FA; padding: 1px 4px; border-radius: 4px; word-break: break-all; }
+  pre { font-family: 'Consolas', monospace; font-size: 8.6pt; background: #F3F5FA; padding: 8px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; margin: 4px 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+</style>
+</head>
+<body>
+
+<!-- ───────────── 1. Protocol ───────────── -->
+<section class="page">
+  <div class="head"><h1>ขั้นตอนทดสอบภาคสนาม SmartCheck</h1><small>ผู้ทดสอบ 10 คน · ห้องเดียว · ราว 1 ชม. 30 นาที</small></div>
+
+  <div class="box goal">
+    <strong>วัดอะไร</strong>
+    <ol>
+      <li>เวลาเช็คชื่อทั้งห้อง: จากอาจารย์กด "เปิดคาบ" จนคนสุดท้ายถูกบันทึก เทียบกับการเรียกชื่อ 10 คน</li>
+      <li>เวลาของแต่ละคน และสัดส่วนที่ผ่านในครั้งแรก (ไม่ผ่านเพราะอะไร)</li>
+      <li>ระบบรับมือถือ 10 เครื่องพร้อมกันได้</li>
+      <li>คนนอกห้องเช็คชื่อไม่ได้ · ใช้หน้าคนอื่นไม่ได้ · ใช้รูปถ่าย/หน้าจอไม่ได้</li>
+    </ol>
+    <p class="muted">เวลาทั้งหมดระบบบันทึกเอง (เวลาเปิดคาบและเวลาเช็คชื่อใน DB) — นาฬิกาจับเวลาใช้แค่ตอนเรียกชื่อและเป็นค่าสำรอง</p>
+  </div>
+
+  <h2>บทบาท</h2>
+  <ul>
+    <li><strong>ผู้ดำเนินการ:</strong> คุมคอมพิวเตอร์/เซิร์ฟเวอร์ จับเวลา และกรอกใบบันทึกผล</li>
+    <li><strong>"อาจารย์":</strong> ใช้บัญชีอาจารย์ของวิชาทดสอบ กดเปิดคาบบนมือถือ และอ่านรายชื่อตอนเรียกชื่อ (เพื่อนหรืออาจารย์จริงก็ได้)</li>
+    <li><strong>ผู้ทดสอบ 10 คน:</strong> Android ติดตั้งแอป SmartCheck · iPhone ใช้เว็บผ่าน Safari และกรอกรหัส 6 หลักจากจออาจารย์</li>
+  </ul>
+
+  <h2>ก่อนวันทดสอบ (อย่างช้า 1 วันก่อน)</h2>
+  <ol>
+    <li><strong>ลิงก์ถาวร:</strong> ตั้งโดเมน + named tunnel ให้เสร็จ (ดู <code>docs/named-tunnel.md</code>) แล้ว build APK ด้วยลิงก์นั้น — ถ้าลิงก์เปลี่ยนกลางทาง ทุกคนต้องลงแอปใหม่</li>
+    <li><strong>บัญชีและวิชา (หน้าแอดมิน):</strong> นำเข้าผู้ทดสอบ 10 คน (นำเข้าข้อมูล › CSV) · สร้างวิชาทดสอบ เช่น <code>FT-01</code> ผูกกับบัญชีอาจารย์ · เพิ่มผู้ทดสอบ 10 คนเข้าวิชา</li>
+    <li><strong>ตารางเรียนของวันทดสอบ 4 ช่วง ช่วงละ 15 นาที ห้องเดียวกัน</strong> (ตัวอย่างเริ่ม 13:00):
+      R1 13:15–13:30 · R2 13:30–13:45 · R3 13:45–14:00 · R4 14:00–14:15
+      <span class="muted">(อาจารย์กดเปิดได้ก่อนเวลาเริ่ม 15 นาที คาบปิดเองเมื่อถึงเวลาจบ)</span></li>
+    <li><strong>ลงทะเบียนใบหน้าครบ 10 คน</strong> (คนละ 1–2 นาที) · Android: ติดตั้งแอป ล็อกอิน อนุญาต แจ้งเตือน / Bluetooth / ตำแหน่ง / กล้อง · iPhone: ล็อกอินใน Safari</li>
+    <li><strong>ซ้อม 1 ครั้งกับคาบซ้อม</strong> ให้ทุกคนเคยเห็นหน้าจอมาก่อน (บันทึกไว้ในรายงานว่ามีการซ้อม)</li>
+    <li><strong>บอร์ดในห้อง:</strong> ติดบอร์ด ESP32 ของห้องนั้น เสียบไฟ เช็คด้วยมือถือว่าเจอสัญญาณ</li>
+    <li>พิมพ์: ใบยินยอม 10 ชุด · ใบบันทึกผล · รายชื่อ 10 คนสำหรับเรียกชื่อ · แบบสอบถาม</li>
+  </ol>
+
+  <h2>วันทดสอบ</h2>
+  <ol>
+    <li><strong>เปิดระบบ</strong> ด้วย <code>scripts\field_test\start-field-test.cmd</code> (เปิดเซิร์ฟเวอร์พร้อมบันทึกเวลา + tunnel) แล้วเปิดหน้าเว็บจากมือถือตัวเองให้ขึ้นก่อน</li>
+    <li><strong>อธิบาย + เซ็นใบยินยอม</strong> (10 นาที) · ทุกคนนั่งในห้อง เปิดเน็ต Bluetooth ตำแหน่ง · <em>ปิดแอปและล็อกจอไว้เหมือนรอเรียนตามปกติ</em></li>
+    <li><strong>เรียกชื่อ ครั้งที่ 1:</strong> "อาจารย์" ขานชื่อตามรายชื่อและติ๊กบนกระดาษเหมือนเช็คชื่อจริง ผู้ทดสอบตอบ "มา" · จับเวลาตั้งแต่เริ่มอ่านชื่อแรกจนติ๊กชื่อสุดท้าย</li>
+    <li><strong>R1, R2, R3:</strong> "อาจารย์" กด <strong>เปิดคาบ</strong> (5 นาที) ที่หน้าหลักอาจารย์ → ผู้ทดสอบแตะแจ้งเตือนแล้วเช็คชื่อตามปกติ · iPhone: อาจารย์เปิด "แสดงรหัสเช็คชื่อ (สำรอง)" ขึ้นจอให้เห็นทั้งห้อง ·
+      จบรอบเมื่อหน้าอาจารย์ขึ้น "เช็คแล้ว 10/10" หรือครบ 5 นาที · ใครไม่ผ่าน ให้จดข้อความบนจอ แล้วให้ลองใหม่ได้ · ระหว่างรอบให้ปิดแอปและล็อกจออีกครั้ง</li>
+    <li><strong>เรียกชื่อ ครั้งที่ 2</strong> (เหมือนข้อ 3) — ได้ค่าเฉลี่ย 2 ครั้ง</li>
+    <li><strong>R4 ความปลอดภัย</strong> (ให้ทำก่อนอาจารย์กดเปิดคาบ R4):
+      <ul>
+        <li>2 คนออกไปนอกห้อง (ห้องอื่น / อีกชั้น / ห่างอย่างน้อย 15–20 ม.) แล้วพยายามเช็คชื่อ → คาดว่า "ไม่พบสัญญาณห้องเรียน"</li>
+        <li>2 คู่: ใช้มือถือและบัญชีตัวเอง แต่ให้<strong>เพื่อน</strong>ส่องกล้อง → คาดว่าไม่ผ่าน</li>
+        <li>1 คน: ส่องรูปหน้าตัวเองจากหน้าจอมือถืออีกเครื่อง → คาดว่าไม่ผ่าน</li>
+        <li>ที่เหลือเช็คชื่อตามปกติ · จดผลทุกครั้งตามจริง แม้ผลจะไม่เป็นไปตามที่คาด</li>
+      </ul></li>
+    <li><strong>แบบสอบถาม 3 ข้อ</strong> (5 นาที) แล้วจบ · ห้ามปิดคอมจนกว่าจะรันสรุปผล (หน้าสุดท้าย)</li>
+  </ol>
+</section>
+
+<!-- ───────────── 2. Recording sheet ───────────── -->
+<section class="page">
+  <div class="head"><h1>ใบบันทึกผล</h1><small>วันที่ ____ / ____ / ______ · ห้อง __________ · วิชา __________</small></div>
+
+  <h2>มือถือผู้ทดสอบ</h2>
+  <table>
+    <tr><th style="width:9%">รหัส</th><th>รุ่นมือถือ</th><th style="width:16%">Android / iPhone</th><th style="width:14%">ลงหน้าแล้ว</th><th style="width:14%">ลงแอป / ล็อกอิน</th><th style="width:14%">ซ้อมแล้ว</th></tr>
+    <tr><td>P01</td><td class="blank"></td><td></td><td><span class="tick"></span></td><td><span class="tick"></span></td><td><span class="tick"></span></td></tr>
+    <tr><td>P02</td><td class="blank"></td><td></td><td><span class="tick"></span></td><td><span class="tick"></span></td><td><span class="tick"></span></td></tr>
+    <tr><td>P03</td><td class="blank"></td><td></td><td><span class="tick"></span></td><td><span class="tick"></span></td><td><span class="tick"></span></td></tr>
+    <tr><td>P04</td><td class="blank"></td><td></td><td><span class="tick"></span></td><td><span class="tick"></span></td><td><span class="tick"></span></td></tr>
+    <tr><td>P05</td><td class="blank"></td><td></td><td><span class="tick"></span></td><td><span class="tick"></span></td><td><span class="tick"></span></td></tr>
+    <tr><td>P06</td><td class="blank"></td><td></td><td><span class="tick"></span></td><td><span class="tick"></span></td><td><span class="tick"></span></td></tr>
+    <tr><td>P07</td><td class="blank"></td><td></td><td><span class="tick"></span></td><td><span class="tick"></span></td><td><span class="tick"></span></td></tr>
+    <tr><td>P08</td><td class="blank"></td><td></td><td><span class="tick"></span></td><td><span class="tick"></span></td><td><span class="tick"></span></td></tr>
+    <tr><td>P09</td><td class="blank"></td><td></td><td><span class="tick"></span></td><td><span class="tick"></span></td><td><span class="tick"></span></td></tr>
+    <tr><td>P10</td><td class="blank"></td><td></td><td><span class="tick"></span></td><td><span class="tick"></span></td><td><span class="tick"></span></td></tr>
+  </table>
+  <p class="muted">ในรายงานใช้รหัส P01–P10 เท่านั้น ไม่ใส่ชื่อ</p>
+
+  <h2>เวลา</h2>
+  <table class="tall">
+    <tr><th style="width:22%">รอบ</th><th style="width:16%">เวลาบนนาฬิกา</th><th style="width:18%">จับเวลา (วินาที)</th><th style="width:16%">ผ่าน / 10</th><th>หมายเหตุ</th></tr>
+    <tr><td>เรียกชื่อ ครั้งที่ 1</td><td class="blank"></td><td></td><td>—</td><td></td></tr>
+    <tr><td>R1 SmartCheck</td><td class="blank"></td><td></td><td></td><td></td></tr>
+    <tr><td>R2 SmartCheck</td><td class="blank"></td><td></td><td></td><td></td></tr>
+    <tr><td>R3 SmartCheck</td><td class="blank"></td><td></td><td></td><td></td></tr>
+    <tr><td>เรียกชื่อ ครั้งที่ 2</td><td class="blank"></td><td></td><td>—</td><td></td></tr>
+    <tr><td>R4 ความปลอดภัย</td><td class="blank"></td><td></td><td></td><td></td></tr>
+  </table>
+
+  <h2>ครั้งที่ไม่ผ่าน (R1–R3) และผล R4</h2>
+  <table class="tall">
+    <tr><th style="width:9%">รอบ</th><th style="width:9%">รหัส</th><th style="width:18%">ทดสอบอะไร</th><th>ข้อความที่ขึ้นบนจอ</th><th style="width:16%">ลองใหม่แล้วผ่าน?</th></tr>
+    <tr><td class="blank"></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td class="blank"></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td class="blank"></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td class="blank"></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td>R4</td><td class="blank"></td><td>นอกห้อง</td><td></td><td>—</td></tr>
+    <tr><td>R4</td><td class="blank"></td><td>นอกห้อง</td><td></td><td>—</td></tr>
+    <tr><td>R4</td><td class="blank"></td><td>หน้าเพื่อน</td><td></td><td>—</td></tr>
+    <tr><td>R4</td><td class="blank"></td><td>หน้าเพื่อน</td><td></td><td>—</td></tr>
+    <tr><td>R4</td><td class="blank"></td><td>รูปบนหน้าจอ</td><td></td><td>—</td></tr>
+  </table>
+</section>
+
+<!-- ───────────── 3. Consent ───────────── -->
+<section class="page">
+  <div class="head"><h1>หนังสือยินยอมเข้าร่วมการทดสอบ</h1><small>โครงงาน SmartCheck · รายวิชา Digital Engineering Project II</small></div>
+
+  <p>ข้าพเจ้าได้รับคำอธิบายเกี่ยวกับการทดสอบระบบเช็คชื่อ <strong>SmartCheck</strong> ซึ่งยืนยันว่าผู้เช็คชื่ออยู่ในห้องเรียนด้วยสัญญาณจากบอร์ดในห้อง และยืนยันตัวตนด้วยใบหน้า ดังนี้</p>
+
+  <h3>สิ่งที่ผู้เข้าร่วมทำ</h3>
+  <ul>
+    <li>ลงทะเบียนใบหน้า 1 ครั้ง · เช็คชื่อด้วยมือถือราว 4 รอบ · ตอบแบบสอบถามสั้น ๆ 3 ข้อ · ใช้เวลารวมราว 1 ชั่วโมง 30 นาที</li>
+    <li>บางคนจะถูกขอให้ทดสอบความปลอดภัย เช่น ลองเช็คชื่อจากนอกห้อง หรือส่องหน้าแทนเพื่อน (ในวิชาทดสอบเท่านั้น)</li>
+  </ul>
+
+  <h3>ข้อมูลที่เก็บ</h3>
+  <ul>
+    <li>ข้อมูลใบหน้าในรูปตัวเลข และรูปหน้าตรง 1 รูป จากการลงทะเบียน (ไม่เก็บรูปตอนเช็คชื่อ)</li>
+    <li>เวลาเช็คชื่อแต่ละครั้ง ผลผ่าน/ไม่ผ่าน รุ่นมือถือ และคำตอบแบบสอบถาม</li>
+  </ul>
+
+  <h3>การใช้และการลบข้อมูล</h3>
+  <ul>
+    <li>ใช้เพื่อการทดสอบ รายงาน และโปสเตอร์ของโครงงานนี้เท่านั้น · ผลในรายงานใช้รหัส P01–P10 ไม่ระบุชื่อ</li>
+    <li>บัญชีทดสอบและข้อมูลใบหน้าจะถูกลบภายใน ______ วันหลังส่งรายงาน หรือทันทีที่ผู้เข้าร่วมขอ</li>
+    <li>การเข้าร่วมเป็นไปโดยสมัครใจ ผู้เข้าร่วมถอนตัวได้ทุกเมื่อโดยไม่ต้องให้เหตุผลและไม่มีผลใด ๆ</li>
+  </ul>
+
+  <div class="box">
+    <p><span class="tick"></span>ข้าพเจ้ายินยอมเข้าร่วมการทดสอบ และให้เก็บและใช้ข้อมูลตามที่ระบุข้างต้น</p>
+    <p><span class="tick"></span>ยินยอม &nbsp; <span class="tick"></span>ไม่ยินยอม &nbsp; ให้ถ่ายภาพบรรยากาศระหว่างทดสอบ (ไม่เห็นใบหน้าชัดเจน) เพื่อใช้ในรายงานและโปสเตอร์</p>
+  </div>
+
+  <div class="sign">
+    <div><div class="line"></div>ลงชื่อผู้เข้าร่วม<br><span class="muted">(________________________) &nbsp; วันที่ ____/____/______</span></div>
+    <div><div class="line"></div>ลงชื่อผู้ทำโครงงาน<br><span class="muted">(________________________) &nbsp; วันที่ ____/____/______</span></div>
+  </div>
+  <p class="muted" style="margin-top:16px">ติดต่อผู้ทำโครงงาน: ______________________ · อาจารย์ที่ปรึกษา: ______________________</p>
+</section>
+
+<!-- ───────────── 4. Questionnaire ───────────── -->
+<section class="page">
+  <div class="head"><h1>แบบสอบถามหลังทดสอบ</h1><small>ผู้ดำเนินการถามและกรอกให้ · คนละไม่เกิน 1 นาที</small></div>
+  <ol>
+    <li><strong>ใช้งานง่ายแค่ไหน</strong> 1 = ยากมาก · 5 = ง่ายมาก</li>
+    <li><strong>ถ้าเลือกได้ อยากให้เช็คชื่อแบบไหน</strong> SmartCheck / เรียกชื่อ / เท่ากัน</li>
+    <li><strong>ติดขัดตรงไหน หรืออยากให้ปรับอะไร</strong></li>
+  </ol>
+  <table class="tall">
+    <tr><th style="width:9%">รหัส</th><th style="width:14%">ข้อ 1 (1–5)</th><th style="width:20%">ข้อ 2</th><th>ข้อ 3</th></tr>
+    <tr><td>P01</td><td class="blank"></td><td></td><td></td></tr>
+    <tr><td>P02</td><td class="blank"></td><td></td><td></td></tr>
+    <tr><td>P03</td><td class="blank"></td><td></td><td></td></tr>
+    <tr><td>P04</td><td class="blank"></td><td></td><td></td></tr>
+    <tr><td>P05</td><td class="blank"></td><td></td><td></td></tr>
+    <tr><td>P06</td><td class="blank"></td><td></td><td></td></tr>
+    <tr><td>P07</td><td class="blank"></td><td></td><td></td></tr>
+    <tr><td>P08</td><td class="blank"></td><td></td><td></td></tr>
+    <tr><td>P09</td><td class="blank"></td><td></td><td></td></tr>
+    <tr><td>P10</td><td class="blank"></td><td></td><td></td></tr>
+  </table>
+</section>
+
+<!-- ───────────── 5. After the test ───────────── -->
+<section class="page">
+  <div class="head"><h1>หลังทดสอบ: สรุปผลและกราฟ</h1><small>ทำทันทีหลังจบ ก่อนปิดคอม</small></div>
+  <ol>
+    <li>ดึงผลทุกรอบจากระบบ (อ่านอย่างเดียว) — ใส่วิชา วันที่ และเวลาเรียกชื่อทั้ง 2 ครั้ง (วินาที):
+<pre>cd smartcheck_project
+venv\Scripts\python.exe scripts\field_test\pull_results.py --course FT-01 --date 2026-11-DD ^
+    --roll-call 31.4 --roll-call 29.8 --out docs\field-test\results\2026-11-DD</pre></li>
+    <li>วาดกราฟสำหรับรายงานและโปสเตอร์ (ใช้ Python 3.11 ของเครื่องที่มี matplotlib):
+<pre>%LOCALAPPDATA%\Programs\Python\Python311\python.exe scripts\field_test\make_charts.py docs\field-test\results\2026-11-DD</pre></li>
+    <li>ได้ในโฟลเดอร์ผล: <code>summary.md</code> (ตารางพร้อมวาง) · <code>checkins.csv</code> · <code>rejects.csv</code> · กราฟ <code>class_time</code>, <code>per_student</code>, <code>projection</code> (.png สำหรับรายงาน, .svg สำหรับโปสเตอร์)</li>
+    <li>ถ่ายรูปใบบันทึกผลและแบบสอบถามเก็บไว้ · ใส่ผล R4 (ความปลอดภัย) จากใบบันทึกลงรายงานเอง — สคริปต์นับได้แค่ว่าระบบปฏิเสธกี่ครั้ง ไม่รู้ว่าครั้งไหนเป็นการทดสอบอะไร</li>
+    <li>หลังส่งรายงาน: ลบข้อมูลใบหน้าผู้ทดสอบ (แอดมิน › ข้อมูลใบหน้า › ถอนความยินยอม / ลบข้อมูลใบหน้า) และบัญชีทดสอบตามที่สัญญาในใบยินยอม</li>
+  </ol>
+  <div class="box goal">
+    <strong>อ่านผลอย่างซื่อตรง</strong>
+    <ul>
+      <li>ห้อง 10 คน การเรียกชื่ออาจเร็วพอ ๆ กับหรือเร็วกว่า SmartCheck — จุดแข็งที่วัดได้คือเวลาไม่โตตามจำนวนคน (ทุกคนเช็คพร้อมกัน) และโกงแทนเพื่อนไม่ได้</li>
+      <li>เส้นคาดการณ์ห้อง 20–60 คนเป็น<strong>ค่าประมาณ</strong>จากผลจริง 10 คน ต้องเขียนกำกับทุกครั้ง</li>
+      <li>รายงานผล R4 ตามจริง ถ้ามีครั้งที่ระบบรับทั้งที่ไม่ควรรับ ให้รายงานพร้อมสาเหตุ — ดีกว่าซ่อน</li>
+    </ul>
+  </div>
+</section>
+
+</body>
+</html>

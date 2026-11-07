@@ -1,15 +1,17 @@
 <!DOCTYPE html>
-<html lang="th">
+{% set page_ground = '#F3F5FA' if session.get('user_role') in ('teacher', 'admin') else '#0B1D3A' %}
+<html lang="th" style="background:{{ page_ground }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="{{ page_ground }}">
     <meta name="csrf-token" content="{{ session.get('csrf_token', '') }}">
     <title>{% block title %}SmartCheck{% endblock %}</title>
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <!-- Legacy styles (needed by camera pages only) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -266,6 +268,23 @@ function toggleSidebar() {
         overlay.classList.remove('opacity-0','pointer-events-none');
     }
 }
+
+// Tap feedback: the next page is on its way. Skipped for new tabs, downloads
+// (data-no-progress), in-page links, modifier clicks and handlers that cancel the click.
+(function () {
+    const start = () => document.documentElement.classList.add('is-navigating');
+    document.addEventListener('click', e => {
+        const a = e.target.closest && e.target.closest('a[href]');
+        if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        if (a.target || a.hasAttribute('download') || a.hasAttribute('data-no-progress')) return;
+        const url = new URL(a.href, location.href);
+        if (url.origin !== location.origin) return;
+        if (url.pathname === location.pathname && url.search === location.search && url.hash) return;
+        start();
+    });
+    document.addEventListener('submit', e => { if (!e.defaultPrevented) start(); });
+    window.addEventListener('pageshow', () => document.documentElement.classList.remove('is-navigating'));
+})();
 
 document.addEventListener('keydown', event => {
     const sidebar = document.getElementById('sidebar');

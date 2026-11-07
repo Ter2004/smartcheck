@@ -17,6 +17,20 @@
     --pass-rule: #CBD3E1;
 }
 body[data-world="pass"] { background: var(--tarmac) !important; color: #fff; }
+
+/* Same-origin page changes cross-fade instead of flashing (Chrome 126+ / Android
+   WebView; other browsers ignore the rule). */
+@media (prefers-reduced-motion: no-preference) {
+    @view-transition { navigation: auto; }
+}
+
+/* Top progress bar while the next page loads (base.html adds .is-navigating on tap). */
+html.is-navigating::before { content: ''; position: fixed; top: 0; left: 0; z-index: 100; height: 3px; width: 100%;
+    background: var(--gate); transform-origin: left; animation: nav-progress 1.6s cubic-bezier(.2,.7,.2,1) forwards; }
+@keyframes nav-progress { from { transform: scaleX(.05); } to { transform: scaleX(.85); } }
+@media (prefers-reduced-motion: reduce) { html.is-navigating::before { animation: none; transform: scaleX(.6); } }
+/* Pressed state on the shared controls (the board button already has one). */
+.btn-quiet:active, .btn-gate:active, .tabbar a:active, a.board-row:active { opacity: .7; }
 [data-world="pass"] #main-content { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 [data-world="pass"] #toast-container { bottom: calc(92px + env(safe-area-inset-bottom)); }
 .pass-display { font-family: 'Anuphan', 'Noto Sans Thai', system-ui, sans-serif; font-variant-numeric: tabular-nums; }

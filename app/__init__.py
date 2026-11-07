@@ -82,6 +82,15 @@ def _cache_static_files(app):
     so an edited file gets a new URL and still reaches them at once."""
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 7 * 24 * 3600
 
+    @app.after_request
+    def cache_versioned_static(response):
+        from flask import request as freq
+        if freq.path.startswith("/static/") and freq.args.get("v") and response.status_code in (200, 304):
+            response.cache_control.max_age = 365 * 24 * 3600
+            response.cache_control.public = True
+            response.cache_control.immutable = True
+        return response
+
     @app.url_defaults
     def static_version(endpoint, values):
         if endpoint == "static" and "filename" in values and "v" not in values:

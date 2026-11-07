@@ -45,7 +45,7 @@
                title="สำหรับนักศึกษาที่หาสัญญาณห้องไม่ได้ เช่น iPhone">แสดงรหัสเช็คชื่อ (สำรอง)</a>
             {% endif %}
             {% if not is_open %}
-            <a href="{{ url_for('teacher.export_course', course_id=sess.course_id) }}" class="btn-quiet">
+            <a data-no-progress href="{{ url_for('teacher.export_course', course_id=sess.course_id) }}" class="btn-quiet">
                 <svg class="w-4 h-4 mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 ส่งออกทั้งเทอม (Excel)
             </a>

@@ -317,7 +317,8 @@ def pdpa_notice():
 # Page reads that need no request context run here side by side: each one is a
 # round trip to Supabase (~120 ms from Thailand to ap-south-1, 2026-11-02).
 # Only request threads submit work, so no task ever waits on another task here.
-_page_reads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="page-read")
+from app.services.request_performance import ContextPool   # noqa: E402
+_page_reads = ContextPool(ThreadPoolExecutor(max_workers=8, thread_name_prefix="page-read"))
 
 
 def _open_session_reads(user_id):

@@ -30,7 +30,8 @@ api_checkin_bp = Blueprint("api_checkin", __name__)
 
 # Database reads a check-in needs later (device, enrollment, duplicate) run here
 # while the anti-spoof models work, instead of one after another afterwards.
-_read_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="checkin-read")
+from app.services.request_performance import ContextPool   # noqa: E402
+_read_pool = ContextPool(ThreadPoolExecutor(max_workers=8, thread_name_prefix="checkin-read"))
 
 
 def _prefetch_reads(student_id, session_id):

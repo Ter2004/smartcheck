@@ -18,12 +18,17 @@ class _RetryDroppedReads(httpx.HTTPTransport):
     """
 
     def handle_request(self, request):
+        from time import perf_counter
+        from app.services.request_performance import record_db_call
+        started = perf_counter()
         try:
             return super().handle_request(request)
         except httpx.RemoteProtocolError:
             if request.method not in ("GET", "HEAD"):
                 raise
             return super().handle_request(request)
+        finally:
+            record_db_call((perf_counter() - started) * 1000)   # no-op unless timing is on
 
 
 def _session_like(old):

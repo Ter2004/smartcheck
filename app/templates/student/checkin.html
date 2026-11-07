@@ -2,7 +2,8 @@
 {% block title %}เช็คชื่อเข้าเรียน — SmartCheck{% endblock %}
 
 {% block head %}
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" integrity="sha384-nKiz5QrpRlMQLw5nrZcprT7N9vmmAcIgV8TuGuep4x91V4JIPsXa+D44Wxj0guoa" crossorigin="anonymous"></script>
+{# MediaPipe face_mesh.js is loaded by checkin_flow.js (CheckinFlow.loadFaceMesh) while the
+   room board is being found, instead of blocking the page here. #}
 <style>
     /* Check-in inside the boarding pass (pass.css holds the shared pass parts). */
     .ci-steps { display: grid; grid-template-columns: auto auto 1fr auto auto 1fr auto auto; align-items: center; gap: 6px; margin-top: 16px; font-size: 13px; color: var(--pass-muted); }

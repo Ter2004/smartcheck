@@ -139,6 +139,32 @@ class CheckinFlow {
     // still runs the face match and anti-spoof on the frame; this only picks a steady one.
     static READY_FRAMES = 10;
 
+    // Loaded in the background while the room board is found (it used to block the page
+    // in <head>, so the scan could only start after it had downloaded). Same file + SRI.
+    static FACE_MESH_SRC = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js';
+    static FACE_MESH_SRI = 'sha384-nKiz5QrpRlMQLw5nrZcprT7N9vmmAcIgV8TuGuep4x91V4JIPsXa+D44Wxj0guoa';
+
+    /** Resolves once FaceMesh exists; one download per page, retried after a failure. */
+    static loadFaceMesh() {
+        if (typeof FaceMesh !== 'undefined') return Promise.resolve();
+        if (!CheckinFlow._faceMeshLoad) {
+            CheckinFlow._faceMeshLoad = new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = CheckinFlow.FACE_MESH_SRC;
+                script.integrity = CheckinFlow.FACE_MESH_SRI;
+                script.crossOrigin = 'anonymous';
+                script.onload = () => resolve();
+                script.onerror = () => {
+                    CheckinFlow._faceMeshLoad = null;
+                    script.remove();
+                    reject(new Error('face_mesh.js did not load'));
+                };
+                document.head.appendChild(script);
+            });
+        }
+        return CheckinFlow._faceMeshLoad;
+    }
+
     _newFaceMesh() {
         const mesh = new FaceMesh({ locateFile: f =>
             `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}` });
@@ -151,6 +177,10 @@ class CheckinFlow {
 
     /** Load the face model while the room is being confirmed, so the camera does not wait for it. */
     _preloadFaceMesh() {
+        CheckinFlow.loadFaceMesh().then(() => this._preloadFaceMeshNow()).catch(() => {});
+    }
+
+    _preloadFaceMeshNow() {
         if (this._meshPreload || typeof FaceMesh === 'undefined') return;
         try {
             const mesh = this._newFaceMesh();
@@ -310,6 +340,21 @@ class CheckinFlow {
         };
 
         status.textContent = 'จัดใบหน้าให้อยู่ในกรอบวงรี';
+
+        // The face model script normally finished downloading during the room step.
+        try {
+            await CheckinFlow.loadFaceMesh();
+        } catch (e) {
+            if (!active()) return;
+            this._stopStream(this._camStream);
+            console.info('step=face_model_script result=error details={}');
+            this._goToStep(3);
+            document.getElementById('doneLoadingView').style.display = 'none';
+            document.getElementById('doneResultView').style.display = 'block';
+            this._showDone('error', 'โหลดตัวตรวจใบหน้าไม่สำเร็จ — ตรวจอินเทอร์เน็ตแล้วกด "ลองใหม่"', true);
+            return;
+        }
+        if (!active()) return;
 
         // FaceMesh ตรวจตำแหน่งหน้า (the one loaded during the room step, if any)
         const preload = this._meshPreload;

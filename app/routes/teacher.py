@@ -8,6 +8,13 @@ from app import supabase_admin
 from app import limiter as _limiter
 from app.services import attendance_export, class_open, class_push
 from app.services.security_service import log_audit_event, csrf_protect, csrf_protect_form
+from concurrent.futures import ThreadPoolExecutor
+from app.services.request_performance import ContextPool
+
+# Reads that do not depend on each other run side by side: each Supabase query is
+# ~120-180 ms from here (ap-south-1), and these pages made them one after another
+# (dashboard 4 = 0.5-0.7 s, session page 5 = 0.8-1.0 s; measured 2026-11-07).
+_reads = ContextPool(ThreadPoolExecutor(max_workers=8, thread_name_prefix="teacher-read"))
 
 teacher_bp = Blueprint("teacher", __name__)
 _log = logging.getLogger("smartcheck.teacher")
@@ -97,6 +104,14 @@ def _valid_date(text):
 def dashboard():
     teacher_id = session["user_id"]
 
+    beacons_read = _reads.submit(lambda: (
+        supabase_admin.table("beacons")
+        .select("id, room_name, uuid")
+        .eq("is_active", True)
+        .order("room_name")
+        .execute()
+        .data or []
+    ))
     courses = (
         supabase_admin.table("courses")
         .select("*")
@@ -106,26 +121,34 @@ def dashboard():
         .execute()
         .data or []
     )
+    course_ids = [c["id"] for c in courses] or ["00000000-0000-0000-0000-000000000000"]
+
+    import datetime as _datetime_mod
+    _TH = _datetime_mod.timezone(_datetime_mod.timedelta(hours=7))
+    _today_th = _datetime_mod.datetime.now(_TH).date()
 
     # sessions ล่าสุด 10 รายการ
-    recent_sessions = (
+    recent_read = _reads.submit(lambda: (
         supabase_admin.table("sessions")
         .select("*, courses(code, name)")
-        .in_("course_id", [c["id"] for c in courses] or ["00000000-0000-0000-0000-000000000000"])
+        .in_("course_id", course_ids)
         .order("start_time", desc=True)
         .limit(30)
         .execute()
         .data or []
-    )
-
-    beacons = (
-        supabase_admin.table("beacons")
-        .select("id, room_name, uuid")
-        .eq("is_active", True)
-        .order("room_name")
+    ))
+    today_read = _reads.submit(lambda: (
+        supabase_admin.table("sessions")
+        .select("*, courses(id, code, name, teacher_id), beacons(room_name)")
+        .in_("course_id", course_ids)
+        .gte("start_time", f"{_today_th}T00:00:00+07:00")
+        .lte("start_time", f"{_today_th}T23:59:59+07:00")
+        .order("start_time")
         .execute()
         .data or []
-    )
+    ))
+    recent_sessions = recent_read.result()
+    beacons = beacons_read.result()
 
     # แปลง start_time เป็นวันที่ไทย (UTC+7) เพื่อใช้จัดกลุ่มใน template
     from datetime import datetime, timedelta as _td
@@ -141,20 +164,7 @@ def dashboard():
         else:
             s["thai_date"] = ""
 
-    import datetime as _datetime_mod
-    _TH = _datetime_mod.timezone(_datetime_mod.timedelta(hours=7))
-    _today_th = _datetime_mod.datetime.now(_TH).date()
-
-    today_sessions = (
-        supabase_admin.table("sessions")
-        .select("*, courses(id, code, name, teacher_id), beacons(room_name)")
-        .in_("course_id", [c["id"] for c in courses] or ["00000000-0000-0000-0000-000000000000"])
-        .gte("start_time", f"{_today_th}T00:00:00+07:00")
-        .lte("start_time", f"{_today_th}T23:59:59+07:00")
-        .order("start_time")
-        .execute()
-        .data or []
-    )
+    today_sessions = today_read.result()
 
     now = _now()
     config = current_app.config
@@ -196,23 +206,24 @@ def session_view(session_id):
         flash("ไม่พบคาบนี้หรือไม่มีสิทธิ์", "danger")
         return redirect(url_for("teacher.dashboard"))
 
-    attendance = (
+    attendance_read = _reads.submit(lambda: (
         supabase_admin.table("attendance")
         .select("*, users!attendance_student_id_fkey(full_name, student_id, email)")
         .eq("session_id", session_id)
         .order("check_in_at")
         .execute()
         .data or []
-    )
-
+    ))
     # นักศึกษาทั้งหมดในวิชานี้
-    all_students = (
+    students_read = _reads.submit(lambda: (
         supabase_admin.table("course_enrollments")
         .select("*, users(id, full_name, student_id, email)")
         .eq("course_id", sess["course_id"])
         .execute()
         .data or []
-    )
+    ))
+    attendance = attendance_read.result()
+    all_students = students_read.result()
 
     # att_map: student_id → attendance row (สร้างใน Python เพื่อใช้ใน template)
     att_map = {a["student_id"]: a for a in attendance}
@@ -261,11 +272,13 @@ def session_live(session_id):
     sess = _owned_session(session_id, session["user_id"])
     if not sess:
         return jsonify(ok=False, error="ไม่พบคาบนี้หรือไม่มีสิทธิ์"), 403
-    attendance = (supabase_admin.table("attendance")
-                  .select("student_id, status, check_in_at")
-                  .eq("session_id", session_id).execute().data or [])
-    enrolled = (supabase_admin.table("course_enrollments")
-                .select("student_id").eq("course_id", sess["course_id"]).execute().data or [])
+    attendance_read = _reads.submit(lambda: (supabase_admin.table("attendance")
+                                             .select("student_id, status, check_in_at")
+                                             .eq("session_id", session_id).execute().data or []))
+    enrolled_read = _reads.submit(lambda: (supabase_admin.table("course_enrollments")
+                                           .select("student_id").eq("course_id", sess["course_id"])
+                                           .execute().data or []))
+    attendance, enrolled = attendance_read.result(), enrolled_read.result()
     return jsonify(ok=True, is_open=bool(sess.get("is_open")),
                    counts=live_counts(attendance, len(enrolled)),
                    rows={a["student_id"]: {"status": a.get("status"), "check_in_at": a.get("check_in_at")}

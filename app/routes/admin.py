@@ -18,17 +18,24 @@ _log = logging.getLogger("smartcheck.admin")
 @login_required
 @role_required("admin")
 def dashboard():
-    users_res = supabase_admin.table("users").select("id", count="exact").execute()
-    students_res = (supabase_admin.table("users").select("id", count="exact")
-                    .eq("role", "student").execute())
-    beacons_res = supabase_admin.table("beacons").select("id", count="exact").execute()
-    stats = {
-        "total_users": users_res.count or 0,
-        "students": students_res.count or 0,
-        "total_beacons": beacons_res.count or 0,
-        "enrolled_biometrics": _enrolled_face_count(),
-        "has_term": _has_term(),
-    }
+    # Five independent reads side by side (one after another took ~0.6 s, 2026-11-07).
+    from concurrent.futures import ThreadPoolExecutor
+    from app.services.request_performance import ContextPool
+    with ThreadPoolExecutor(max_workers=5, thread_name_prefix="admin-read") as raw:
+        pool = ContextPool(raw)
+        users = pool.submit(lambda: supabase_admin.table("users").select("id", count="exact").execute())
+        students = pool.submit(lambda: supabase_admin.table("users").select("id", count="exact")
+                               .eq("role", "student").execute())
+        beacons = pool.submit(lambda: supabase_admin.table("beacons").select("id", count="exact").execute())
+        enrolled = pool.submit(_enrolled_face_count)
+        has_term = pool.submit(_has_term)
+        stats = {
+            "total_users": users.result().count or 0,
+            "students": students.result().count or 0,
+            "total_beacons": beacons.result().count or 0,
+            "enrolled_biometrics": enrolled.result(),
+            "has_term": has_term.result(),
+        }
     from datetime import datetime, timedelta, timezone
     today = datetime.now(timezone(timedelta(hours=7))).date()
     return render_template("admin/dashboard.html", stats=stats, today=today)

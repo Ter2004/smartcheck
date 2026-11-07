@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SmartCheck poster (A1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@600;700&family=Noto+Sans:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  /* A1 portrait. Source of truth for the printed poster; print with Chrome (see README.md). */
+  @page { size: 594mm 841mm; margin: 0; }
+  :root { --tarmac: #0B1D3A; --tarmac-2: #12284D; --gate: #FFB000; --go: #12855B; --ink: #0B1D3A; --muted: #51607A;
+          --rule: #CBD3E1; --band: #E6EAF2; --ground: #F3F5FA; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 594mm; height: 841mm; }
+  body { font-family: 'Noto Sans', 'Noto Sans Thai', sans-serif; font-size: 22pt; line-height: 1.38; color: var(--ink);
+         background: var(--ground); display: flex; flex-direction: column; overflow: hidden; }
+  h1, h2, h3 { font-family: 'Anuphan', 'Noto Sans', sans-serif; line-height: 1.15; }
+
+  /* Header band */
+  header { background: var(--tarmac); color: #fff; padding: 13mm 20mm 10mm; display: grid;
+           grid-template-columns: 54mm 1fr; gap: 12mm; align-items: center; border-bottom: 5mm solid var(--gate); }
+  .logo { height: 54mm; border: 1mm dashed rgb(255 255 255 / 55%); border-radius: 6mm; display: flex; align-items: center;
+          justify-content: center; text-align: center; font-size: 16pt; color: rgb(255 255 255 / 75%); }
+  header h1 { font-size: 58pt; letter-spacing: -0.01em; }
+  header h1 span { color: var(--gate); }
+  .authors { margin-top: 4mm; font-size: 22pt; }
+  .authors small { display: block; font-size: 17.5pt; color: rgb(255 255 255 / 78%); margin-top: 1.5mm; }
+
+  main { flex: 1; padding: 10mm 18mm 0; display: flex; flex-direction: column; gap: 9mm; }
+  .card { background: #fff; border-radius: 7mm; overflow: hidden; border: 0.5mm solid #DCE2EE; }
+  .card > h2 { background: var(--tarmac); color: #fff; font-size: 27pt; padding: 3.5mm 8mm; }
+  .card > h2.gate { background: var(--gate); color: var(--ink); }
+  .card > .body { padding: 5mm 8mm 6mm; }
+  .body p + p { margin-top: 3mm; }
+  ul.list { list-style: none; }
+  ul.list li { position: relative; padding-left: 7mm; margin: 2.2mm 0; }
+  ul.list li::before { content: ''; position: absolute; left: 0; top: 0.55em; width: 3mm; height: 3mm; border-radius: 50%; background: var(--gate); }
+  strong { font-weight: 700; }
+  .muted { color: var(--muted); }
+  .tag { display: inline-block; font-family: 'Anuphan', sans-serif; font-size: 15pt; font-weight: 700; padding: 0.6mm 3mm;
+         border-radius: 2mm; background: var(--band); color: var(--muted); vertical-align: 0.15em; margin-left: 2mm; }
+
+  .row { display: grid; gap: 9mm; }
+  .row.top { grid-template-columns: 1.1fr 1fr; }
+  .row.mid { grid-template-columns: 0.92fr 1.08fr; flex: 1; }
+  .col { display: flex; flex-direction: column; gap: 9mm; }
+
+  /* Steps with phone screens */
+  .phones { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5mm; }
+  .phone img { width: 100%; display: block; border-radius: 4.5mm; border: 0.9mm solid var(--tarmac); }
+  .phone p { font-size: 17pt; line-height: 1.25; margin-top: 2.5mm; }
+  .phone b { display: inline-flex; width: 8mm; height: 8mm; border-radius: 50%; background: var(--gate); color: var(--ink);
+             align-items: center; justify-content: center; font-family: 'Anuphan', sans-serif; font-size: 15pt; margin-right: 1.5mm; }
+  .teacher { display: grid; grid-template-columns: 40mm 1fr; gap: 7mm; align-items: center; margin-top: 6mm;
+             padding-top: 6mm; border-top: 0.5mm dashed var(--rule); }
+  .teacher img { width: 100%; border-radius: 4.5mm; border: 0.9mm solid var(--rule); display: block; }
+
+  /* Results */
+  table { width: 100%; border-collapse: collapse; font-size: 19pt; line-height: 1.3; }
+  th, td { text-align: left; padding: 2.4mm 3mm; border-bottom: 0.4mm solid var(--rule); vertical-align: top; }
+  th { font-family: 'Anuphan', sans-serif; font-size: 18pt; color: var(--muted); }
+  td.num { font-weight: 700; white-space: nowrap; }
+  .charts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5mm; margin-top: 5mm; }
+  .chart { border: 0.8mm dashed var(--rule); border-radius: 4mm; height: 58mm; display: flex; align-items: center; justify-content: center;
+           text-align: center; font-size: 16pt; color: var(--muted); padding: 3mm; background: var(--ground); }
+
+  footer { padding: 9mm 18mm 11mm; display: grid; grid-template-columns: 1.15fr 1fr; gap: 11mm; }
+  .refs { font-size: 15pt; line-height: 1.32; }
+  .refs li { margin: 1.2mm 0 1.2mm 6mm; }
+  svg text { font-family: 'Noto Sans', sans-serif; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">PSU / College of Computing<br>logo here</div>
+  <div>
+    <h1>SmartCheck: Face Recognition Attendance System with Liveness Detection and <span>Beacon Verification</span></h1>
+    <p class="authors">Kittinan Tantajina
+      <small>Advisor: Mr. Kullawat Chaowanawatee · Co-advisors: Dr. Komsan Kanjanasit, Mr. Wisarut Chantara</small>
+      <small>College of Computing, Prince of Songkla University, Phuket Campus · s6630613029@phuket.psu.ac.th</small></p>
+  </div>
+</header>
+
+<main>
+  <div class="row top">
+    <section class="card">
+      <h2>Motivation</h2>
+      <div class="body">
+        <ul class="list">
+          <li><strong>Calling the roll</strong> costs class time, and the cost grows with every name on the list.</li>
+          <li><strong>Proxy attendance is easy:</strong> a QR code can be forwarded, a GPS location can be faked, and a friend can answer "present".</li>
+          <li>Students already carry a phone with Bluetooth and a camera. The classroom only needs a small board.</li>
+        </ul>
+      </div>
+    </section>
+    <section class="card">
+      <h2 class="gate">Goal</h2>
+      <div class="body">
+        <ul class="list">
+          <li>A check-in that proves the student is <strong>in the room</strong> (room board) and is <strong>the enrolled person</strong> (face).</li>
+          <li><strong>The whole class at once:</strong> no queue, no gesture, no picker. Done in seconds after the teacher opens the class.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <div class="row mid">
+    <div class="col">
+      <section class="card">
+        <h2>How a check-in works</h2>
+        <div class="body">
+          <div class="phones">
+            <div class="phone"><img src="assets/s1-home.png" alt="Today screen with the class open"><p><b>1</b>Teacher opens the class; the phone is notified</p></div>
+            <div class="phone"><img src="assets/s2-scan.png" alt="Finding the room board"><p><b>2</b>The app finds the room board by itself</p></div>
+            <div class="phone"><img src="assets/s3-camera.png" alt="Face scan"><p><b>3</b>Look at the camera: captured automatically</p></div>
+            <div class="phone"><img src="assets/s4-done.png" alt="Checked in with the recorded time"><p><b>4</b>Recorded, with the time</p></div>
+          </div>
+          <div class="teacher">
+            <img src="assets/s5-teacher.png" alt="Teacher live view">
+            <div>
+              <p><strong>Teacher's phone:</strong> one tap to open the class (on time within 5, 10 or 15 minutes), then a live count "checked in N / M" with the students still missing listed first.</p>
+              <p class="muted" style="margin-top:3mm">iPhone (no Web Bluetooth): a 6-digit code / QR on the teacher's screen replaces the room board; the face check is the same.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Security and privacy</h2>
+        <div class="body">
+          <ul class="list">
+            <li><strong>Room proof:</strong> the board broadcasts a code that changes every 5 s, signed with a per-room secret (HMAC). The server accepts a code for 30 s only, so a recording replayed later fails; a code relayed out live still needs the student's own face.</li>
+            <li><strong>Face:</strong> SCRFD detection + ArcFace R50 embeddings (InsightFace), compared with 7 templates from a 5-pose enrollment. One face per account.</li>
+            <li><strong>Liveness:</strong> passive anti-spoofing (MiniFASNet) instead of a head-turn challenge.</li>
+            <li><strong>Privacy (PDPA):</strong> consent before enrollment; no photos are kept from check-ins.</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="card">
+        <h2>System overview</h2>
+        <div class="body">
+          <svg viewBox="0 0 1200 650" width="100%" role="img" aria-label="System overview diagram">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#0B1D3A"/></marker>
+            </defs>
+            <g font-size="24" fill="#0B1D3A">
+              <rect x="20" y="20" width="330" height="110" rx="18" fill="#fff" stroke="#0B1D3A" stroke-width="3"/>
+              <text x="185" y="64" text-anchor="middle" font-weight="700">Teacher&#8217;s phone</text>
+              <text x="185" y="102" text-anchor="middle" fill="#51607A">open class &#183; live N / M</text>
+
+              <rect x="480" y="20" width="300" height="110" rx="18" fill="#fff" stroke="#0B1D3A" stroke-width="3"/>
+              <text x="630" y="64" text-anchor="middle" font-weight="700">Firebase Cloud</text>
+              <text x="630" y="100" text-anchor="middle" font-weight="700">Messaging</text>
+
+              <rect x="470" y="215" width="380" height="265" rx="18" fill="#0B1D3A"/>
+              <text x="660" y="262" text-anchor="middle" fill="#fff" font-weight="700" font-size="28">SmartCheck server</text>
+              <text x="660" y="300" text-anchor="middle" fill="#FFB000">Flask &#183; Python</text>
+              <text x="660" y="352" text-anchor="middle" fill="#fff">Room code check (HMAC)</text>
+              <text x="660" y="394" text-anchor="middle" fill="#fff">Face: SCRFD + ArcFace R50</text>
+              <text x="660" y="436" text-anchor="middle" fill="#fff">Anti-spoof: MiniFASNet</text>
+
+              <rect x="925" y="290" width="255" height="110" rx="18" fill="#fff" stroke="#0B1D3A" stroke-width="3"/>
+              <text x="1052" y="334" text-anchor="middle" font-weight="700">Supabase</text>
+              <text x="1052" y="372" text-anchor="middle" fill="#51607A">PostgreSQL</text>
+
+              <rect x="20" y="285" width="330" height="150" rx="18" fill="#fff" stroke="#0B1D3A" stroke-width="3"/>
+              <text x="185" y="330" text-anchor="middle" font-weight="700">Student&#8217;s phone</text>
+              <text x="185" y="368" text-anchor="middle" fill="#51607A">Android app</text>
+              <text x="185" y="404" text-anchor="middle" fill="#51607A">camera + Bluetooth</text>
+
+              <rect x="20" y="540" width="330" height="100" rx="18" fill="#FFB000"/>
+              <text x="185" y="582" text-anchor="middle" font-weight="700">Room board</text>
+              <text x="185" y="618" text-anchor="middle">ESP32 &#183; BLE broadcast</text>
+
+              <g stroke="#0B1D3A" stroke-width="3.5" fill="none" marker-end="url(#arrow)">
+                <path d="M350 100 C 420 140, 430 200, 500 230"/>
+                <path d="M630 215 L630 132"/>
+                <path d="M480 92 C 400 150, 370 230, 330 283"/>
+                <path d="M185 540 L185 438"/>
+                <path d="M350 360 L468 360"/>
+                <path d="M850 345 L923 345"/>
+                <path d="M780 215 C 830 160, 760 150, 352 120" stroke-dasharray="10 8"/>
+              </g>
+              <g font-family="Anuphan, sans-serif" font-weight="700" font-size="24" text-anchor="middle">
+                <circle cx="425" cy="165" r="21" fill="#FFB000"/><text x="425" y="173">1</text>
+                <circle cx="395" cy="225" r="21" fill="#FFB000"/><text x="395" y="233">2</text>
+                <circle cx="215" cy="489" r="21" fill="#FFB000"/><text x="215" y="497">3</text>
+                <circle cx="409" cy="332" r="21" fill="#FFB000"/><text x="409" y="340">4</text>
+                <circle cx="887" cy="314" r="21" fill="#FFB000"/><text x="887" y="322">5</text>
+                <circle cx="805" cy="178" r="21" fill="#FFB000"/><text x="805" y="186">6</text>
+              </g>
+              <g font-size="20" fill="#51607A">
+                <text x="244" y="496">signed code, new every 5 s</text>
+                <text x="409" y="398" text-anchor="middle">room code</text>
+                <text x="409" y="422" text-anchor="middle">+ face</text>
+                <text x="1052" y="430" text-anchor="middle">attendance</text>
+                <text x="835" y="215">live count, every 10 s</text>
+              </g>
+            </g>
+          </svg>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Results so far <span class="tag">measured · Nov 2026</span></h2>
+        <div class="body">
+          <table>
+            <tr><th>What</th><th>Result</th><th>How</th></tr>
+            <tr><td>Notification reaches the phone</td><td class="num">≈ 1 s</td><td class="muted">after "open class", 2 phones</td></tr>
+            <tr><td>Room board found by the app</td><td class="num">0.13–0.45 s</td><td class="muted">in the room, Redmi</td></tr>
+            <tr><td>Server check-in (face + anti-spoof + record)</td><td class="num">0.83–1.10 s</td><td class="muted">7 real check-ins</td></tr>
+            <tr><td>One student, tap → recorded</td><td class="num">9–10 s</td><td class="muted">2 phones</td></tr>
+            <tr><td>Face model at the deployed threshold 0.40</td><td class="num">FRR 0.84%<br>FAR &lt; 0.001%</td><td class="muted">LFW, offline (6,409 images); not classroom data</td></tr>
+          </table>
+          <h3 style="font-size:23pt;margin-top:6mm">Field test: 10 students, one room <span class="tag">to be added</span></h3>
+          <div class="charts">
+            <div class="chart">Whole-class time<br>SmartCheck vs roll call</div>
+            <div class="chart">When each student<br>was recorded</div>
+            <div class="chart">Bigger classes<br>(estimate from the test)</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <section class="card">
+    <h2>Conclusion and future work</h2>
+    <div class="body">
+      <p>Every student is checked against the <strong>room board</strong> and <strong>their own face</strong>, so a forwarded code or a friend's phone is not enough. Students check in in parallel, so the time does not grow with class size the way calling names does <span class="muted">(to be confirmed by the field test)</span>.</p>
+      <p class="muted"><strong style="color:var(--ink)">Next:</strong> a native iPhone app · scanning for the board when the notification arrives · closing or extending a class early · tuning the face threshold on classroom data.</p>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Acknowledgements and references</h2>
+    <div class="body refs">
+      <p>Thanks to the advisors and the College of Computing, PSU Phuket Campus, for guidance and lab facilities.</p>
+      <ol style="margin-top:2mm">
+        <li>J. Deng, J. Guo, N. Xue, S. Zafeiriou. ArcFace: Additive Angular Margin Loss for Deep Face Recognition. CVPR 2019.</li>
+        <li>J. Guo, J. Deng, A. Lattas, S. Zafeiriou. Sample and Computation Redistribution for Efficient Face Detection (SCRFD). ICLR 2022.</li>
+        <li>G. B. Huang, M. Ramesh, T. Berg, E. Learned-Miller. Labeled Faces in the Wild. UMass Amherst TR 07-49, 2007.</li>
+        <li>Minivision AI. Silent-Face-Anti-Spoofing (MiniFASNet). GitHub.</li>
+      </ol>
+    </div>
+  </section>
+</footer>
+
+</body>
+</html>

@@ -27,6 +27,12 @@ node build-apk.js https://ที่อยู่เซิร์ฟเวอร์
 ถ้าที่อยู่เปลี่ยน — เช่นเปิด cloudflared quick tunnel ใหม่ — ต้อง build ใหม่ (ประมาณ 1–2 นาที) แล้วลงแอปทับ
 ก่อนแจกนักศึกษาควรมีที่อยู่ถาวร (Cloudflare named tunnel + โดเมน หรือ deploy บน cloud)
 
+รัน tunnel ให้ชี้ `127.0.0.1` ไม่ใช่ `localhost`:
+```
+cloudflared tunnel --url http://127.0.0.1:5000
+```
+บน Windows เครื่องนี้ การต่อ `localhost:5000` ใช้เวลาเพิ่ม ~205 ms ต่อการเปิด connection (ลอง IPv6 ก่อน; `127.0.0.1` ใช้ ~1 ms — วัดด้วย curl 2026-11-07)
+
 ## แจ้งเตือนเปิดคาบ (Firebase)
 วาง `google-services.json` จาก Firebase ไว้ที่ `android-app/google-services.json` ก่อน build
 บรรทัดท้ายของ build จะขึ้น `notifications: on` (ไม่มีไฟล์ = `off` แอปใช้ได้ปกติแต่ไม่มีแจ้งเตือน)

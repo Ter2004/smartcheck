@@ -20,7 +20,12 @@ it still works for up to FRESH_SECONDS. The face check still applies.
 import hashlib
 import hmac
 import struct
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+
+from app.services.request_performance import ContextPool
+
+_reads = ContextPool(ThreadPoolExecutor(max_workers=8, thread_name_prefix="sighting-read"))
 
 CONTEXT = b"smartcheck-bcast-v1"   # must match the firmware
 VERSION = 0x01
@@ -84,17 +89,27 @@ def verify(secret_hex, room_code, value):
 def fresh(client, beacon_id, counter, now=None):
     """True if this board's counter is recent (records first sightings)."""
     now = now or datetime.now(timezone.utc)
-    newest = (client.table(TABLE).select("counter").eq("beacon_id", beacon_id)
-              .order("counter", desc=True).limit(1).execute())
+    # The newest-counter read runs beside the write instead of before it: three round
+    # trips one after another (~125 ms each, on every student's proximity check)
+    # become one, or two when the counter was already seen. A counter that turns out
+    # too old is now recorded as well; it stays refused, because the newest only grows.
+    newest_read = _reads.submit(lambda: (
+        client.table(TABLE).select("counter").eq("beacon_id", beacon_id)
+        .order("counter", desc=True).limit(1).execute()))
+    written = client.table(TABLE).upsert(
+        {"beacon_id": beacon_id, "counter": counter, "first_seen_at": now.isoformat()},
+        on_conflict="beacon_id,counter", ignore_duplicates=True).execute()
+    newest = newest_read.result()
     rows = (newest.data if newest else None) or []
     if rows and counter < int(rows[0]["counter"]) - MAX_BEHIND:
         return False
-    client.table(TABLE).upsert(
-        {"beacon_id": beacon_id, "counter": counter, "first_seen_at": now.isoformat()},
-        on_conflict="beacon_id,counter", ignore_duplicates=True).execute()
-    row = (client.table(TABLE).select("first_seen_at")
-           .eq("beacon_id", beacon_id).eq("counter", counter).maybe_single().execute())
-    first = (row.data if row else None) or {}
+    inserted = written.data if written else None
+    if isinstance(inserted, list) and inserted and isinstance(inserted[0], dict):
+        first = inserted[0]   # the write returns the row only when this call recorded it
+    else:
+        row = (client.table(TABLE).select("first_seen_at")
+               .eq("beacon_id", beacon_id).eq("counter", counter).maybe_single().execute())
+        first = (row.data if row else None) or {}
     if not first.get("first_seen_at"):
         return False
     seen = datetime.fromisoformat(first["first_seen_at"].replace("Z", "+00:00"))

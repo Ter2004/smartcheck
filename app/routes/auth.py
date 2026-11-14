@@ -1,8 +1,9 @@
 import hmac
 import re
 import secrets
+import time
 from functools import wraps
-from flask import Blueprint, abort, render_template, request, redirect, url_for, session, flash, current_app
+from flask import Blueprint, abort, jsonify, render_template, request, redirect, url_for, session, flash, current_app
 from app import supabase, supabase_admin
 from app import limiter as _limiter
 from flask_limiter.util import get_remote_address
@@ -39,6 +40,42 @@ def role_required(*roles):
             return f(*args, **kwargs)
         return decorated
     return decorator
+
+
+# A login lasts up to 120 days (admin: 10 years), and is_active was only read at
+# login, so an account the admin closed kept working. Every ACTIVE_RECHECK_S the
+# account is read again (one query); closed, deleted or with another role: logged out.
+ACTIVE_RECHECK_S = 300
+ACTIVE_CHECKED_KEY = "_active_checked_at"
+
+
+@auth_bp.before_app_request
+def recheck_account():
+    if "user_id" not in session or request.endpoint in (None, "static", "health", "auth.logout", "auth.login"):
+        return None
+    now = time.time()
+    checked = session.get(ACTIVE_CHECKED_KEY)
+    if checked is None:
+        # Logins from before this check: start the clock, ask at the next interval.
+        session[ACTIVE_CHECKED_KEY] = now
+        return None
+    if now - checked < ACTIVE_RECHECK_S:
+        return None
+    try:
+        res = (supabase_admin.table("users").select("is_active, role")
+               .eq("id", session["user_id"]).maybe_single().execute())
+    except Exception:
+        return None   # database unreachable: cannot tell, so ask again on the next request
+    user = res.data if res else None
+    if user and user.get("is_active") and user.get("role") == session.get("user_role"):
+        session[ACTIVE_CHECKED_KEY] = now
+        return None
+    session.clear()
+    message = "บัญชีถูกปิดการใช้งานหรือสิทธิ์เปลี่ยน กรุณาเข้าสู่ระบบใหม่"
+    if request.method != "GET" or request.is_json or "/api/" in request.path or request.path.endswith(".json"):
+        return jsonify(ok=False, status="error", error=message, message=message), 401
+    flash(message, "warning")
+    return redirect(url_for("auth.login"))
 
 
 def _regenerate_session():
@@ -109,6 +146,7 @@ def login():
         session["user_name"]    = user["full_name"]
         # Sprint 1C: per-session CSRF token (สร้างใหม่พร้อม session ใหม่)
         session["csrf_token"]   = secrets.token_hex(32)
+        session[ACTIVE_CHECKED_KEY] = time.time()   # is_active was read just above
         # Students in the app and admins stay logged in longer (session_lifetime.py).
         lifetime = login_lifetime_seconds(user["role"], from_app(), current_app.config)
         if lifetime:

@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 from datetime import datetime, timezone
 from dateutil import parser as dtparser
-from flask import Blueprint, request, jsonify, session, current_app
+from flask import Blueprint, request, jsonify, session, current_app, g
 from app.routes.auth import login_required, role_required
 from app import supabase_admin
 
@@ -461,7 +461,9 @@ def _eligible(data):
     with stage("session_lookup"):
         sess_res = (
             supabase_admin.table("sessions")
-            .select("*, beacons(ble_room_code)")   # opened_at/present_minutes after migration 20261103
+            # opened_at/present_minutes after migration 20261103. The room key comes
+            # with the session, so _ble_secret needs no query of its own (~125 ms).
+            .select("*, beacons(ble_room_code, ble_secret)")
             .eq("id", session_id)
             .maybe_single()
             .execute()
@@ -470,6 +472,10 @@ def _eligible(data):
         reject("session_missing")
         return None, (jsonify({"ok": False, "error": "ไม่พบคาบเรียนนี้"}), 404)
     sess = sess_res.data
+    joined_beacon = sess.get("beacons")
+    if isinstance(joined_beacon, dict) and "ble_secret" in joined_beacon and sess.get("beacon_id"):
+        # Taken out of the session row at once: the row travels on, the key does not.
+        g.ble_secrets = {sess["beacon_id"]: joined_beacon.pop("ble_secret")}
     if not sess.get("is_open"):
         reject("session_closed")
         return None, (jsonify({"ok": False, "error": "คาบเรียนนี้ปิดการเช็คชื่อแล้ว"}), 400)
@@ -667,6 +673,9 @@ def _ble_secret(beacon_id):
     """The room key stays in this function's caller: never logged or returned."""
     if not beacon_id:
         return None
+    known = getattr(g, "ble_secrets", None) or {}
+    if beacon_id in known:          # read with the session in _eligible
+        return known[beacon_id]
     res = (supabase_admin.table("beacons").select("ble_secret")
            .eq("id", beacon_id).maybe_single().execute())
     return ((res.data if res else None) or {}).get("ble_secret")

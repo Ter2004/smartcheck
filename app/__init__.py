@@ -139,6 +139,35 @@ def rate_limit_exceeded(e):
     return redirect(url_for("auth.login"))
 
 
+def connection_lost(e):
+    """Supabase dropped the connection under a request (reads are already retried once
+    in supabase_http).
+
+    A page (GET) is tried once more; the second failure shows a retry page instead of
+    redirecting again. Anything else gets a JSON 503: redirecting a POST re-sent it as
+    a GET (405 on /api/checkin), and with Supabase down every answer redirected again.
+    """
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+    from flask import Response, jsonify, redirect, request as freq
+    _refresh_clients()
+    message = "เชื่อมต่อฐานข้อมูลไม่ได้ชั่วคราว กรุณาลองใหม่อีกครั้ง"
+    if freq.method != "GET" or freq.is_json or "/api/" in freq.path or freq.path.endswith(".json"):
+        response = jsonify(ok=False, status="error", error=message, message=message)
+        response.status_code = 503
+        response.headers["Retry-After"] = "3"
+        return response
+    if freq.args.get("_retry"):
+        return Response(
+            '<!doctype html><html lang="th"><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<title>เชื่อมต่อไม่ได้</title><body><h1>{message}</h1>'
+            '<a href="">ลองใหม่</a></body></html>',
+            status=503, mimetype="text/html", headers={"Cache-Control": "no-store", "Retry-After": "3"})
+    parts = urlsplit(freq.url)
+    query = urlencode(parse_qsl(parts.query, keep_blank_values=True) + [("_retry", "1")])
+    return redirect(urlunsplit(parts._replace(query=query)))
+
+
 def create_app():
     # Runs for both `python run.py` and gunicorn "app:create_app()".
     from app.runtime_check import check_face_runtime
@@ -246,12 +275,8 @@ def create_app():
     # --- Auto-reconnect เมื่อ httpx connection ตาย ---
     import httpx
 
-    @app.errorhandler(httpx.RemoteProtocolError)
-    @app.errorhandler(httpx.ReadTimeout)
-    def handle_connection_error(e):
-        from flask import redirect, request as freq
-        _refresh_clients()
-        return redirect(freq.url)
+    app.register_error_handler(httpx.RemoteProtocolError, connection_lost)
+    app.register_error_handler(httpx.ReadTimeout, connection_lost)
 
     app.register_error_handler(429, rate_limit_exceeded)
     app.register_error_handler(404, page_not_found)

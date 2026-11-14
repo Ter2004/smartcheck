@@ -384,6 +384,9 @@ def session_code_screen(session_id):
 
 
 @teacher_bp.route("/session/<session_id>/code.json")
+# Own limit, like live.json: the code screen asks every 30 s (120/hour), which with
+# the teacher's other pages can pass the 200/hour default during one class.
+@_limiter.limit("30 per minute")
 @login_required
 @role_required("teacher")
 def session_code_json(session_id):

@@ -450,6 +450,13 @@ def _eligible(data):
     student_id = session["user_id"]
     session_id = data.get("session_id")
     proximity_method = current_app.config.get("CHECKIN_PROXIMITY_METHOD", "ble")
+    # The student's courses are read while the session is looked up, instead of one
+    # query after the other (~125 ms each, on every proximity check and check-in;
+    # measured 2026-11-10). The answer is only used at "enrollment_lookup" below.
+    client = supabase_admin
+    courses_read = _read_pool.submit(lambda: (
+        client.table("course_enrollments").select("course_id")
+        .eq("student_id", student_id).execute()))
     # ─── 1. Verify session is still open ─────────────────────────────────────
     with stage("session_lookup"):
         sess_res = (
@@ -496,15 +503,9 @@ def _eligible(data):
 
     # A session id is not authorization. The student must belong to the course.
     with stage("enrollment_lookup"):
-        enrollment = (
-            supabase_admin.table("course_enrollments")
-            .select("id")
-            .eq("course_id", sess["course_id"])
-            .eq("student_id", student_id)
-            .maybe_single()
-            .execute()
-        )
-    if not enrollment or not enrollment.data:
+        enrollment = courses_read.result()
+    enrolled_courses = {row["course_id"] for row in ((enrollment.data if enrollment else None) or [])}
+    if not sess.get("course_id") or sess["course_id"] not in enrolled_courses:
         _log.warning(
             f"[CHECKIN] student={student_id} attempted session={session_id} "
             "without course enrollment"

@@ -4,18 +4,19 @@ const vm = require('node:vm');
 const path = require('node:path');
 const read = name => fs.readFileSync(path.join(__dirname, '../app/static/js/', name), 'utf8');
 function harness(debug, options = {}) {
-    let now = 0, brightness = 100, callback, created = 0, streams = 0, closes = 0, submits = 0, meshes = 0, warmups = 0;
+    let now = 0, brightness = 100, callback, created = 0, encodes = 0, streams = 0, closes = 0, submits = 0, meshes = 0, warmups = 0;
     const timers = new Map(), elements = new Map();
     let timerId = 0;
-    const node = () => ({style: {}, textContent: '', classList: {toggle() {}, remove() {}, add() {}},
+    const node = () => ({style: {}, dataset: {}, textContent: '', classList: {toggle() {}, remove() {}, add() {}},
+        setAttribute() {}, removeAttribute() {},
         appendChild(child) {child.parentElement = this;}, after(child) {child.parentElement = this.parentElement;},
         getContext() {return {clearRect() {}, drawImage() {}, getImageData() {return {data: Array(16).fill(brightness)};}};},
-        toDataURL() {return 'image';}, focus() {}, async play() {if (options.playError) throw Error('play');}});
+        toDataURL() {encodes++; return 'image';}, focus() {}, async play() {if (options.playError) throw Error('play');}});
     for (const id of ['videoVerify', 'stepVerify', 'stepDone', 'stepRoomCode', 'stepBleRoom']) elements.set(id, node());
     elements.get('videoVerify').parentElement = node();
     elements.get('stepVerify').parentElement = node();
     Object.assign(elements.get('videoVerify'), {videoWidth: 480, videoHeight: 640, readyState: options.sendError ? 2 : 0});
-    const document = {visibilityState: 'visible', addEventListener() {}, querySelector() {return null;},
+    const document = {visibilityState: 'visible', body: node(), addEventListener() {}, querySelector() {return null;},
         getElementById(id) {if (!elements.has(id)) elements.set(id, node()); return elements.get(id);},
         createElement() {created++; return node();}};
     const context = vm.createContext({document, window: {addEventListener() {}}, console,
@@ -49,7 +50,7 @@ function harness(debug, options = {}) {
     flow._showDone = (kind, message) => {flow.result = {kind, message};};
     flow._proximity = {deadline: 90000};
     if (flow._debug) flow._debug.receiptDue = 90000;
-    return {flow, context, elements, timers, created: () => created, streams: () => streams,
+    return {flow, context, elements, timers, created: () => created, encodes: () => encodes, streams: () => streams,
         closes: () => closes, submits: () => submits, meshes: () => meshes, warmups: () => warmups, advance: t => now = t,
         dark: () => brightness = 0, frame: lm => callback({multiFaceLandmarks: lm ? [lm] : []})};
 }
@@ -84,11 +85,17 @@ function landmarks(ear = .28) {
     await h.frame(landmarks());
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(h.submits(), 1, `submit after ${N} consecutive ready frames`);
+    // The temporal burst stays raw while the camera runs: one JPEG (the captured frame)
+    // for the whole attempt, and the last three frames are encoded only for the upload.
+    assert.equal(h.encodes(), 1, 'no JPEG encoding per camera frame');
+    assert.equal(h.flow._burstFrames().length, 3, 'last three frames kept for the temporal check');
+    assert.equal(h.encodes(), 4);
     assert.equal(h.closes(), 1, 'close model exactly once');
     await h.frame(landmarks()); assert.equal(h.submits(), 1, 'ignore stale results');
     // The face model loaded during the room step is the one the camera uses; the ring follows the count.
     const pre = harness(false);
     pre.flow._preloadFaceMesh();
+    await new Promise(resolve => setImmediate(resolve));   // the model script is loaded first, then the model
     assert.equal(pre.meshes(), 1);
     await pre.flow._meshPreload.ready;
     assert.equal(pre.warmups(), 1, 'the preload builds the graph on a blank frame before the camera opens');

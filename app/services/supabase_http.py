@@ -5,6 +5,14 @@ Measured 2026-11-02 (this PC to Supabase ap-south-1):
   keepalive), the next one opened a new connection and took 190-450 ms.
 - Supabase sometimes closes a pooled HTTP/2 connection under a request
   ("Server disconnected", httpx.RemoteProtocolError). On a page that turned into a 500.
+
+Measured 2026-11-10 (1,500 small reads, six at a time, as the pages now read):
+- HTTP/2, one connection shared by the reading threads: 38-57 requests dropped by the
+  server ("Server disconnected", GOAWAY protocol error), and 5-10 of them failed a
+  second time and reached the page. One at a time: none in 300.
+- HTTP/1.1, one connection per concurrent read: none dropped in 1,500, and no slower.
+So the reads use HTTP/1.1. The single retry stays for a connection the server closed
+while it sat idle.
 """
 import httpx
 
@@ -34,7 +42,7 @@ class _RetryDroppedReads(httpx.HTTPTransport):
 def _session_like(old):
     return httpx.Client(
         base_url=old.base_url, headers=old.headers, timeout=old.timeout, follow_redirects=True,
-        transport=_RetryDroppedReads(http2=True, limits=httpx.Limits(
+        transport=_RetryDroppedReads(http2=False, limits=httpx.Limits(
             max_connections=100, max_keepalive_connections=20, keepalive_expiry=KEEPALIVE_SECONDS)))
 
 

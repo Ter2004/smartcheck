@@ -231,7 +231,7 @@ class CheckinFlow {
         this._debug?.begin();
         this._goToStep(2);
         document.getElementById("stepRoomCode").style.display = "none";
-        this._capturedFrames = [];
+        this._resetBurst();
 
         const video    = document.getElementById('videoVerify');
         const canvas   = document.getElementById('canvasVerify');
@@ -367,19 +367,21 @@ class CheckinFlow {
             if (performance.now() >= captureDeadline) { expireCapture(); return; }
             if (!video.videoWidth || !video.videoHeight) return;
 
-            canvas.width  = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
             // ─── ตรวจ brightness ─────────────────────────────
+            // Average of a 32x24 copy of the frame. Reading the full 640x480 frame back
+            // on every pump (and resizing the canvas each time) held up the face loop.
+            if (canvas.width !== CheckinFlow.LIGHT_W || canvas.height !== CheckinFlow.LIGHT_H) {
+                canvas.width  = CheckinFlow.LIGHT_W;
+                canvas.height = CheckinFlow.LIGHT_H;
+            }
+            const ctx = canvas.getContext('2d', {willReadFrequently: true});
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             let totalBrightness = 0;
-            for (let i = 0; i < pixels.length; i += 16) {
+            for (let i = 0; i < pixels.length; i += 4) {
                 totalBrightness += 0.299 * pixels[i] + 0.587 * pixels[i+1] + 0.114 * pixels[i+2];
             }
-            const avgBrightness = totalBrightness / (pixels.length / 16);
+            const avgBrightness = totalBrightness / (pixels.length / 4);
             if (avgBrightness < 60) {
                 this._debug?.sample({width: video.videoWidth, height: video.videoHeight,
                     ready: 0, faces: results.multiFaceLandmarks?.length || 0,
@@ -388,7 +390,6 @@ class CheckinFlow {
                 faceReadyFrames = 0;
                 setProgress(0);
                 status.textContent = 'แสงน้อยเกินไป — กรุณาอยู่ในพื้นที่ที่มีแสงสว่างเพียงพอ';
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
                 return;
             }
 
@@ -423,10 +424,7 @@ class CheckinFlow {
             const yawOk       = noseRelX > 0.38 && noseRelX < 0.62;
 
             // Preserve a short real camera burst for the existing temporal check.
-            const frame = await this._captureFrame(video);
-            if (!active()) return;
-            this._capturedFrames.push(frame);
-            if (this._capturedFrames.length > 3) this._capturedFrames.shift();
+            this._keepBurstFrame(video);
 
             // ปากต้องหุบ
             const mouthOpen = Math.hypot(lm[13].x - lm[14].x, lm[13].y - lm[14].y);
@@ -561,12 +559,39 @@ class CheckinFlow {
         } catch (_) { fail('startup'); }
     }
 
-    async _captureFrame(videoEl) {
-        const c = document.createElement('canvas');
-        c.width  = videoEl.videoWidth;
-        c.height = videoEl.videoHeight;
+    // Size of the frame copy the brightness check reads.
+    static LIGHT_W = 32;
+    static LIGHT_H = 24;
+    // Frames kept for the server's temporal check.
+    static BURST_FRAMES = 3;
+
+    /**
+     * Keep a copy of this camera frame as one of the last BURST_FRAMES. The copies stay
+     * raw (three canvases, reused) and become JPEG once, at submit (_burstFrames).
+     * Encoding a JPEG on every pump took a large part of each frame's time on a phone.
+     */
+    _keepBurstFrame(videoEl) {
+        const kept = this._burst || (this._burst = []);
+        const c = kept.length < CheckinFlow.BURST_FRAMES
+            ? (this._burstSpare?.pop() || document.createElement('canvas'))
+            : kept.shift();
+        if (c.width !== videoEl.videoWidth || c.height !== videoEl.videoHeight) {
+            c.width  = videoEl.videoWidth;
+            c.height = videoEl.videoHeight;
+        }
         c.getContext('2d').drawImage(videoEl, 0, 0);
-        return c.toDataURL('image/jpeg', 0.85);
+        kept.push(c);
+    }
+
+    /** The kept frames as JPEG data URLs, oldest first. */
+    _burstFrames() {
+        return (this._burst || []).map(c => c.toDataURL('image/jpeg', 0.85));
+    }
+
+    /** A new capture attempt starts with no kept frames; its canvases are reused. */
+    _resetBurst() {
+        this._burstSpare = (this._burstSpare || []).concat(this._burst || []);
+        this._burst = [];
     }
 
     // ─── Submit ──────────────────────────────────────────
@@ -922,6 +947,7 @@ class CheckinFlow {
 
         try {
             const deviceToken = localStorage.getItem('sc_device_token');
+            const burst = this._burstFrames();   // encoded here, once, not on every camera frame
             const res = await fetch(this.apiUrl, {
                 method: 'POST',
                 headers: {
@@ -937,7 +963,7 @@ class CheckinFlow {
                     liveness_action: livenessAction,
                     liveness_pass:   true,
                     face_image:      faceImage,
-                    face_images:     this._capturedFrames || [faceImage],
+                    face_images:     burst.length ? burst : [faceImage],
                     // head_turn only: the server re-checks these against face_image.
                     liveness_nonce:       this._liveness?.nonce,
                     liveness_turn_frames: this._liveness?.turnFrames,

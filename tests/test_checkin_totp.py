@@ -32,7 +32,7 @@ class Database:
         data = {
             'attendance': self.attendance,
             'sessions': {'id': 'session', 'course_id': 'course', 'is_open': True},
-            'course_enrollments': {'id': 'enrollment'},
+            'course_enrollments': [{'course_id': 'course'}],   # the student's courses
             'users': {'device_id': ''},
             'student_biometrics': {
                 'face_embeddings': [[1., 0.]],
@@ -104,6 +104,23 @@ class IntegratedTOTPTests(unittest.TestCase):
         self.assertTrue(self.db.records[0]['liveness_pass'])
         # No RSSI check runs, so the record must not claim one passed.
         self.assertFalse(self.db.records[0]['ble_pass'])
+
+    def test_student_outside_the_course_is_refused_at_both_steps(self):
+        # A receipt from before the student left the course must not carry the check-in.
+        self.payload['proximity_receipt'] = self.preflight().json['proximity_receipt']
+        original_table = self.db.table
+        for courses in ([{'course_id': 'another-course'}], [], None):
+            def table(name):
+                query = original_table(name)
+                if name == 'course_enrollments':
+                    query.execute.return_value = SimpleNamespace(data=courses)
+                return query
+            with self.subTest(courses=courses), patch.object(self.db, 'table', side_effect=table), \
+                    self.assertLogs('smartcheck', level='INFO') as logs:
+                self.assertEqual(self.preflight().status_code, 403)
+                self.assertEqual(self.final_post().status_code, 403)
+                self.assertIn('step=course_not_enrolled result=reject', '\n'.join(logs.output))
+        self.assertEqual(self.db.records, [])
 
     def test_head_turn_is_checked_against_the_matched_frame(self):
         issued = self.client.post('/api/checkin/liveness/challenge', headers={'X-CSRF-Token': 'csrf'})

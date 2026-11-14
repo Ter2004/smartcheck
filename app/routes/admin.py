@@ -11,6 +11,13 @@ from app.utils import friendly_error as _friendly_error
 admin_bp = Blueprint("admin", __name__)
 _log = logging.getLogger("smartcheck.admin")
 
+# Reads that do not depend on each other run side by side: each Supabase query is a
+# round trip of ~125 ms, and these pages made 2-5 of them one after another
+# (sessions 0.52 s, course page 0.64 s; measured 2026-11-10).
+from concurrent.futures import ThreadPoolExecutor   # noqa: E402
+from app.services.request_performance import ContextPool   # noqa: E402
+_reads = ContextPool(ThreadPoolExecutor(max_workers=8, thread_name_prefix="admin-page-read"))
+
 
 # ─── Dashboard ────────────────────────────────────────────────
 
@@ -295,29 +302,29 @@ def beacon_delete(beacon_id):
 @login_required
 @role_required("admin")
 def sessions():
-    sessions_data = (
+    sessions_read = _reads.submit(lambda: (
         supabase_admin.table("sessions")
         .select("*, courses(code, name, users(full_name)), beacons(room_name)")
         .order("start_time", desc=True)
         .execute()
         .data or []
-    )
-    courses = (
+    ))
+    courses_read = _reads.submit(lambda: (
         supabase_admin.table("courses")
         .select("id, code, name, teacher_id, users(id, full_name)")
         .eq("is_active", True)
         .order("code")
         .execute()
         .data or []
-    )
-    teachers = (
+    ))
+    teachers_read = _reads.submit(lambda: (
         supabase_admin.table("users")
         .select("id, full_name, email")
         .eq("role", "teacher")
         .order("full_name")
         .execute()
         .data or []
-    )
+    ))
     beacons = (
         supabase_admin.table("beacons")
         .select("id, room_name")
@@ -326,6 +333,7 @@ def sessions():
         .execute()
         .data or []
     )
+    sessions_data, courses, teachers = sessions_read.result(), courses_read.result(), teachers_read.result()
     # Group by course for the collapsible view. sessions_data is newest-first,
     # so the course with the latest session lands on top, and each group's
     # sessions stay newest-first.
@@ -392,14 +400,14 @@ def session_delete(session_id):
 @login_required
 @role_required("admin")
 def courses():
-    courses_data = (
+    courses_read = _reads.submit(lambda: (
         supabase_admin.table("courses")
         .select("*, users(full_name)")
         .eq("is_active", True)
         .order("code")
         .execute()
         .data or []
-    )
+    ))
     teachers = (
         supabase_admin.table("users")
         .select("id, full_name")
@@ -408,6 +416,7 @@ def courses():
         .execute()
         .data or []
     )
+    courses_data = courses_read.result()
 
     # จัดกลุ่มโดย (code, name, teacher_id)
     groups = {}
@@ -512,6 +521,40 @@ def section_add(course_id):
 @login_required
 @role_required("admin")
 def course_detail(course_id):
+    # The four lists start with the course read instead of after it.
+    # นักศึกษาที่ enroll แล้ว
+    enrolled_read = _reads.submit(lambda: (
+        supabase_admin.table("course_enrollments")
+        .select("id, student_id, users(full_name, email, student_id)")
+        .eq("course_id", course_id)
+        .execute()
+        .data or []
+    ))
+    # นักศึกษาทั้งหมด (ที่ยังไม่ได้ enroll คัดด้านล่าง)
+    students_read = _reads.submit(lambda: (
+        supabase_admin.table("users")
+        .select("id, full_name, email, student_id")
+        .eq("role", "student")
+        .order("full_name")
+        .execute()
+        .data or []
+    ))
+    schedules_read = _reads.submit(lambda: (
+        supabase_admin.table("schedules")
+        .select("*, beacons(room_name)")
+        .eq("course_id", course_id)
+        .order("day_of_week")
+        .execute()
+        .data or []
+    ))
+    beacons_read = _reads.submit(lambda: (
+        supabase_admin.table("beacons")
+        .select("id, room_name")
+        .eq("is_active", True)
+        .order("room_name")
+        .execute()
+        .data or []
+    ))
     course = (
         supabase_admin.table("courses")
         .select("*, users(full_name)")
@@ -521,47 +564,16 @@ def course_detail(course_id):
     )
     course = course.data if course else None
     if not course:
+        for read in (enrolled_read, students_read, schedules_read, beacons_read):
+            read.cancel()
         flash("ไม่พบวิชานี้", "danger")
         return redirect(url_for("admin.courses"))
 
-    # นักศึกษาที่ enroll แล้ว
-    enrolled = (
-        supabase_admin.table("course_enrollments")
-        .select("id, student_id, users(full_name, email, student_id)")
-        .eq("course_id", course_id)
-        .execute()
-        .data or []
-    )
+    enrolled = enrolled_read.result()
     enrolled_ids = {e["student_id"] for e in enrolled}
-
-    # นักศึกษาทั้งหมดที่ยังไม่ได้ enroll
-    all_students = (
-        supabase_admin.table("users")
-        .select("id, full_name, email, student_id")
-        .eq("role", "student")
-        .order("full_name")
-        .execute()
-        .data or []
-    )
-    available = [s for s in all_students if s["id"] not in enrolled_ids]
-
-    schedules = (
-        supabase_admin.table("schedules")
-        .select("*, beacons(room_name)")
-        .eq("course_id", course_id)
-        .order("day_of_week")
-        .execute()
-        .data or []
-    )
-
-    beacons = (
-        supabase_admin.table("beacons")
-        .select("id, room_name")
-        .eq("is_active", True)
-        .order("room_name")
-        .execute()
-        .data or []
-    )
+    available = [s for s in students_read.result() if s["id"] not in enrolled_ids]
+    schedules = schedules_read.result()
+    beacons = beacons_read.result()
 
     return render_template("admin/course_detail.html",
                            course=course, enrolled=enrolled,
@@ -791,56 +803,65 @@ def biometrics():
         .execute()
     )
     records = res.data or []
+    user_ids = [r["user_id"] for r in records if r.get("user_id")]
 
-    # Generate signed URLs for face images (1-hour expiry — bucket is private)
-    for r in records:
-        path = r.get("face_image_url")
-        if path and not path.startswith("http"):
-            try:
-                signed = supabase_admin.storage.from_("face-images") \
-                    .create_signed_url(path, expires_in=3600)
-                r["face_image_url"] = signed.get("signedURL") or signed.get("signed_url") or None
-            except Exception:
-                r["face_image_url"] = None
+    # Latest consent_logs entry per student (PDPA status column), read beside the v2 rows.
+    def latest_consents():
+        if not user_ids:
+            return {}
+        rows = (
+            supabase_admin.table("consent_logs")
+            .select("user_id, consent_given, consent_version, created_at")
+            .in_("user_id", user_ids)
+            .eq("consent_type", "biometric_enrollment")
+            .order("created_at", desc=True)
+            .execute()
+            .data or []
+        )
+        latest = {}
+        for row in rows:   # newest first: keep only the latest row per user_id
+            latest.setdefault(row["user_id"], row)
+        return latest
+    consent_read = _reads.submit(latest_consents)
 
     # Face stack v2 enrollments (the ones check-in uses) and their thumbnails.
     from app.services import face_engine
     active_model = face_engine.model_version()
-    v2_map = _v2_enrollments([r["user_id"] for r in records if r.get("user_id")])
+    v2_map = _v2_enrollments(user_ids)
+
+    # Signed URLs for the face images (1-hour expiry — bucket is private): one call for
+    # all of them. One call per photo took 1.2 s of this page's 1.7 s (2026-11-10).
+    legacy_paths = {r["face_image_url"] for r in records
+                    if r.get("face_image_url") and not r["face_image_url"].startswith("http")}
+    v2_paths = {v2["thumbnail_path"] for v2 in v2_map.values() if v2.get("thumbnail_path")}
+    signed_urls = _signed_photo_urls(legacy_paths | v2_paths)
     for r in records:
+        if r.get("face_image_url") in legacy_paths:
+            r["face_image_url"] = signed_urls.get(r["face_image_url"])   # None when signing failed
         v2 = v2_map.get(r.get("user_id"))
         r["v2"] = v2
         r["v2_current"] = bool(v2 and v2.get("status") == "completed" and v2.get("model_version") == active_model)
         if v2 and v2.get("thumbnail_path"):
-            try:
-                signed = supabase_admin.storage.from_("face-images").create_signed_url(
-                    v2["thumbnail_path"], expires_in=3600)
-                r["face_image_url"] = signed.get("signedURL") or signed.get("signed_url") or r.get("face_image_url")
-            except Exception:
-                pass
+            r["face_image_url"] = signed_urls.get(v2["thumbnail_path"]) or r.get("face_image_url")
 
-    # Fetch latest consent_logs entry per student for PDPA status column
-    consent_map = {}
     try:
-        user_ids = [r["user_id"] for r in records if r.get("user_id")]
-        if user_ids:
-            consent_res = (
-                supabase_admin.table("consent_logs")
-                .select("user_id, consent_given, consent_version, created_at")
-                .in_("user_id", user_ids)
-                .eq("consent_type", "biometric_enrollment")
-                .order("created_at", desc=True)
-                .execute()
-            )
-            # Keep only the latest row per user_id
-            for row in (consent_res.data or []):
-                uid = row["user_id"]
-                if uid not in consent_map:
-                    consent_map[uid] = row
+        consent_map = consent_read.result()
     except Exception:
-        pass  # Non-fatal — table may not exist yet in older envs
+        consent_map = {}  # Non-fatal — table may not exist yet in older envs
 
     return render_template("admin/biometrics.html", records=records, consent_map=consent_map)
+
+
+def _signed_photo_urls(paths):
+    """path -> signed URL (1 hour) for face-images objects; a path that fails is left out."""
+    if not paths:
+        return {}
+    try:
+        signed = supabase_admin.storage.from_("face-images").create_signed_urls(list(paths), 3600)
+        return {item["path"]: item.get("signedURL") or item.get("signed_url")
+                for item in signed if not item.get("error") and item.get("path")}
+    except Exception:
+        return {}
 
 
 @admin_bp.route("/api/withdraw-biometrics/<student_id>", methods=["POST"])

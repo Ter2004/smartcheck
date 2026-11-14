@@ -117,7 +117,7 @@ class Database:
         data = {
             "sessions": {"id": "s1", "course_id": "c1", "is_open": True, "beacon_id": "b1",
                          "beacons": {"ble_room_code": "TEST-101"}},
-            "course_enrollments": {"id": "enrollment"},
+            "course_enrollments": [{"course_id": "c1"}],   # the student's courses
             "beacons": {"ble_secret": KEY},
         }.get(name)
         query.execute.return_value = SimpleNamespace(data=data)

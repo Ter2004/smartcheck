@@ -156,7 +156,7 @@ def _log(student_id, step, result, details=""):
 @role_required("student")
 def dashboard():
     user_id = session["user_id"]
-    board_read = _page_reads.submit(_today_board_reads, user_id, supabase_admin)
+    board_read = _board_reads.submit(_today_board_reads, user_id, supabase_admin)
     enrolled = _enrollment_status()["is_enrolled"]
     try:
         sessions, attendance, now_th = board_read.result()
@@ -179,11 +179,12 @@ def dashboard():
 def account():
     """The บัญชี tab: am I set up (face, notifications), then password and logout."""
     from app.models.user_model import get_user_by_id
-    user = get_user_by_id(session["user_id"]) or {}
+    user_read = _page_reads.submit(get_user_by_id, session["user_id"])   # alongside the status read
     try:
         enrolled = _enrollment_status()["is_enrolled"]
     except EnrollmentStatusUnavailable:
         enrolled = None   # the page still opens; it says the status could not be read
+    user = user_read.result() or {}
     return render_template("student/account.html", user=user, enrolled=enrolled)
 
 
@@ -217,22 +218,33 @@ def thai_day_label(moment):
 
 
 def _today_board_reads(user_id, client):
-    """(today's sessions of the student's courses, their attendance rows, now in Thai time)."""
+    """(today's sessions of the student's courses, their attendance rows, now in Thai time).
+
+    Two reads side by side, each joined to what it depends on. They used to run one
+    after another (enrolments, then sessions, then attendance: 3 round trips of
+    ~125 ms; measured 2026-11-10), and the home page polls this every 15 s.
+    """
     import datetime as _dt_mod
     now_th = _dt_mod.datetime.now(_dt_mod.timezone(_dt_mod.timedelta(hours=7)))
     day = now_th.replace(hour=0, minute=0, second=0, microsecond=0)
-    course_ids = [r["course_id"] for r in (client.table("course_enrollments").select("course_id")
-                                           .eq("student_id", user_id).execute().data or [])]
-    if not course_ids:
-        return [], [], now_th
-    sessions = (client.table("sessions").select("*, courses(code, name), beacons(room_name)")
-                .in_("course_id", course_ids)
-                .gte("start_time", day.isoformat())
-                .lt("start_time", (day + _dt_mod.timedelta(days=1)).isoformat())
-                .order("start_time").execute().data or [])
-    attendance = (client.table("attendance").select("session_id, status, check_in_at")
-                  .eq("student_id", user_id).in_("session_id", [s["id"] for s in sessions])
-                  .execute().data or []) if sessions else []
+    start, end = day.isoformat(), (day + _dt_mod.timedelta(days=1)).isoformat()
+    sessions_read = _page_reads.submit(lambda: (
+        client.table("sessions")
+        .select("*, courses!inner(code, name, course_enrollments!inner(student_id)), beacons(room_name)")
+        .eq("courses.course_enrollments.student_id", user_id)   # only the student's courses
+        .gte("start_time", start).lt("start_time", end)
+        .order("start_time").execute().data or []))
+    attendance_read = _page_reads.submit(lambda: (
+        client.table("attendance").select("session_id, status, check_in_at, sessions!inner(start_time)")
+        .eq("student_id", user_id)
+        .gte("sessions.start_time", start).lt("sessions.start_time", end)
+        .execute().data or []))
+    sessions = sessions_read.result()
+    for s in sessions:
+        (s.get("courses") or {}).pop("course_enrollments", None)   # join filter only
+    today_ids = {s["id"] for s in sessions}
+    attendance = [{"session_id": a["session_id"], "status": a.get("status"), "check_in_at": a.get("check_in_at")}
+                  for a in attendance_read.result() if a["session_id"] in today_ids]
     return sessions, attendance, now_th
 
 
@@ -319,6 +331,10 @@ def pdpa_notice():
 # Only request threads submit work, so no task ever waits on another task here.
 from app.services.request_performance import ContextPool   # noqa: E402
 _page_reads = ContextPool(ThreadPoolExecutor(max_workers=8, thread_name_prefix="page-read"))
+# The home page runs _today_board_reads beside its enrollment check. That function
+# waits on _page_reads tasks, so it gets its own pool: a task waiting for a place in
+# the pool it is running in could wait for ever.
+_board_reads = ContextPool(ThreadPoolExecutor(max_workers=8, thread_name_prefix="board-read"))
 
 
 def _open_session_reads(user_id):
@@ -420,6 +436,8 @@ def checkin():
         .limit(1)
         .execute()
     )) if selected_id else None
+    # The class list's week table: its reads start now too (the check-in page has no table).
+    week_reads = None if selected_id else _week_reads(user_id, started[0])
 
     status = _enrollment_status()
     if not status["is_enrolled"]:
@@ -454,41 +472,14 @@ def checkin():
             today_dow=_now_th.weekday(),
         )
 
-    _week_start = (_now_th.date() - _dt_mod.timedelta(days=_now_th.weekday())).isoformat()
-    _week_end   = (_now_th.date() + _dt_mod.timedelta(days=6 - _now_th.weekday())).isoformat()
-
-    schedules_read = _page_reads.submit(lambda: (
-        client.table("schedules")
-        .select("*, courses(id, code, name), beacons(room_name)")
-        .in_("course_id", list(enrolled_course_ids))
-        .order("day_of_week")
-        .execute()
-        .data or []
-    )) if enrolled_course_ids else None
-
-    week_sessions = (
-        client.table("sessions")
-        .select("id, course_id, is_open, start_time, end_time")
-        .in_("course_id", list(enrolled_course_ids))
-        .gte("start_time", f"{_week_start}T00:00:00+07:00")
-        .lte("start_time", f"{_week_end}T23:59:59+07:00")
-        .execute()
-        .data or []
-    ) if enrolled_course_ids else []
-
-    checked_session_ids = set()
-    if week_sessions:
-        _wids = [s["id"] for s in week_sessions]
-        _wa = (
-            supabase_admin.table("attendance")
-            .select("session_id")
-            .eq("student_id", user_id)
-            .in_("session_id", _wids)
-            .execute()
-            .data or []
-        )
-        checked_session_ids = {a["session_id"] for a in _wa}
-    week_schedules = schedules_read.result() if schedules_read else []
+    schedules_read, week_sessions_read, week_checked_read = week_reads
+    week_schedules = schedules_read.result()
+    for sch in week_schedules:
+        (sch.get("courses") or {}).pop("course_enrollments", None)   # join filter only
+    week_sessions = week_sessions_read.result()
+    week_ids = {s["id"] for s in week_sessions}
+    checked_session_ids = {a["session_id"] for a in week_checked_read.result()
+                           if a["session_id"] in week_ids}
 
     return render_template(
         "student/checkin_select.html", available_sessions=available_sessions,
@@ -496,6 +487,46 @@ def checkin():
         timetable=week_timetable(week_schedules, week_sessions, checked_session_ids,
                                  {s["id"] for s in available_sessions}, _now_th),
     )
+
+
+def _week_reads(user_id, now_th):
+    """Start the week table's reads: (schedules, this week's sessions, the student's check-ins).
+
+    Each is joined to the student's own courses, so none waits for the course list.
+    They used to follow it in two more steps (~125 ms each; measured 2026-11-10).
+    """
+    import datetime as _dt_mod
+    monday = now_th.date() - _dt_mod.timedelta(days=now_th.weekday())
+    start, end = f"{monday.isoformat()}T00:00:00+07:00", f"{(monday + _dt_mod.timedelta(days=6)).isoformat()}T23:59:59+07:00"
+    client = supabase_admin
+    mine = "courses.course_enrollments.student_id"
+    schedules = _page_reads.submit(lambda: (
+        client.table("schedules")
+        .select("*, courses!inner(id, code, name, course_enrollments!inner(student_id)), beacons(room_name)")
+        .eq(mine, user_id)
+        .order("day_of_week")
+        .execute()
+        .data or []
+    ))
+    sessions = _page_reads.submit(lambda: (
+        client.table("sessions")
+        .select("id, course_id, is_open, start_time, end_time, courses!inner(course_enrollments!inner(student_id))")
+        .eq(mine, user_id)
+        .gte("start_time", start)
+        .lte("start_time", end)
+        .execute()
+        .data or []
+    ))
+    checked = _page_reads.submit(lambda: (
+        client.table("attendance")
+        .select("session_id, sessions!inner(start_time)")
+        .eq("student_id", user_id)
+        .gte("sessions.start_time", start)
+        .lte("sessions.start_time", end)
+        .execute()
+        .data or []
+    ))
+    return schedules, sessions, checked
 
 
 TIMETABLE_FIRST_HOUR, TIMETABLE_LAST_HOUR = 7, 19   # the grid shows 07:00-19:00, Monday to Friday

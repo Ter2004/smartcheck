@@ -66,15 +66,15 @@ class EnrollmentTests(unittest.TestCase):
                 self.assertTrue(response.location.endswith('/student/enroll'))
 
     def test_checkin_with_completed_biometrics_renders(self):
-        query = self.db.table.return_value
-        for method in ['gte', 'lt']:
-            getattr(query, method).return_value = query
-        query.execute.side_effect = [
-            SimpleNamespace(data={'face_embeddings': [[1]], 'consent_given': True,
-                                  'baseline_ear': 0.3}),
-            SimpleNamespace(data=[]),  # Open sessions
-            SimpleNamespace(data=[]),  # Course enrollments
-        ]
+        # The page's reads run side by side, so each table answers by name, not by call order.
+        status = self.db.table.return_value
+        status.execute.return_value = SimpleNamespace(
+            data={'face_embeddings': [[1]], 'consent_given': True, 'baseline_ear': 0.3})
+        lists = Mock()   # open sessions, course enrollments, and the week table's three reads
+        for method in ['select', 'eq', 'gte', 'lt', 'lte', 'order']:
+            getattr(lists, method).return_value = lists
+        lists.execute.return_value = SimpleNamespace(data=[])
+        self.db.table.side_effect = lambda name: status if name == 'student_biometrics' else lists
         with patch.object(student, 'render_template', return_value='checkin') as render:
             response = self.client.get('/student/checkin')
         self.assertEqual(response.status_code, 200)

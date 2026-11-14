@@ -104,6 +104,12 @@ def _valid_date(text):
 def dashboard():
     teacher_id = session["user_id"]
 
+    import datetime as _datetime_mod
+    _TH = _datetime_mod.timezone(_datetime_mod.timedelta(hours=7))
+    _today_th = _datetime_mod.datetime.now(_TH).date()
+
+    # All four reads at once. The session reads are joined to the teacher's active
+    # courses, so they no longer wait for the course list (2 round trips -> 1, 2026-11-10).
     beacons_read = _reads.submit(lambda: (
         supabase_admin.table("beacons")
         .select("id, room_name, uuid")
@@ -112,7 +118,7 @@ def dashboard():
         .execute()
         .data or []
     ))
-    courses = (
+    courses_read = _reads.submit(lambda: (
         supabase_admin.table("courses")
         .select("*")
         .eq("teacher_id", teacher_id)
@@ -120,18 +126,13 @@ def dashboard():
         .order("code")
         .execute()
         .data or []
-    )
-    course_ids = [c["id"] for c in courses] or ["00000000-0000-0000-0000-000000000000"]
-
-    import datetime as _datetime_mod
-    _TH = _datetime_mod.timezone(_datetime_mod.timedelta(hours=7))
-    _today_th = _datetime_mod.datetime.now(_TH).date()
-
-    # sessions ล่าสุด 10 รายการ
+    ))
+    # sessions ล่าสุด
     recent_read = _reads.submit(lambda: (
         supabase_admin.table("sessions")
-        .select("*, courses(code, name)")
-        .in_("course_id", course_ids)
+        .select("*, courses!inner(code, name, teacher_id, is_active)")
+        .eq("courses.teacher_id", teacher_id)
+        .eq("courses.is_active", True)
         .order("start_time", desc=True)
         .limit(30)
         .execute()
@@ -139,14 +140,16 @@ def dashboard():
     ))
     today_read = _reads.submit(lambda: (
         supabase_admin.table("sessions")
-        .select("*, courses(id, code, name, teacher_id), beacons(room_name)")
-        .in_("course_id", course_ids)
+        .select("*, courses!inner(id, code, name, teacher_id, is_active), beacons(room_name)")
+        .eq("courses.teacher_id", teacher_id)
+        .eq("courses.is_active", True)
         .gte("start_time", f"{_today_th}T00:00:00+07:00")
         .lte("start_time", f"{_today_th}T23:59:59+07:00")
         .order("start_time")
         .execute()
         .data or []
     ))
+    courses = courses_read.result()
     recent_sessions = recent_read.result()
     beacons = beacons_read.result()
 
@@ -194,6 +197,25 @@ def dashboard():
 def session_view(session_id):
     teacher_id = session["user_id"]
 
+    # The attendance and roster reads start with the session read instead of after it
+    # (one round trip less, 2026-11-10). Nothing from them is used until the session
+    # is known to belong to this teacher.
+    attendance_read = _reads.submit(lambda: (
+        supabase_admin.table("attendance")
+        .select("*, users!attendance_student_id_fkey(full_name, student_id, email)")
+        .eq("session_id", session_id)
+        .order("check_in_at")
+        .execute()
+        .data or []
+    ))
+    # นักศึกษาทั้งหมดในวิชานี้ (the course is found through the session)
+    students_read = _reads.submit(lambda: (
+        supabase_admin.table("course_enrollments")
+        .select("*, users(id, full_name, student_id, email), courses!inner(sessions!inner(id))")
+        .eq("courses.sessions.id", session_id)
+        .execute()
+        .data or []
+    ))
     sess = (
         supabase_admin.table("sessions")
         .select("*, courses(id, code, name, teacher_id), beacons(room_name)")
@@ -203,27 +225,15 @@ def session_view(session_id):
     )
     sess = sess.data if sess else None
     if not sess or not sess.get("courses") or sess["courses"]["teacher_id"] != teacher_id:
+        for read in (attendance_read, students_read):
+            read.cancel()
         flash("ไม่พบคาบนี้หรือไม่มีสิทธิ์", "danger")
         return redirect(url_for("teacher.dashboard"))
 
-    attendance_read = _reads.submit(lambda: (
-        supabase_admin.table("attendance")
-        .select("*, users!attendance_student_id_fkey(full_name, student_id, email)")
-        .eq("session_id", session_id)
-        .order("check_in_at")
-        .execute()
-        .data or []
-    ))
-    # นักศึกษาทั้งหมดในวิชานี้
-    students_read = _reads.submit(lambda: (
-        supabase_admin.table("course_enrollments")
-        .select("*, users(id, full_name, student_id, email)")
-        .eq("course_id", sess["course_id"])
-        .execute()
-        .data or []
-    ))
     attendance = attendance_read.result()
     all_students = students_read.result()
+    for row in all_students:
+        row.pop("courses", None)   # join filter only
 
     # att_map: student_id → attendance row (สร้างใน Python เพื่อใช้ใน template)
     att_map = {a["student_id"]: a for a in attendance}
@@ -269,15 +279,21 @@ def live_counts(attendance, total):
 @role_required("teacher")
 def session_live(session_id):
     """Counts and per-student status for the open-class view (polled; no page reload)."""
-    sess = _owned_session(session_id, session["user_id"])
-    if not sess:
-        return jsonify(ok=False, error="ไม่พบคาบนี้หรือไม่มีสิทธิ์"), 403
+    # Polled every 10 s: both reads start with the ownership read instead of after it
+    # (0.27 s -> one round trip, 2026-11-10). They are only used once the session is
+    # known to belong to this teacher; the roster finds its course through the session.
     attendance_read = _reads.submit(lambda: (supabase_admin.table("attendance")
                                              .select("student_id, status, check_in_at")
                                              .eq("session_id", session_id).execute().data or []))
     enrolled_read = _reads.submit(lambda: (supabase_admin.table("course_enrollments")
-                                           .select("student_id").eq("course_id", sess["course_id"])
+                                           .select("student_id, courses!inner(sessions!inner(id))")
+                                           .eq("courses.sessions.id", session_id)
                                            .execute().data or []))
+    sess = _owned_session(session_id, session["user_id"])
+    if not sess:
+        for read in (attendance_read, enrolled_read):
+            read.cancel()
+        return jsonify(ok=False, error="ไม่พบคาบนี้หรือไม่มีสิทธิ์"), 403
     attendance, enrolled = attendance_read.result(), enrolled_read.result()
     return jsonify(ok=True, is_open=bool(sess.get("is_open")),
                    counts=live_counts(attendance, len(enrolled)),
@@ -398,15 +414,17 @@ def _enrollment_photos(student_ids):
     if not student_ids:
         return {}
     try:
+        def v2_rows():   # v2 enrollments (face_enrollments.thumbnail_path); absent before the migration
+            try:
+                return (supabase_admin.table("face_enrollments").select("student_id, thumbnail_path")
+                        .in_("student_id", student_ids).eq("status", "completed").execute().data or [])
+            except Exception:
+                return []
+        v2_read = _reads.submit(v2_rows)   # alongside the legacy table
         rows = (supabase_admin.table("student_biometrics").select("user_id, face_image_url")
                 .in_("user_id", student_ids).execute().data or [])
         owners = {r["face_image_url"]: r["user_id"] for r in rows if r.get("face_image_url")}
-        try:   # v2 enrollments (face_enrollments.thumbnail_path); absent before the migration
-            v2 = (supabase_admin.table("face_enrollments").select("student_id, thumbnail_path")
-                  .in_("student_id", student_ids).eq("status", "completed").execute().data or [])
-            owners.update({r["thumbnail_path"]: r["student_id"] for r in v2 if r.get("thumbnail_path")})
-        except Exception:
-            pass
+        owners.update({r["thumbnail_path"]: r["student_id"] for r in v2_read.result() if r.get("thumbnail_path")})
         if not owners:
             return {}
         signed = supabase_admin.storage.from_("face-images").create_signed_urls(

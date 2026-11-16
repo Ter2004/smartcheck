@@ -19,7 +19,7 @@
         <article class="sc-card sc-hero{{ ' is-open' if s.is_open }}" style="padding:24px" aria-label="คาบ {{ s.courses.code }}">
             <div class="sc-top">
                 <span class="sc-eyebrow">{{ s.courses.code }}</span>
-                {% if s.is_open %}<span class="sc-badge open">เปิดเช็คชื่ออยู่</span>
+                {% if s.is_open %}<span class="sc-badge open live">เปิดอยู่</span>
                 {% elif s.end_time %}<span class="sc-badge">ปิดแล้ว</span>
                 {% else %}<span class="sc-badge">รอเปิดคาบ</span>{% endif %}
             </div>

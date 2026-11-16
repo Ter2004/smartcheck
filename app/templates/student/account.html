@@ -4,8 +4,7 @@
 {% block content %}
 <div class="max-w-md mx-auto">
 <header class="pass-head">
-    <small>บัญชีของฉัน</small>
-    <h1>{{ user.full_name or session.get('user_name', '') }}</h1>
+    <h1>บัญชี</h1>
 </header>
 
 <!-- Figma "Student / Account": profile, face status, then one menu list. -->
@@ -13,14 +12,14 @@
     <span class="sc-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="10" r="3.2"/><path d="M6.2 18.5a7 7 0 0 1 11.6 0"/></svg></span>
     <div class="min-w-0">
         <p class="sc-title" style="font-size:18px">{{ user.full_name or session.get('user_name', '') }}</p>
-        <p class="sc-note" style="overflow-wrap:anywhere">{% if user.student_id %}{{ user.student_id }} · {% endif %}{{ user.email or '' }}</p>
+        <p class="sc-note" style="overflow-wrap:anywhere">{% if user.student_id and user.student_id != (user.full_name or session.get('user_name', '')) %}{{ user.student_id }} · {% endif %}{{ user.email or '' }}</p>
     </div>
 </div>
 
 {% if enrolled %}
 <div class="sc-banner ok mt-4" role="status">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.4 3.2 8.3 7.5 9.5 4.3-1.2 7.5-5.1 7.5-9.5V6L12 3Z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/></svg>
-    <span class="font-medium">ลงทะเบียนใบหน้าแล้ว พร้อมเช็คชื่อ</span>
+    <span class="font-medium">ใบหน้าพร้อมใช้เช็คชื่อ</span>
 </div>
 {% elif enrolled is none %}
 <div class="sc-banner late mt-4" role="status"><span>ตรวจสอบสถานะใบหน้าไม่ได้ ลองโหลดหน้าใหม่</span></div>

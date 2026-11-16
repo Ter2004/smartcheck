@@ -306,3 +306,46 @@ a.sc-card:active { background: var(--sc-primary-lt); }
 .login-form-panel .pass-band { display: none; }
 .login-form-panel .pass-body { padding: 32px 24px 8px; }
 .login-title { color: var(--sc-text); font-size: 24px !important; font-weight: 600; }
+
+/* ── Motion: ease-out-quint, short, and off for reduced motion ───── */
+:root { --sc-ease: cubic-bezier(.22, 1, .36, 1); }
+@keyframes sc-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes sc-ping { 0% { box-shadow: 0 0 0 0 currentColor; } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
+@keyframes sc-glow { 0%, 100% { box-shadow: 0 0 0 0 rgb(45 100 210 / 0%); } 50% { box-shadow: 0 0 0 4px rgb(45 100 210 / 14%); } }
+@keyframes sc-swap { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* Page content arrives in a short cascade. */
+main :is(.pass-head, .sc-card, .sc-banner, .sc-menu, .sc-section, .tt, details, .tarmac-note) {
+    animation: sc-rise .45s var(--sc-ease) both; }
+main :is(.sc-card, .sc-banner, .sc-menu, details, .tt):nth-of-type(2) { animation-delay: .05s; }
+main :is(.sc-card, .sc-banner, .sc-menu, details, .tt):nth-of-type(3) { animation-delay: .1s; }
+main :is(.sc-card, .sc-banner, .sc-menu, details, .tt):nth-of-type(n+4) { animation-delay: .15s; }
+.sc-stack > :nth-child(2) { animation-delay: .08s; }
+.sc-stack > :nth-child(3) { animation-delay: .12s; }
+.sc-stack > :nth-child(n+4) { animation-delay: .16s; }
+
+/* An open class breathes; its badge dot pings. */
+.sc-hero.is-open { animation: sc-rise .45s var(--sc-ease) both, sc-glow 2.4s ease-in-out .6s infinite; }
+.sc-badge.live::before { animation: sc-ping 1.6s ease-out infinite; }
+[data-band-label].turn { animation: sc-swap .3s var(--sc-ease); }
+
+/* Touch feedback. */
+.sc-card, a.sc-card, .sc-menu :is(a, button), .btn-board, .btn-gate, .btn-quiet, .tabbar a, .tt-block {
+    transition: background-color .2s var(--sc-ease), border-color .2s var(--sc-ease), transform .2s var(--sc-ease), box-shadow .2s var(--sc-ease), color .2s; }
+a.sc-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgb(18 18 18 / 6%); }
+:is(a.sc-card, .btn-board, .btn-gate, .btn-quiet, .sc-menu a, .sc-menu button, a.tt-block):active { transform: scale(.98); }
+.sc-menu a:hover .chev { transform: translateX(3px); }
+.sc-menu .chev { transition: transform .2s var(--sc-ease); }
+.tabbar a svg { transition: transform .25s var(--sc-ease); }
+.tabbar a[aria-current="page"] svg { transform: translateY(-2px); }
+details[open] > :not(summary) { animation: sc-rise .3s var(--sc-ease) both; }
+details summary { transition: color .2s; }
+
+@media (prefers-reduced-motion: reduce) {
+    main *, main *::before, .tabbar a svg { animation: none !important; transition: none !important; transform: none !important; }
+}
+
+/* Empty state: icon, one line, one hint. */
+.sc-empty { align-items: center; text-align: center; padding: 32px 16px; gap: 4px; }
+.sc-empty svg { width: 40px; height: 40px; color: var(--sc-primary); background: var(--sc-primary-lt); border-radius: 50%;
+    padding: 8px; box-sizing: content-box; margin-bottom: 8px; }

@@ -5,47 +5,37 @@
 {% set short_days = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'] %}
 <div class="max-w-md mx-auto">
     <header class="pass-head">
-        <small>แตะคาบที่ "เปิดเช็คชื่อ" แล้วสแกนหน้าในห้องเรียน</small>
         <h1>เช็คชื่อ</h1>
     </header>
 
-    <section aria-labelledby="open-heading">
+    <section aria-labelledby="open-heading" class="sc-stack">
         <h2 id="open-heading" class="sr-only">คาบที่เปิดเช็คชื่อวันนี้</h2>
         {% for item in available_sessions %}
         {% set done = item.id in checked_session_ids %}
-        <article class="pass mb-4" aria-label="คาบ {{ item.courses.code }}">
-            <div class="pass-band" data-state="{{ 'boarded' if done else 'boarding' }}">
-                <span>{{ 'เช็คชื่อแล้ว' if done else 'เปิดเช็คชื่อ' }}</span>
-                <span>{{ item.beacons.room_name if item.beacons else '' }}</span>
+        <article class="sc-card sc-hero{{ '' if done else ' is-open' }}" aria-label="คาบ {{ item.courses.code }}">
+            <div class="sc-top">
+                <span class="sc-eyebrow">{{ item.courses.code }}</span>
+                {% if done %}<span class="sc-badge ok">เช็คชื่อแล้ว</span>{% else %}<span class="sc-badge open live">เปิดอยู่</span>{% endif %}
             </div>
-            <div class="pass-body">
-                <p class="pass-code">{{ item.courses.code }}</p>
-                <p class="pass-name">{{ item.courses.name }}</p>
-            </div>
-            <div class="pass-perf" aria-hidden="true"></div>
-            <div class="pass-foot">
-                {% if done %}
-                <p>บันทึกแล้ว ไม่ต้องทำอะไรเพิ่ม</p>
-                {% else %}
-                <a href="{{ url_for('student.checkin', session_id=item.id) }}" class="btn-board"
-                   aria-label="เช็คชื่อคาบ {{ item.courses.code }} {{ item.title }}">สแกนหน้าเช็คชื่อ</a>
-                {% endif %}
-            </div>
+            <p class="sc-title">{{ item.courses.name }}</p>
+            {% if item.beacons %}<div class="sc-meta"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21h16M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17"/></svg>{{ item.beacons.room_name }}</span></div>{% endif %}
+            {% if not done %}
+            <a href="{{ url_for('student.checkin', session_id=item.id) }}" class="btn-board"
+               aria-label="เช็คชื่อคาบ {{ item.courses.code }} {{ item.title }}">เช็คชื่อเลย</a>
+            {% endif %}
         </article>
         {% else %}
-        <div class="pass" role="status">
-            <div class="pass-band" data-state="closed"><span>ยังไม่มีคาบเปิด</span><span>วันนี้</span></div>
-            <div class="pass-body">
-                <p class="pass-code">รออาจารย์เปิดคาบ</p>
-                <p class="pass-name">เมื่ออาจารย์เปิดคาบ คาบจะขึ้นที่นี่ และแอปจะแจ้งเตือน</p>
-            </div>
+        <div class="sc-card sc-empty" role="status">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            <p class="sc-title">ยังไม่มีคาบที่เปิดอยู่</p>
+            <p class="sc-note">อาจารย์เปิดคาบเมื่อไร แอปจะแจ้งเตือนทันที</p>
         </div>
         {% endfor %}
     </section>
 
     {% if week_schedules %}
     <section aria-labelledby="week-heading">
-        <h2 id="week-heading" class="board-title">ตารางเรียน <span>จันทร์–ศุกร์ 07:00–19:00</span></h2>
+        <h2 id="week-heading" class="sc-section">ตารางเรียน <span>จันทร์–ศุกร์ 07:00–19:00</span></h2>
         <div class="tt" role="table" aria-label="ตารางเรียนจันทร์ถึงศุกร์">
             <div class="tt-scroll" tabindex="0" aria-label="เลื่อนซ้ายขวาเพื่อดูเวลา">
                 <div class="tt-grid">

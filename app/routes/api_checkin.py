@@ -68,13 +68,14 @@ def checkin():
     face_image      = data.get("face_image")
 
     # Phone-side step times for the speed report: logged only, never trusted for a decision.
+    _CLIENT_TIMING_KEYS = ("page_ms", "scan_ms", "first_ms", "capture_ms", "camera_ms", "face_ms")
     timing = data.get("client_timing")
     if isinstance(timing, dict):
-        clean = {k: int(timing[k]) for k in ("page_ms", "scan_ms", "capture_ms")
+        clean = {k: int(timing[k]) for k in _CLIENT_TIMING_KEYS
                  if isinstance(timing.get(k), (int, float)) and not isinstance(timing.get(k), bool)
                  and 0 <= timing[k] < 600_000}
-        _log.info("[CLIENT] page=%sms scan=%sms capture=%sms",
-                  clean.get("page_ms"), clean.get("scan_ms"), clean.get("capture_ms"))
+        _log.info("[CLIENT] page=%sms scan=%sms first=%sms capture=%sms camera=%sms face=%sms",
+                  *(clean.get(k) for k in _CLIENT_TIMING_KEYS))
 
     receipt_error = _verify_receipt(data)
     if receipt_error is not None:

@@ -73,8 +73,10 @@ class BroadcastRoomScanner {
         let listener = null, timer = null, settle;
         const done = new Promise(resolve => { settle = resolve; });
         let otherRoom = '';
+        let scanAsked = 0, firstMs = null;   // speed report: when the first result of any device arrived
         try {
             listener = await ble.addListener('onScanResult', result => {
+                if (firstMs === null && scanAsked) this.firstMs = firstMs = Date.now() - scanAsked;
                 const hex = result && result.manufacturerData && result.manufacturerData[BroadcastRoomScanner.COMPANY_ID];
                 const found = BroadcastRoomScanner.parsePayload(hex);
                 if (!found) return;
@@ -83,6 +85,7 @@ class BroadcastRoomScanner {
             });
             timer = setTimeout(() => settle(null), timeoutMs);
             // allowDuplicates: the board changes its code every 5 s, keep the newest.
+            scanAsked = Date.now();
             await ble.requestLEScan({allowDuplicates: true, scanMode: BroadcastRoomScanner.SCAN_MODE_LOW_LATENCY});
             const result = await done;
             if (result) return result;

@@ -282,6 +282,7 @@ class CheckinFlow {
             });
             if (!active()) { acquired.getTracks().forEach(t => t.stop()); return; }
             this._camStream = acquired;
+            if (this._timing) this._timing.camera_ms = Math.round(performance.now() - this._proximity.captureStarted);
             if (!this._proximity || performance.now() >= this._proximity.deadline) {
                 this._stopStream(this._camStream);
                 this._expireProximity();
@@ -404,6 +405,9 @@ class CheckinFlow {
                 return;
             }
 
+            if (this._timing && this._timing.face_ms === undefined) {
+                this._timing.face_ms = Math.round(performance.now() - this._proximity.captureStarted);
+            }
             const lm = results.multiFaceLandmarks[0];
             let minX = 1, maxX = 0, minY = 1, maxY = 0;
             for (const p of lm) {
@@ -564,6 +568,9 @@ class CheckinFlow {
     static LIGHT_H = 24;
     // Frames kept for the server's temporal check.
     static BURST_FRAMES = 3;
+    // The server shrinks these to 64x64 for a log-only check, so a quarter-size copy is enough.
+    static BURST_W = 320;
+    static BURST_H = 240;
 
     /**
      * Keep a copy of this camera frame as one of the last BURST_FRAMES. The copies stay
@@ -575,11 +582,11 @@ class CheckinFlow {
         const c = kept.length < CheckinFlow.BURST_FRAMES
             ? (this._burstSpare?.pop() || document.createElement('canvas'))
             : kept.shift();
-        if (c.width !== videoEl.videoWidth || c.height !== videoEl.videoHeight) {
-            c.width  = videoEl.videoWidth;
-            c.height = videoEl.videoHeight;
+        if (c.width !== CheckinFlow.BURST_W || c.height !== CheckinFlow.BURST_H) {
+            c.width  = CheckinFlow.BURST_W;
+            c.height = CheckinFlow.BURST_H;
         }
-        c.getContext('2d').drawImage(videoEl, 0, 0);
+        c.getContext('2d').drawImage(videoEl, 0, 0, c.width, c.height);
         kept.push(c);
     }
 
@@ -763,9 +770,10 @@ class CheckinFlow {
         // Board first: no camera, no face scan until the phone is in the room's range.
         this._timing = {page_ms: Math.round(performance.now())};
         const scanStarted = performance.now();
+        const scanner = new BroadcastRoomScanner();
         let result;
         try {
-            result = await new BroadcastRoomScanner().findRoom(this.expectedRoom);
+            result = await scanner.findRoom(this.expectedRoom);
         } catch {
             result = {ok: false, code: 'scan_error', error: 'หาสัญญาณห้องเรียนไม่สำเร็จ — กรุณาลองใหม่'};
         } finally {
@@ -786,6 +794,7 @@ class CheckinFlow {
         }
         console.info('step=broadcast_scan result=pass details={}');
         this._timing.scan_ms = Math.round(performance.now() - scanStarted);
+        this._timing.first_ms = scanner.firstMs;
         status.textContent = 'พบสัญญาณห้อง ' + result.room;
         // The camera opens now; the server checks the board code meanwhile.
         await this._verifyProximity(result.room, null, null, {broadcast_payload: result.payload}, true);

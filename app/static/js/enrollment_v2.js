@@ -463,6 +463,7 @@ async function ev2Submit() {
     ev2Segments(ev2SegmentStates());
     ev2Say('🎉 เสร็จแล้ว!');
     ev2Show('ev2Result');
+    ev2Pop(false);
     $('ev2Checking').hidden = false; $('ev2Success').hidden = true; $('ev2Failure').hidden = true;
     ev2BarStart();
     const frames = [...ev2.frontal.items, ...ev2.order.flatMap(p => ev2.poses[p].items)]
@@ -495,12 +496,25 @@ function ev2Fail({ fix, final = false, message = '' }) {
     ev2.phase = 'idle';
     ev2.sending = false;
     ev2Arrow(null);
-    ev2Show('ev2Result');
+    // The failure pops up over the screen the student was on (owner, 2026-11-16); the
+    // checking screen is swapped back to the camera so the pop-up has something behind it.
+    const result = $('ev2Result');
+    if (!result || result.classList.contains('active')) ev2Show('ev2Camera');
     $('ev2Checking').hidden = true; $('ev2Success').hidden = true; $('ev2Failure').hidden = false;
+    ev2Pop(true);
     $('ev2Fix').textContent = final ? message : fix;
     $('ev2Retry').hidden = final;
-    $('ev2Home').hidden = !final;
+    // "Back to today" stays visible: the pop-up covers the tab bar, so it is the only way out.
     if (final) ev2Stop();
+}
+
+/** Shows or hides the failure pop-up (#ev2FailPop, moved under <body> so no card can clip it). */
+function ev2Pop(on) {
+    const pop = typeof document !== 'undefined' && document.getElementById('ev2FailPop');
+    if (!pop) return;
+    if (pop.parentNode !== document.body) document.body.appendChild(pop);
+    pop.hidden = !on;
+    if (on) { const t = document.getElementById('ev2FailTitle'); if (t && t.focus) t.focus({ preventScroll: true }); }
 }
 
 function ev2Stop() {
@@ -512,6 +526,7 @@ if (typeof document !== 'undefined' && document.getElementById('ev2Consent')) {
     $('ev2ConsentCheck').addEventListener('change', e => { $('ev2Start').disabled = !e.target.checked; });
     $('ev2Start').addEventListener('click', ev2Start);
     $('ev2Retry').addEventListener('click', async () => {
+        ev2Pop(false);
         ev2UnlockAudio();
         ev2Show('ev2Camera');
         if (!ev2.stream) {

@@ -17,6 +17,17 @@
         background: var(--sc-primary-lt); color: var(--sc-primary); }
     .ev2-facts li svg { width: 18px; height: 18px; }
     .ev2-facts b { display: block; font-weight: 600; color: var(--sc-text); }
+    /* Failure pop-up (same look as the check-in one) */
+    .ev2-pop { position: fixed; inset: 0; z-index: 60; overflow-y: auto; background: rgb(15 23 42 / 48%);
+        backdrop-filter: blur(2px); padding: max(16px, 14vh) 16px calc(16px + env(safe-area-inset-bottom));
+        animation: ev2-fade .2s ease-out; }
+    .ev2-pop[hidden] { display: none; }
+    .ev2-pop-card { max-width: 400px; margin: 0 auto; background: var(--sc-surface, #fff); border-radius: 20px;
+        padding: 28px 20px 20px; box-shadow: var(--sc-shadow-lg); animation: ev2-pop .32s var(--sc-ease) both; }
+    .ev2-pop-card .sc-result-title:focus { outline: none; }
+    @keyframes ev2-fade { from { opacity: 0; } }
+    @keyframes ev2-pop { from { opacity: 0; transform: translateY(16px) scale(.96); } }
+    @media (prefers-reduced-motion: reduce) { .ev2-pop, .ev2-pop-card { animation: none; } }
 </style>
 {% endblock %}
 
@@ -89,20 +100,24 @@
             </div>
             <a href="{{ url_for('student.dashboard') }}" class="btn-board mt-4">กลับหน้าวันนี้</a>
         </div>
-        <div id="ev2Failure" hidden>
-            <div class="sc-result">
-                <div class="sc-result-icon" data-tone="stop" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10M17 7 7 17"/></svg>
-                </div>
-                <h2 class="sc-result-title">ยังไม่สำเร็จ</h2>
-                <p id="ev2Fix" class="sc-hint whitespace-pre-line" style="color:var(--sc-err)"></p>
-            </div>
-            <div class="flex flex-col gap-2 mt-4">
-                <button id="ev2Retry" class="btn-board">ลองใหม่</button>
-                <a id="ev2Home" href="{{ url_for('student.dashboard') }}" hidden class="btn-quiet">กลับหน้าวันนี้</a>
-            </div>
-        </div>
     </section>
+</div>
+
+<!-- Failure: pops up over the current screen (enrollment_v2.js ev2Pop moves it under <body>). -->
+<div id="ev2FailPop" class="ev2-pop" hidden>
+    <div id="ev2Failure" class="ev2-pop-card" role="alertdialog" aria-modal="true" aria-labelledby="ev2FailTitle" aria-describedby="ev2Fix" hidden>
+        <div class="sc-result">
+            <div class="sc-result-icon" data-tone="stop" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10M17 7 7 17"/></svg>
+            </div>
+            <h2 class="sc-result-title" id="ev2FailTitle" tabindex="-1">ยังไม่สำเร็จ</h2>
+            <p id="ev2Fix" class="sc-hint whitespace-pre-line" style="color:var(--sc-err)"></p>
+        </div>
+        <div class="flex flex-col gap-2 mt-4">
+            <button id="ev2Retry" class="btn-board">ลองใหม่</button>
+            <a id="ev2Home" href="{{ url_for('student.dashboard') }}" class="btn-quiet">กลับหน้าวันนี้</a>
+        </div>
+    </div>
 </div>
 <canvas id="ev2Canvas" hidden></canvas>
 {% endblock %}

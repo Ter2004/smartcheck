@@ -7,7 +7,7 @@ const source = fs.readFileSync(path.join(__dirname, '../app/static/js/push_notif
 
 const SESSION = '0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0';
 
-function load({permission = 'prompt', grant = 'granted', native = true, stored = null} = {}) {
+function load({permission = 'prompt', grant = 'granted', native = true, stored = null, script = null} = {}) {
     const calls = [], listeners = {}, posted = [], store = {};
     if (stored) store.sc_push_token = JSON.stringify(stored);
     const plugin = {
@@ -25,7 +25,7 @@ function load({permission = 'prompt', grant = 'granted', native = true, stored =
     const context = {
         globalThis: null, console, location, Date, JSON,
         Capacitor: {isNativePlatform: () => native, Plugins: {PushNotifications: plugin}},
-        document: {querySelector: () => ({content: 'csrf'})},
+        document: {querySelector: () => ({content: 'csrf'}), currentScript: script},
         localStorage: {getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v; }},
         fetch: async (url, opts) => { posted.push([url, JSON.parse(opts.body), opts.headers]); return {ok: true}; },
         module: {exports: null},
@@ -58,6 +58,14 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
         await tick();
         assert.equal(t.posted.length, 0);
         t.listeners.registration({value: 'tok-2'});
+        await tick();
+        assert.equal(t.posted.length, 1);
+    }
+    {   // New login (logout removed the row): the same fresh token is sent again.
+        const t = load({permission: 'granted', stored: {token: 'tok-1', at: Date.now()},
+                        script: {dataset: {registered: '0'}}});
+        await t.push.start();
+        t.listeners.registration({value: 'tok-1'});
         await tick();
         assert.equal(t.posted.length, 1);
     }

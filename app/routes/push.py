@@ -25,7 +25,8 @@ def push_context():
     on = (session.get("user_role") == "student"
           and PUSH_USER_AGENT in request.headers.get("User-Agent", "")
           and class_push.enabled(current_app.config))
-    return {"push_in_app": on}
+    # Registered during this login? Logout deletes the row, so a new login must send the token again.
+    return {"push_in_app": on, "push_registered": bool(session.get(SESSION_KEY))}
 
 
 @push_bp.route("/api/push/register", methods=["POST"])

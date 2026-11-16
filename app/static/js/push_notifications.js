@@ -19,6 +19,10 @@ const SmartCheckPush = (() => {
     const IMPORTANCE_HIGH = 4;            // heads-up in the bar
     const STORE_KEY = 'sc_push_token';
     const REFRESH_MS = 7 * 24 * 3600 * 1000;
+    // base.html says whether this login already sent the token. Logout removes the phone
+    // from push_devices and another account may log in, so each new login sends it again.
+    const SCRIPT = typeof document !== 'undefined' ? document.currentScript : null;
+    const LOGIN_REGISTERED = !SCRIPT || !SCRIPT.dataset || SCRIPT.dataset.registered !== '0';
 
     function plugin() {
         const cap = globalThis.Capacitor;
@@ -32,7 +36,7 @@ const SmartCheckPush = (() => {
 
     async function sendToken(token) {
         const last = stored();
-        if (last && last.token === token && Date.now() - last.at < REFRESH_MS) return;
+        if (LOGIN_REGISTERED && last && last.token === token && Date.now() - last.at < REFRESH_MS) return;
         const res = await fetch('/api/push/register', {
             method: 'POST',
             headers: {

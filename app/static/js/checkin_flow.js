@@ -63,6 +63,10 @@ class CheckinFlow {
 
     async start() {
         if (!document.getElementById('stepRoomCode')) return;
+        // Leaving the app or the page stops the scan (battery); the retry button brings it back.
+        document.addEventListener?.('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') this._activeScanner?.cancel();
+        });
         this._preloadFaceMesh();
         if (this.lineReceipt) {
             // LINE Beacon already proved the room (server-issued receipt in the link):
@@ -683,6 +687,8 @@ class CheckinFlow {
     }
 
     static CODE_REVEAL_MS = 8000;
+    // The scan keeps going this long, so a student walking to the room need not press anything.
+    static SCAN_MAX_MS = 120000;
 
     /** Show the teacher-code fallback, but only while still on the room step. */
     _revealCodeFallback() {
@@ -782,12 +788,26 @@ class CheckinFlow {
         this._prewarmCamera();
         const scanStarted = performance.now();
         const scanner = new BroadcastRoomScanner();
+        this._activeScanner = scanner;
+        // Not found yet: say the search goes on, and switch the waiting camera off meanwhile.
+        const slowTimer = setTimeout(() => {
+            if (this._activeScanner !== scanner) return;
+            this._dropPrewarmedCamera();
+            status.textContent = scanner.otherRoom
+                ? 'พบอุปกรณ์ของห้องอื่น (' + scanner.otherRoom + ') — ระบบกำลังหาสัญญาณของห้องนี้ต่อให้อัตโนมัติ'
+                : 'ยังไม่พบสัญญาณห้องเรียน — เดินเข้าห้องเรียนได้เลย ระบบกำลังหาต่อให้อัตโนมัติ';
+            // Location off never finds anything: stop now so the scanner's own message says so.
+            Promise.resolve(BroadcastRoomScanner.plugin()?.isLocationEnabled?.())
+                .then(location => { if (location && location.value === false) scanner.cancel(); }).catch(() => {});
+        }, BroadcastRoomScanner.TIMEOUT_MS);
         let result;
         try {
-            result = await scanner.findRoom(this.expectedRoom);
+            result = await scanner.findRoom(this.expectedRoom, CheckinFlow.SCAN_MAX_MS);
         } catch {
             result = {ok: false, code: 'scan_error', error: 'หาสัญญาณห้องเรียนไม่สำเร็จ — กรุณาลองใหม่'};
         } finally {
+            clearTimeout(slowTimer);
+            this._activeScanner = null;
             this._broadcastScanning = false;
         }
         if (!result.ok) {

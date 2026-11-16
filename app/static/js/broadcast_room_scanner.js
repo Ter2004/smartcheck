@@ -51,6 +51,11 @@ class BroadcastRoomScanner {
         return room ? {room, payload: value} : null;
     }
 
+    /** Stop a running findRoom early; it ends the same way as a scan that found nothing. */
+    cancel() {
+        if (this._settle) this._settle(null);
+    }
+
     async findRoom(expectedRoom, timeoutMs = BroadcastRoomScanner.TIMEOUT_MS) {
         const ble = BroadcastRoomScanner.plugin();
         if (!ble) {
@@ -72,6 +77,7 @@ class BroadcastRoomScanner {
         const wanted = typeof expectedRoom === 'string' ? expectedRoom.trim() : '';
         let listener = null, timer = null, settle;
         const done = new Promise(resolve => { settle = resolve; });
+        this._settle = settle;
         let otherRoom = '';
         let scanAsked = 0, firstMs = null;   // speed report: when the first result of any device arrived
         try {
@@ -80,7 +86,7 @@ class BroadcastRoomScanner {
                 const hex = result && result.manufacturerData && result.manufacturerData[BroadcastRoomScanner.COMPANY_ID];
                 const found = BroadcastRoomScanner.parsePayload(hex);
                 if (!found) return;
-                if (wanted && found.room !== wanted) { otherRoom = found.room; return; }   // the room next door
+                if (wanted && found.room !== wanted) { this.otherRoom = otherRoom = found.room; return; }   // the room next door
                 settle({ok: true, room: found.room, payload: found.payload});
             });
             timer = setTimeout(() => settle(null), timeoutMs);

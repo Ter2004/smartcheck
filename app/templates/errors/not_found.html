@@ -5,16 +5,11 @@
 {% set role = session.get('user_role') %}
 {% set home = url_for('student.dashboard') if role == 'student' else url_for('teacher.dashboard') if role == 'teacher' else url_for('admin.dashboard') if role == 'admin' else url_for('auth.login') %}
 <div class="max-w-md mx-auto pt-6">
-    <article class="pass{% if role != 'student' %} pass-on-light{% endif %}" aria-labelledby="nf-title">
-        <div class="pass-band" data-state="closed"><span>ไม่พบหน้านี้</span><span></span></div>
-        <div class="pass-body">
-            <h1 id="nf-title" class="pass-code" style="font-size:24px">ไม่มีหน้าที่ลิงก์นี้พาไป</h1>
-            <p class="pass-name mt-1">ลิงก์อาจพิมพ์ผิด หรือหน้านั้นถูกย้ายไปแล้ว</p>
-        </div>
-        <div class="pass-perf" aria-hidden="true"></div>
-        <div class="pass-foot">
-            <a href="{{ home }}" class="btn-board">{{ 'เข้าสู่ระบบ' if not role else 'กลับหน้าหลัก' }}</a>
-        </div>
+    <article class="sc-card sc-hero sc-empty" aria-labelledby="nf-title" style="padding:40px 24px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <h1 id="nf-title" class="sc-title" style="font-size:20px">ไม่มีหน้าที่ลิงก์นี้</h1>
+        <p class="sc-note">ลิงก์อาจพิมพ์ผิด หรือหน้านี้ถูกย้ายไปแล้ว</p>
+        <a href="{{ home }}" class="btn-board mt-4">{{ 'เข้าสู่ระบบ' if not role else 'กลับหน้าหลัก' }}</a>
     </article>
 </div>
 {% endblock %}

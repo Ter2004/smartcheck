@@ -2,88 +2,55 @@
 {% block title %}เข้าสู่ระบบ — SmartCheck{% endblock %}
 
 {% block content %}
-<div class="login-layout">
-    <section class="login-intro" aria-label="SmartCheck">
-        <span class="login-wordmark">SmartCheck</span>
+<div class="sc-login">
+    <div class="sc-login-card">
+        <div class="sc-brand">
+            <i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg></i>
+            SmartCheck
+        </div>
         <div>
-            <div class="login-ticket" aria-hidden="true">
-                <div class="pass-band" data-state="boarding"><span>เปิดเช็คชื่อ</span><span>08:05</span></div>
-                <div class="pass-body"><p class="pass-code">SC 101</p>
-                    <div class="pass-grid"><div><small>ห้อง</small><b>101</b></div><div><small>เริ่ม</small><b>08:00</b></div><div><small>เหลือ</small><b>3:06</b></div></div></div>
-            </div>
-            <h2>พร้อมเรียน<br>พร้อมเช็คชื่อ</h2>
-            <p>อาจารย์เปิดคาบ แตะแจ้งเตือน สแกนหน้า — ไม่ต้องเรียกชื่อ</p>
+            <h1>เข้าสู่ระบบ</h1>
+            <p class="sc-note">ใช้อีเมลมหาวิทยาลัยหรือรหัสนักศึกษา</p>
         </div>
-        <p>SmartCheck · เช็คชื่อเข้าเรียน</p>
-    </section>
-    <div class="login-form-panel">
-        <div class="w-full max-w-sm">
 
-            <!-- Mobile logo -->
-            <div class="flex items-center gap-2 mb-8 lg:hidden">
-                <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background:var(--gate)">
-                    <svg class="w-4 h-4" style="color:var(--tarmac)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                </div>
-                <span class="pass-display font-bold text-white text-lg">SmartCheck</span>
-            </div>
-
-            <div class="pass">
-            <div class="pass-band" data-state="waiting"><span>บัตรผ่าน SmartCheck</span><span>นักศึกษา · อาจารย์</span></div>
-            <div class="pass-body">
-            <h1 class="login-title">เข้าสู่ระบบ</h1>
-            <p class="pass-name mb-6">ยินดีต้อนรับกลับสู่ SmartCheck</p>
-
-            <!-- Flash error display -->
-            {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-            {% for category, message in messages %}
-            <div role="alert" class="flex items-center gap-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-xl px-4 py-3 mb-5">
-                <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                {{ message }}
-            </div>
-            {% endfor %}
-            {% endif %}
-            {% endwith %}
-
-            <form method="POST" action="{{ url_for('auth.login') }}" id="loginForm">
-                <!-- Email -->
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-slate-600 mb-1.5" for="email">อีเมล / ID</label>
-                    <div class="relative">
-                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                        <input type="text" id="email" name="email" required autocomplete="username" autocapitalize="none" spellcheck="false"
-                               class="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-500
-                                      focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                               placeholder="อีเมล หรือ ID ผู้ใช้">
-                    </div>
-                </div>
-
-                <!-- Password -->
-                <div class="mb-6">
-                    <label class="block text-sm font-medium text-slate-600 mb-1.5" for="password">รหัสผ่าน</label>
-                    <div class="relative">
-                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        <input type="password" id="password" name="password" required autocomplete="current-password"
-                               class="w-full pl-9 pr-12 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-500
-                                      focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                               placeholder="รหัสผ่านของคุณ">
-                        <button type="button" id="togglePw" aria-label="แสดงรหัสผ่าน" aria-pressed="false"
-                                class="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-xl text-slate-500 hover:text-slate-700 transition-colors">
-                            <svg id="eyeIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-                    </div>
-                </div>
-
-                <button type="submit" id="submitBtn" class="btn-board">
-                    <span id="btnText">เข้าสู่ระบบ</span>
-                    <svg id="btnSpinner" class="w-4 h-4 animate-spin hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity=".3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
-                </button>
-            </form>
-            </div>
-            <div class="pass-perf" aria-hidden="true"></div>
-            <div class="pass-foot"><p class="text-center">ยังไม่มีบัญชี? กรุณาติดต่อผู้ดูแลระบบ</p></div>
-            </div>
+        <!-- Flash error display: inline here, not as a toast (base.html skips auth.login). -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div role="alert" class="sc-alert">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+            <span>{{ message }}</span>
         </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('auth.login') }}" id="loginForm" class="flex flex-col gap-4">
+            <div class="sc-field">
+                <label for="email">อีเมล หรือ รหัสนักศึกษา</label>
+                <div class="with-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+                    <input type="text" id="email" name="email" required autocomplete="username" autocapitalize="none" spellcheck="false"
+                           class="sc-input" placeholder="เช่น 6630613029">
+                </div>
+            </div>
+            <div class="sc-field">
+                <label for="password">รหัสผ่าน</label>
+                <div class="with-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+                    <input type="password" id="password" name="password" required autocomplete="current-password"
+                           class="sc-input" style="padding-right:48px" placeholder="กรอกรหัสผ่าน">
+                    <button type="button" id="togglePw" aria-label="แสดงรหัสผ่าน" aria-pressed="false" class="sc-eye">
+                        <svg id="eyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                </div>
+            </div>
+            <button type="submit" id="submitBtn" class="btn-board mt-2">
+                <span id="btnText">เข้าสู่ระบบ</span>
+                <svg id="btnSpinner" class="w-4 h-4 animate-spin hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity=".3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+            </button>
+        </form>
+        <p class="sc-note text-center">ลืมรหัสผ่านหรือยังไม่มีบัญชี ติดต่อเจ้าหน้าที่คณะ</p>
     </div>
 </div>
 {% endblock %}

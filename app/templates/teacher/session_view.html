@@ -6,111 +6,96 @@
 {% set is_open = sess.is_open %}
 {% set room = sess.beacons.room_name | replace('ห้อง ', '') if sess.beacons else '—' %}
 
-<a href="{{ url_for('teacher.dashboard') }}"
-   class="inline-flex items-center gap-1.5 min-h-[44px] -ml-1 px-1 mb-2 text-sm text-slate-600 hover:text-slate-900 transition-colors">
-    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
-    กลับหน้าหลัก
-</a>
+<div class="sc-topbar" style="margin-bottom:8px">
+    <a href="{{ url_for('teacher.dashboard') }}" class="sc-back" aria-label="กลับหน้าหลัก">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    </a>
+    <h1>{{ sess.courses.code }}{% if sess.courses.section %} <span style="font-weight:500;color:var(--sc-text-3)">sec {{ sess.courses.section }}</span>{% endif %}
+        <small>{{ sess.courses.name }} · ห้อง {{ room }} · {{ sess.start_time | thai_date(with_time=true) }}</small></h1>
+</div>
 
 <!-- Live head-count: the one thing the teacher watches while the class is open -->
-<article class="pass pass-on-light mb-6" id="liveHero" data-open="{{ '1' if is_open else '0' }}"
-         data-live-url="{{ url_for('teacher.session_live', session_id=sess.id) }}">
-    <div class="pass-band" id="liveBand" data-state="{{ 'boarding' if is_open else 'closed' }}">
-        <span id="liveBandLabel">{{ 'เปิดเช็คชื่ออยู่' if is_open else 'ปิดแล้ว' }}</span>
-        <span id="liveBandMeta">{% if is_open and sess.on_time_until %}ทันเวลาถึง {{ sess.on_time_until | thai_time('%H:%M') }}{% elif not is_open %}ผลสุดท้าย{% endif %}</span>
+<section id="liveHero" data-open="{{ '1' if is_open else '0' }}" data-live-url="{{ url_for('teacher.session_live', session_id=sess.id) }}" class="mb-6">
+    <div class="sc-top mb-3">
+        <span class="sc-badge{{ ' open live' if is_open }}" id="liveBand" data-state="{{ 'boarding' if is_open else '' }}">
+            <span id="liveBandLabel">{{ 'เปิดเช็คชื่ออยู่' if is_open else 'ปิดแล้ว' }}</span></span>
+        <span class="sc-note" id="liveBandMeta">{% if is_open and sess.on_time_until %}ทันเวลาถึง {{ sess.on_time_until | thai_time('%H:%M') }}{% elif not is_open %}ผลสุดท้าย{% endif %}</span>
     </div>
-    <div class="pass-body">
-        <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-            <div class="min-w-0">
-                <h1 class="pass-code">{{ sess.courses.code }}{% if sess.courses.section %} <span class="text-slate-500 font-semibold">sec {{ sess.courses.section }}</span>{% endif %}</h1>
-                <p class="pass-name">{{ sess.courses.name }} · ห้อง {{ room }} · {{ sess.start_time | thai_date(with_time=true) }}</p>
-            </div>
-            <p class="live-count" aria-live="polite">
-                <small>เช็คแล้ว</small>
-                <span><b id="liveChecked">{{ counts.checked }}</b><span class="live-total">/{{ counts.total }}</span></span>
-            </p>
+    <!-- Tap a count to list only those students (tap again for everyone). -->
+    <div class="sc-stats" role="group" aria-label="สรุปและกรองรายชื่อตามสถานะ">
+        <div class="sc-stat hero" aria-live="polite">
+            <span class="sc-label">เช็คชื่อแล้ว</span>
+            <b><span id="liveChecked">{{ counts.checked }}</span><small>/ {{ counts.total }} คน</small></b>
         </div>
-        <!-- Tap a count to list only those students (tap again for everyone). -->
-        <div class="pass-grid" role="group" aria-label="กรองรายชื่อตามสถานะ">
-            <button type="button" class="live-filter" data-filter="present" aria-pressed="false"><small>มาเรียน</small><b id="livePresent" style="color:var(--go)">{{ counts.present }}</b></button>
-            <button type="button" class="live-filter" data-filter="late" aria-pressed="false"><small>มาสาย</small><b id="liveLate" style="color:var(--late-ink)">{{ counts.late }}</b></button>
-            <button type="button" class="live-filter" data-filter="rest" aria-pressed="false"><small id="liveRestLabel">{{ 'ยังไม่เช็ค' if is_open else 'ขาด' }}</small><b id="liveRest" {% if not is_open %}style="color:var(--stop)"{% endif %}>{{ counts.rest }}</b></button>
-        </div>
+        <button type="button" class="sc-stat live-filter" data-filter="present" aria-pressed="false">
+            <span class="sc-badge ok">มาเรียน</span><b id="livePresent">{{ counts.present }}</b></button>
+        <button type="button" class="sc-stat live-filter" data-filter="late" aria-pressed="false">
+            <span class="sc-badge late">มาสาย</span><b id="liveLate">{{ counts.late }}</b></button>
+        <button type="button" class="sc-stat live-filter" data-filter="rest" aria-pressed="false">
+            <span class="sc-badge{{ ' err' if not is_open }}" id="liveRestBadge"><span id="liveRestLabel">{{ 'ยังไม่เช็ค' if is_open else 'ขาด' }}</span></span><b id="liveRest">{{ counts.rest }}</b></button>
     </div>
-    <div class="pass-perf" aria-hidden="true"></div>
-    <div class="pass-foot">
-        <div class="grid gap-2 sm:grid-cols-2">
+    <div class="flex flex-wrap items-center justify-between gap-3 mt-3">
+        <p class="sc-note" id="liveUpdated">{% if is_open %}อัปเดตเองทุก 10 วินาที{% endif %}</p>
+        <div class="flex flex-wrap gap-2">
             {% if config.CHECKIN_SESSION_CODE and is_open %}
-            <a href="{{ url_for('teacher.session_code_screen', session_id=sess.id) }}" id="liveCodeBtn" class="btn-quiet"
+            <a href="{{ url_for('teacher.session_code_screen', session_id=sess.id) }}" id="liveCodeBtn" class="sc-btn-sm"
                title="สำหรับนักศึกษาที่หาสัญญาณห้องไม่ได้ เช่น iPhone">แสดงรหัสเช็คชื่อ (สำรอง)</a>
             {% endif %}
             {% if not is_open %}
-            <a data-no-progress href="{{ url_for('teacher.export_course', course_id=sess.course_id) }}" class="btn-quiet">
-                <svg class="w-4 h-4 mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                ส่งออกทั้งเทอม (Excel)
+            <a data-no-progress href="{{ url_for('teacher.export_course', course_id=sess.course_id) }}" class="sc-btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>
+                ส่งออก Excel ทั้งเทอม
             </a>
             {% endif %}
         </div>
-        {% if is_open %}
-        <p class="mt-3 text-sm" id="liveUpdated">อัปเดตเองทุก 10 วินาที</p>
-        {% endif %}
     </div>
-</article>
+</section>
 
 <!-- Attendance table -->
-<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-    <!-- Search bar -->
-    <div class="px-5 py-3.5 border-b border-slate-100 flex items-center gap-3">
-        <svg class="w-4 h-4 text-slate-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="searchInput" type="search" aria-label="ค้นหาชื่อหรือรหัสนักศึกษา" placeholder="ค้นหาชื่อหรือรหัสนักศึกษา..."
-               class="flex-1 text-sm text-slate-700 placeholder-slate-400 focus:outline-none bg-transparent"
-               oninput="filterTable(this.value)">
+<div class="sc-table">
+    <div class="sc-toolbar">
+        <label class="sc-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="searchInput" type="search" aria-label="ค้นหาชื่อหรือรหัสนักศึกษา" placeholder="ค้นหาชื่อหรือรหัสนักศึกษา" oninput="filterTable(this.value)">
+        </label>
     </div>
     <!-- Bulk action bar -->
-    <div id="bulkBar" class="hidden px-5 py-3 border-b border-slate-100 bg-indigo-50 flex flex-wrap items-center gap-3">
-        <span id="bulkCount" class="text-xs font-medium text-indigo-700"></span>
-        <select id="bulkStatus" class="text-xs border border-indigo-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none">
+    <div id="bulkBar" class="sc-bulk hidden">
+        <span id="bulkCount" class="text-sm font-semibold" style="color:var(--sc-primary-h)"></span>
+        <select id="bulkStatus" class="sc-input" style="width:auto">
             <option value="present">มาเรียน</option>
             <option value="late">มาสาย</option>
             <option value="absent">ขาดเรียน</option>
             <option value="manual">แก้โดยอาจารย์</option>
         </select>
-        <input id="bulkReason" type="text" placeholder="เหตุผล (ถ้ามี)"
-               class="text-xs border border-indigo-200 rounded-lg px-2 py-1.5 flex-1 focus:outline-none">
-        <button onclick="submitBulk()"
-                class="text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition-colors">
-            บันทึกที่เลือก
-        </button>
+        <input id="bulkReason" type="text" placeholder="เหตุผล (ถ้ามี)" class="sc-input flex-1" style="min-width:160px">
+        <button onclick="submitBulk()" class="sc-btn-sm primary">บันทึกที่เลือก</button>
     </div>
 
-    <div class="overflow-x-auto">
-        <table class="w-full" id="attendTable">
+    <div class="scroll">
+        <table id="attendTable">
             <thead>
-                <tr class="bg-slate-50 border-b border-slate-200">
-                    <th class="px-5 py-3">
-                        <input type="checkbox" id="checkAll" aria-label="เลือกทุกคน" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                    </th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-5 py-3">รหัสนักศึกษา</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">ชื่อ-นามสกุล</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">สถานะ</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3">เวลา</th>
-                    <th class="text-left text-xs font-medium text-slate-500 px-4 py-3 hidden md:table-cell" title="ความเหมือนกับใบหน้าที่ลงทะเบียน (ยิ่งสูงยิ่งเหมือน)">คะแนนใบหน้า</th>
-                    <th class="px-4 py-3"></th>
+                <tr>
+                    <th style="width:44px"><input type="checkbox" id="checkAll" aria-label="เลือกทุกคน" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></th>
+                    <th>รหัสนักศึกษา</th>
+                    <th>ชื่อ-นามสกุล</th>
+                    <th>สถานะ</th>
+                    <th>เวลา</th>
+                    <th class="hidden md:table-cell" title="ความเหมือนกับใบหน้าที่ลงทะเบียน (ยิ่งสูงยิ่งเหมือน)">คะแนนใบหน้า</th>
+                    <th></th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100" id="attendBody">
+            <tbody id="attendBody">
             {% for s in all_students %}
                 {% set u = s.users %}
                 {% set a = att_map.get(u.id) %}
-                <tr class="hover:bg-slate-50 transition-colors" data-student="{{ u.id }}" data-status="{{ a.status if a else 'none' }}" data-search="{{ u.full_name|lower }} {{ u.student_id or '' }}">
-                    <td class="c-check px-5 py-3.5">
+                <tr data-student="{{ u.id }}" data-status="{{ a.status if a else 'none' }}" data-search="{{ u.full_name|lower }} {{ u.student_id or '' }}">
+                    <td class="c-check">
                         <label class="ck-hit"><input type="checkbox" class="row-check w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                                value="{{ u.id }}" aria-label="เลือก {{ u.full_name }}"></label>
                     </td>
-                    <td class="c-id px-5 py-3.5">
-                        <span class="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded-md">{{ u.student_id or '—' }}</span>
-                    </td>
-                    <td class="c-name px-4 py-3.5">
+                    <td class="c-id"><span class="mono">{{ u.student_id or '—' }}</span></td>
+                    <td class="c-name">
                         <div class="flex items-center gap-3">
                             {% set photo = photos.get(u.id) %}
                             {% if photo %}
@@ -121,47 +106,31 @@
                                 <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                             </span>
                             {% endif %}
-                            <span class="text-sm font-medium text-slate-800">{{ u.full_name }}</span>
+                            <span class="font-medium">{{ u.full_name }}</span>
                         </div>
                     </td>
-                    <td class="c-status px-4 py-3.5">
+                    <td class="c-status">
                         {% if a %}
-                            {% if a.status == 'present' %}
-                            <span class="inline-flex items-center text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full">มาเรียน</span>
-                            {% elif a.status == 'late' %}
-                            <span class="inline-flex items-center text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full">มาสาย</span>
-                            {% elif a.status == 'manual' %}
-                            <span class="inline-flex items-center text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-full">แก้โดยอาจารย์</span>
-                            {% else %}
-                            <span class="inline-flex items-center text-xs font-medium bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{{ a.status }}</span>
-                            {% endif %}
-                        {% elif is_open %}
-                        <span class="inline-flex items-center text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full">ยังไม่เช็ค</span>
-                        {% else %}
-                        <span class="inline-flex items-center text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-full">ขาด</span>
-                        {% endif %}
+                            {% if a.status == 'present' %}<span class="sc-badge ok">มาเรียน</span>
+                            {% elif a.status == 'late' %}<span class="sc-badge late">มาสาย</span>
+                            {% elif a.status == 'manual' %}<span class="sc-badge">แก้โดยอาจารย์</span>
+                            {% elif a.status == 'absent' %}<span class="sc-badge err">ขาดเรียน</span>
+                            {% else %}<span class="sc-badge">{{ a.status }}</span>{% endif %}
+                        {% elif is_open %}<span class="sc-badge">ยังไม่เช็ค</span>
+                        {% else %}<span class="sc-badge err">ขาด</span>{% endif %}
                     </td>
-                    <td class="c-time px-4 py-3.5">
-                        <span class="font-mono text-xs text-slate-600">{{ a.check_in_at | thai_time('%H:%M') if a and a.check_in_at else '—' }}</span>
-                    </td>
-                    <td class="c-score px-4 py-3.5 hidden md:table-cell">
+                    <td class="c-time"><span class="mono">{{ a.check_in_at | thai_time('%H:%M') if a and a.check_in_at else '—' }}</span></td>
+                    <td class="c-score hidden md:table-cell">
                         {% if a and a.face_score %}
-                        <span class="font-mono text-xs {% if a.face_score >= 0.75 %}text-emerald-600{% else %}text-rose-500{% endif %}">
-                            {{ "%.3f"|format(a.face_score) }}
-                        </span>
-                        {% else %}
-                        <span class="text-xs text-slate-400">—</span>
-                        {% endif %}
+                        <span class="mono" style="color:{{ 'var(--sc-ok)' if a.face_score >= 0.75 else 'var(--sc-err)' }}">{{ "%.3f"|format(a.face_score) }}</span>
+                        {% else %}<span class="mono">—</span>{% endif %}
                     </td>
-                    <td class="c-act px-4 py-3.5 text-right">
-                        <button data-id="{{ u.id }}" data-name="{{ u.full_name }}" onclick="openOverride(this.dataset.id, this.dataset.name)"
-                                class="inline-flex items-center min-h-[44px] text-sm font-medium text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 px-3 rounded-xl transition-colors">
-                            แก้ไข
-                        </button>
+                    <td class="c-act text-right">
+                        <button data-id="{{ u.id }}" data-name="{{ u.full_name }}" onclick="openOverride(this.dataset.id, this.dataset.name)" class="sc-btn-sm">แก้ไข</button>
                     </td>
                 </tr>
             {% else %}
-                <tr><td colspan="7" class="px-5 py-12 text-center text-sm text-slate-400">ไม่มีนักศึกษาในวิชานี้</td></tr>
+                <tr><td colspan="7" class="sc-table-empty">ไม่มีนักศึกษาในวิชานี้</td></tr>
             {% endfor %}
             </tbody>
         </table>
@@ -172,41 +141,32 @@
 <div id="overrideModal"
      class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 opacity-0 pointer-events-none transition-all duration-200"
      onclick="if(event.target===this)hideModal()">
-    <div id="overrideCard"
-         class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-95 transition-all duration-200">
-        <div class="flex items-center justify-between mb-4">
+    <div id="overrideCard" class="sc-modal-card bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform scale-95 transition-all duration-200">
+        <div class="flex items-center justify-between mb-1">
             <h2 class="text-base font-semibold text-slate-900">แก้ไขสถานะ</h2>
             <button onclick="hideModal()" aria-label="ปิด" class="-mr-2 w-11 h-11 flex items-center justify-center rounded-xl text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors">
                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
         </div>
-        <p id="overrideName" class="text-sm text-slate-500 mb-5 -mt-2"></p>
-        <form method="POST" action="{{ url_for('teacher.override_attendance', session_id=sess.id) }}">
+        <p id="overrideName" class="sc-note mb-5"></p>
+        <form method="POST" action="{{ url_for('teacher.override_attendance', session_id=sess.id) }}" class="flex flex-col gap-4">
             <input type="hidden" name="student_id" id="overrideStudentId">
-            <div class="mb-4">
-                <label class="block text-xs font-medium text-slate-600 mb-1.5">สถานะใหม่</label>
-                <select name="status" required
-                        class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+            <div class="sc-field">
+                <label for="overrideStatus">สถานะใหม่</label>
+                <select name="status" id="overrideStatus" required class="sc-input">
                     <option value="present">มาเรียน</option>
                     <option value="late">มาสาย</option>
                     <option value="absent">ขาดเรียน</option>
                     <option value="manual">แก้โดยอาจารย์ (อาจารย์เช็คชื่อให้)</option>
                 </select>
             </div>
-            <div class="mb-5">
-                <label class="block text-xs font-medium text-slate-600 mb-1.5">เหตุผล</label>
-                <input type="text" name="reason" placeholder="ระบุเหตุผล (ถ้ามี)"
-                       class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <div class="sc-field">
+                <label for="overrideReason">เหตุผล</label>
+                <input type="text" name="reason" id="overrideReason" placeholder="ระบุเหตุผล (ถ้ามี)" class="sc-input">
             </div>
-            <div class="flex gap-2">
-                <button type="button" onclick="hideModal()"
-                        class="flex-1 text-sm font-medium bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 py-2.5 rounded-xl transition-colors">
-                    ยกเลิก
-                </button>
-                <button type="submit"
-                        class="flex-1 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl transition-colors">
-                    บันทึก
-                </button>
+            <div class="flex gap-2 mt-1">
+                <button type="button" onclick="hideModal()" class="btn-quiet" style="min-height:44px;font-size:14px">ยกเลิก</button>
+                <button type="submit" class="btn-board" style="min-height:44px;font-size:14px">บันทึก</button>
             </div>
         </form>
     </div>
@@ -216,15 +176,6 @@
 
 {% block head %}
 <style>
-    .live-count { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
-    .live-count small { font-size: 13px; color: var(--pass-muted); }
-    .live-count b { font-family: 'Anuphan', sans-serif; font-weight: 700; font-size: 44px; font-variant-numeric: tabular-nums; color: var(--pass-ink); }
-    .live-total { font-family: 'Anuphan', sans-serif; font-weight: 600; font-size: 22px; color: var(--pass-muted); }
-    #liveUpdated { color: var(--pass-muted); }
-    .live-filter { text-align: left; border-radius: 12px; padding: 6px 8px; margin: -6px -8px; min-height: 44px; }
-    .live-filter:hover { background: #F3F5FA; }
-    .live-filter[aria-pressed="true"] { background: #E6EAF2; box-shadow: inset 0 0 0 1.5px var(--pass-ink); }
-    .live-filter:focus-visible { outline: 3px solid var(--gate); outline-offset: 2px; }
     /* 44 px tap area around a 20 px box */
     .ck-hit { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin: -12px; cursor: pointer; }
     /* Phones: each student is a card (photo + name, then status · time · id), no sideways scroll */
@@ -232,7 +183,7 @@
         #attendTable thead { display: none; }
         #attendTable tr[data-student] { display: grid; grid-template-columns: 36px auto auto 1fr auto;
             grid-template-areas: "check name name name act" "check status time id act";
-            align-items: center; column-gap: 10px; row-gap: 6px; padding: 12px 14px; }
+            align-items: center; column-gap: 10px; row-gap: 6px; padding: 12px 14px; border-top: 1px solid var(--sc-line); }
         #attendTable tr[data-student] > td { padding: 0; border: 0; }
         #attendTable .c-check { grid-area: check; }
         #attendTable .c-name { grid-area: name; min-width: 0; }
@@ -331,15 +282,15 @@ async function submitBulk() {
     const url = hero.dataset.liveUrl;
     const chip = (cls, text) => {
         const el = document.createElement('span');
-        el.className = 'inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full ' + cls;
+        el.className = 'sc-badge ' + cls;
         el.textContent = text;
         return el.outerHTML;
     };
     const CHIPS = {
-        present: chip('bg-emerald-50 text-emerald-700 border border-emerald-200', 'มาเรียน'),
-        late:    chip('bg-amber-50 text-amber-700 border border-amber-200', 'มาสาย'),
-        manual:  chip('bg-slate-100 text-slate-700 border border-slate-200', 'แก้โดยอาจารย์'),
-        absent:  chip('bg-rose-50 text-rose-700 border border-rose-200', 'ขาดเรียน'),
+        present: chip('ok', 'มาเรียน'),
+        late:    chip('late', 'มาสาย'),
+        manual:  chip('', 'แก้โดยอาจารย์'),
+        absent:  chip('err', 'ขาดเรียน'),
     };
     const fmt = new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
     const set = (id, v) => { const el = document.getElementById(id); if (el && el.textContent !== String(v)) el.textContent = v; };
@@ -347,13 +298,14 @@ async function submitBulk() {
 
     function closed() {
         const band = document.getElementById('liveBand');
-        band.dataset.state = 'closed';
+        band.className = 'sc-badge';
+        band.dataset.state = '';
         set('liveBandLabel', 'ปิดแล้ว');
         set('liveBandMeta', 'ผลสุดท้าย');
         document.getElementById('liveCodeBtn')?.remove();
         set('liveRestLabel', 'ขาด');
-        document.getElementById('liveRest').style.color = 'var(--stop)';
-        set('liveUpdated', 'คาบปิดแล้ว — ตัวเลขด้านบนคือผลสุดท้าย');
+        document.getElementById('liveRestBadge').classList.add('err');
+        set('liveUpdated', 'คาบปิดแล้ว ตัวเลขด้านบนคือผลสุดท้าย');
         clearInterval(timer);
     }
 
@@ -371,8 +323,7 @@ async function submitBulk() {
                 tr.dataset.status = row ? row.status : 'none';
                 const status = tr.querySelector('.c-status');
                 const time = tr.querySelector('.c-time span');
-                const html = row ? (CHIPS[row.status] || chip('bg-slate-100 text-slate-600', row.status))
-                                 : chip('bg-slate-100 text-slate-600 border border-slate-200', 'ยังไม่เช็ค');
+                const html = row ? (CHIPS[row.status] || chip('', row.status)) : chip('', 'ยังไม่เช็ค');
                 if (status.innerHTML.trim() !== html) status.innerHTML = html;
                 const t = row && row.check_in_at ? fmt.format(new Date(row.check_in_at)) : '—';
                 if (time && time.textContent !== t) time.textContent = t;
@@ -381,7 +332,7 @@ async function submitBulk() {
             applyFilters();
             if (!data.is_open) closed();
         } catch (_) {
-            set('liveUpdated', 'อัปเดตไม่สำเร็จ — จะลองใหม่อัตโนมัติ');
+            set('liveUpdated', 'อัปเดตไม่สำเร็จ จะลองใหม่อัตโนมัติ');
         }
     }
     timer = setInterval(refresh, 10000);

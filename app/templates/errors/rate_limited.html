@@ -4,16 +4,11 @@
 {% block content %}
 {% set wait = wait or 60 %}
 <div class="max-w-md mx-auto pt-6">
-    <article class="pass{% if session.get('user_role') != 'student' %} pass-on-light{% endif %}" aria-labelledby="rl-title">
-        <div class="pass-band" data-state="closed"><span>รอสักครู่</span><span id="rlLeft" aria-live="off">{{ '%d:%02d' | format(wait // 60, wait % 60) }}</span></div>
-        <div class="pass-body">
-            <h1 id="rl-title" class="pass-code" style="font-size:24px">คำขอมากเกินไป</h1>
-            <p class="pass-name mt-1">ระบบพักคำขอจากบัญชีนี้ไว้ชั่วครู่ เพื่อไม่ให้เซิร์ฟเวอร์ทำงานหนักเกิน ลองใหม่ได้เมื่อเวลาด้านบนหมด</p>
-        </div>
-        <div class="pass-perf" aria-hidden="true"></div>
-        <div class="pass-foot">
-            <a href="{{ request.full_path }}" id="rlRetry" class="btn-quiet" aria-disabled="true" data-wait="{{ wait }}">ลองใหม่ได้ในอีก {{ wait }} วินาที</a>
-        </div>
+    <article class="sc-card sc-hero sc-empty" aria-labelledby="rl-title" style="padding:40px 24px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" style="color:var(--sc-late);background:var(--sc-late-bg)"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <h1 id="rl-title" class="sc-title" style="font-size:20px">คำขอมากเกินไป</h1>
+        <p class="sc-note">ระบบพักคำขอจากบัญชีนี้ไว้ชั่วครู่<br>ลองใหม่ได้ในอีก <b id="rlLeft" aria-live="off" style="color:var(--sc-text)">{{ '%d:%02d' | format(wait // 60, wait % 60) }}</b></p>
+        <a href="{{ request.full_path }}" id="rlRetry" class="btn-quiet mt-4" aria-disabled="true" data-wait="{{ wait }}">ลองใหม่ได้ในอีก {{ wait }} วินาที</a>
     </article>
 </div>
 {% endblock %}
@@ -32,7 +27,7 @@
         if (wait <= 0) {
             left.textContent = '0:00';
             btn.textContent = 'ลองใหม่';
-            btn.className = 'btn-board';
+            btn.className = 'btn-board mt-4';
             btn.removeAttribute('aria-disabled');
             return;
         }

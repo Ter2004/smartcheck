@@ -50,9 +50,11 @@ class FrontendHardeningTests(unittest.TestCase):
         self.assertNotIn("tailwind.config", base, "no Play CDN runtime")
         head = base[:base.index("</head>")]
         # Last shared stylesheet in <head>, where the runtime used to add its <style>:
-        # same cascade. Only the student world's pass.css may follow it, on purpose.
+        # same cascade. Only the theme sheets (pass.css, then the 2026-11-16 redesign.css
+        # tokens) may follow it, on purpose.
         tail = head.rstrip().split("filename='css/tailwind.css') }}\">", 1)[1]
-        tail = " ".join(line for line in tail.splitlines() if "css/pass.css" not in line)
+        tail = " ".join(line for line in tail.splitlines()
+                        if "css/pass.css" not in line and "css/redesign.css" not in line)
         self.assertNotIn("<link", tail)
         self.assertNotIn("<style", tail)
 

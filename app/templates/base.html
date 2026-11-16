@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-{% set page_ground = '#F3F5FA' if session.get('user_role') in ('teacher', 'admin') else '#0B1D3A' %}
+{% set page_ground = '#F6F7F8' %}
 <html lang="th" style="background:{{ page_ground }}">
 <head>
     <meta charset="UTF-8">
@@ -11,14 +11,14 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <!-- Legacy styles (needed by camera pages only) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
     <style>
         * { box-sizing: border-box; }
-        body { font-family: 'Noto Sans Thai', system-ui, sans-serif; }
+        body { font-family: 'IBM Plex Sans Thai', system-ui, sans-serif; }
         code, .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
         /* Sidebar transition */
@@ -38,7 +38,7 @@
         .toast-item { animation: toastIn 0.3s ease forwards; }
 
         /* Active nav link */
-        .nav-active { background: #12284D; color: #FFB000 !important; }
+        .nav-active { background: #EEF3FB; color: #2554B1 !important; }
         .nav-active svg { stroke: currentColor; }
     </style>
 
@@ -50,6 +50,9 @@
     <!-- Boarding-pass components for every role; students also get the tarmac page
          (data-world="pass" on <body>). After Tailwind so it wins. -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pass.css') }}">
+    <!-- 2026-11-16 redesign (white / gray / blue, IBM Plex Sans Thai). Last, so its
+         tokens win over modern.css, Tailwind and pass.css. -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/redesign.css') }}">
 </head>
 
 <body class="bg-slate-50 text-slate-800 antialiased"{% if session.get('user_role') == 'student' %} data-world="pass"{% endif %}>

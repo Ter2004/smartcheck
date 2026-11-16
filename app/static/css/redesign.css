@@ -1,0 +1,253 @@
+/* SmartCheck redesign 2026-11-16: white / gray / blue, IBM Plex Sans Thai.
+   Source of truth: Figma "SmartCheck Redesign" (Foundations page). Hex values below
+   are the Core Colors those Figma variables resolve to. Loaded last (base.html), so it
+   re-themes Tailwind utilities, modern.css and the old boarding-pass classes without
+   touching template markup or the JS that hooks into it.
+   Green / orange / red are for attendance status only. */
+:root {
+    --sc-bg: #F6F7F8;          /* Surface/Secondary  (Grayscale/50) */
+    --sc-surface: #FFFFFF;     /* Surface/Primary    (Grayscale/00) */
+    --sc-hover: #EEEFF2;       /* Surface/Secondary-Hover (Grayscale/100) */
+    --sc-line: #E2E4E9;        /* Border/Primary-light (Grayscale/150) */
+    --sc-line-strong: #D4D7DD; /* Border/Primary (Grayscale/200) */
+    --sc-text: #121212;        /* Text/Primary (Grayscale/900) */
+    --sc-text-2: #3A404A;      /* Text/Secondary (Grayscale/700) */
+    --sc-text-3: #656E81;      /* Text/Tertiary (Grayscale/500): 4.8:1 on --sc-bg */
+    --sc-primary: #2D64D2;     /* Action/Primary (Primary/500): 5.4:1 with white */
+    --sc-primary-h: #2554B1;   /* Action/Primary-Hover (Primary/600) */
+    --sc-primary-c: #1F4693;   /* Action/Primary-Click (Primary/700) */
+    --sc-primary-lt: #EEF3FB;  /* Surface/Info-subtle (Primary/50) */
+    --sc-primary-lt2: #DDE6F8; /* Primary/100 */
+    --sc-primary-line: #B3C7EF;/* Primary/200 */
+    --sc-ok-bg: #EFFAF4;  --sc-ok: #1F6B3F;  --sc-ok-line: #B8EACD;   /* Green 50 / 800 / 200 */
+    --sc-late-bg: #FDF6ED; --sc-late: #7B4C0E; --sc-late-line: #F5D6AD; --sc-late-solid: #E48D1B; /* Yellow */
+    --sc-err-bg: #FBEEEE; --sc-err: #B12525; --sc-err-line: #EFB3B3;  /* Red 50 / 600 / 200 */
+    --sc-radius: 12px;
+    --sc-radius-lg: 16px;
+    --sc-font: 'IBM Plex Sans Thai', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+    /* Old boarding-pass variables, re-pointed so every rule that still reads them follows. */
+    --tarmac: var(--sc-bg);
+    --tarmac-2: var(--sc-surface);
+    --tarmac-line: var(--sc-line);
+    --gate: var(--sc-primary);
+    --go: var(--sc-primary);
+    --go-deep: var(--sc-primary-h);
+    --stop: var(--sc-err);
+    --late: var(--sc-late-solid);
+    --late-ink: var(--sc-late);
+    --pass-ink: var(--sc-text);
+    --pass-muted: var(--sc-text-3);
+    --pass-rule: var(--sc-line);
+    --primary: var(--sc-primary);
+    --primary-h: var(--sc-primary-h);
+    --primary-lt: var(--sc-primary-lt);
+    --bg: var(--sc-bg);
+    --text: var(--sc-text);
+    --text-2: var(--sc-text-2);
+    --text-muted: var(--sc-text-3);
+    --border: var(--sc-line);
+    --radius: var(--sc-radius);
+    --radius-lg: var(--sc-radius-lg);
+    --shadow: none;
+}
+
+/* ── Type: one family everywhere (code keeps its mono) ───────────── */
+html body, html body :is(div, span, p, a, b, strong, small, label, li, td, th, h1, h2, h3, h4, h5, h6,
+    button, input, select, textarea, summary, legend) { font-family: var(--sc-font); }
+html body :is(code, .mono, kbd, pre) { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+main h1, main h2, main h3 { letter-spacing: 0 !important; }
+main h1 { font-weight: 600; }
+::selection { background: var(--sc-primary-lt2); color: var(--sc-text); }
+
+/* ── Ground ──────────────────────────────────────────────────────── */
+html, body, body.bg-slate-50, body[data-world="pass"] { background: var(--sc-bg) !important; color: var(--sc-text); }
+:is(a, button, input, select, textarea, summary):focus-visible,
+#sidebar :focus-visible, .app-topbar :focus-visible, [data-world="pass"] :focus-visible {
+    outline: 2px solid var(--sc-primary); outline-offset: 2px;
+}
+
+/* ── Sidebar + phone top bar: white, blue for the current page ───── */
+#sidebar { background: var(--sc-surface) !important; color: var(--sc-text); border-color: var(--sc-line) !important; }
+#sidebar :is(.border-slate-100, .border-slate-200) { border-color: var(--sc-line) !important; }
+#sidebar :is(.text-slate-900, .text-slate-800) { color: var(--sc-text); }
+#sidebar :is(.text-slate-400, .text-slate-500, .text-slate-600) { color: var(--sc-text-2); }
+#sidebar a:hover, #sidebar button:hover { background: var(--sc-bg) !important; color: var(--sc-text) !important; }
+#sidebar form button:hover { background: var(--sc-err-bg) !important; color: var(--sc-err) !important; }
+#sidebar .nav-link { border-radius: 8px; }
+#sidebar .nav-active, .nav-active { background: var(--sc-primary-lt) !important; color: var(--sc-primary-h) !important; font-weight: 600; }
+:is(#sidebar, .app-topbar) .bg-indigo-600 { background: var(--sc-primary); }
+:is(#sidebar, .app-topbar) .bg-indigo-600 svg { color: #fff; }
+#sidebar .bg-indigo-100 { background: var(--sc-primary-lt); color: var(--sc-primary-h); }
+.app-topbar { background: var(--sc-surface) !important; border-color: var(--sc-line) !important; }
+.app-topbar :is(.text-slate-900, .text-slate-600) { color: var(--sc-text); }
+.app-topbar button:hover { background: var(--sc-bg) !important; }
+
+/* ── Tailwind colour utilities → design tokens ───────────────────── */
+.bg-indigo-600, .bg-indigo-500 { background-color: var(--sc-primary) !important; }
+.hover\:bg-indigo-700:hover, .bg-indigo-700 { background-color: var(--sc-primary-h) !important; }
+.bg-indigo-400 { background-color: var(--sc-primary-line) !important; }
+.bg-indigo-50, .hover\:bg-indigo-50:hover, .bg-sky-50 { background-color: var(--sc-primary-lt) !important; }
+.bg-indigo-100, .bg-sky-100 { background-color: var(--sc-primary-lt2) !important; }
+.text-indigo-600, .text-indigo-700, .text-indigo-800, .text-sky-700,
+.hover\:text-indigo-600:hover, .hover\:text-indigo-700:hover, .hover\:text-indigo-800:hover { color: var(--sc-primary-h) !important; }
+.border-indigo-200, .border-indigo-300, .border-indigo-400, .border-sky-200 { border-color: var(--sc-primary-line) !important; }
+.border-indigo-600 { border-color: var(--sc-primary) !important; }
+.focus\:ring-indigo-500:focus, .focus\:ring-2:focus { --tw-ring-color: rgb(45 100 210 / 35%) !important; }
+.focus\:border-indigo-500:focus, main input:focus, main select:focus, main textarea:focus { border-color: var(--sc-primary) !important; }
+
+.text-slate-900, .text-slate-800, main .text-slate-900, main .text-slate-800 { color: var(--sc-text) !important; }
+.text-slate-700, .text-slate-600, .hover\:text-slate-900:hover, .hover\:text-slate-700:hover { color: var(--sc-text-2) !important; }
+.text-slate-500, .text-slate-400, main .text-slate-400, body:not([data-world="pass"]) .text-slate-500 { color: var(--sc-text-3) !important; }
+.text-slate-300 { color: var(--sc-line-strong) !important; }
+.border-slate-200, .border-slate-100 { border-color: var(--sc-line) !important; }
+.border-slate-300 { border-color: var(--sc-line-strong) !important; }
+.bg-slate-50, .hover\:bg-slate-50:hover { background-color: var(--sc-bg) !important; }
+.bg-slate-100, .hover\:bg-slate-100:hover { background-color: var(--sc-hover) !important; }
+.bg-slate-200 { background-color: var(--sc-line) !important; }
+.bg-slate-900 { background-color: var(--sc-text) !important; }
+
+.bg-emerald-50, .bg-emerald-100 { background-color: var(--sc-ok-bg) !important; }
+.border-emerald-200 { border-color: var(--sc-ok-line) !important; }
+.text-emerald-600, .text-emerald-700, .text-emerald-800, main .text-emerald-600 { color: var(--sc-ok) !important; }
+.bg-emerald-500 { background-color: #30A661 !important; }
+.bg-rose-50, .bg-rose-100, .bg-red-50, .hover\:bg-rose-50:hover { background-color: var(--sc-err-bg) !important; }
+.border-rose-200, .border-rose-300, .border-red-200 { border-color: var(--sc-err-line) !important; }
+.text-rose-500, .text-rose-600, .text-rose-700, .text-rose-800, .text-red-600, .text-red-500,
+.hover\:text-rose-600:hover, .hover\:text-rose-700:hover, .hover\:text-rose-800:hover { color: var(--sc-err) !important; }
+.bg-amber-50 { background-color: var(--sc-late-bg) !important; }
+.border-amber-200 { border-color: var(--sc-late-line) !important; }
+.text-amber-600, .text-amber-700, .text-amber-800, main .text-amber-600 { color: var(--sc-late) !important; }
+.hover\:bg-amber-700:hover { background-color: #A06313 !important; }
+
+/* ── Surfaces, controls, tables (teacher / admin) ────────────────── */
+main :is(div, section, details, a).bg-white.border.rounded-xl,
+main :is(div, section).bg-white.border.rounded-2xl,
+.help-disclosure { border-color: var(--sc-line) !important; border-radius: var(--sc-radius-lg); box-shadow: none; }
+main :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), select, textarea) {
+    min-height: 44px; border-radius: 8px; border-color: var(--sc-line-strong); background-color: #fff;
+}
+main ::placeholder, main .placeholder-slate-400::placeholder, main .placeholder-slate-500::placeholder { color: var(--sc-text-3); }
+main :is(button, a).bg-indigo-600 { min-height: 44px; border-radius: 8px; font-weight: 600; }
+main :is(button, a).bg-indigo-600:active { background-color: var(--sc-primary-c) !important; }
+main th { background: var(--sc-bg) !important; color: var(--sc-text-3); font-size: 12px; font-weight: 600; }
+main td { border-color: var(--sc-line) !important; }
+main tbody tr:hover { background: var(--sc-bg); }
+.toast-item { border-radius: var(--sc-radius); box-shadow: 0 8px 24px rgb(18 18 18 / 8%); }
+.spinner { border-top-color: var(--sc-primary); }
+.ci-dot.active, .step-dot.active, .progress-bar-fill, [data-world="pass"] .ci-dot.active { background: var(--sc-primary); color: #fff; }
+[data-world="pass"] .ci-dot.done { background: var(--sc-ok); color: #fff; }
+
+/* ── Student pages: cards on a light ground ──────────────────────── */
+.pass-head small { color: var(--sc-text-3); font-size: 14px; }
+.pass-head h1 { color: var(--sc-text) !important; font-weight: 600; font-size: 24px !important; letter-spacing: 0; }
+.pass-display { font-family: var(--sc-font); }
+
+.pass { background: var(--sc-surface); color: var(--sc-text); border: 1px solid var(--sc-line); border-radius: var(--sc-radius-lg); }
+.pass-on-light { box-shadow: none; border-color: var(--sc-line); }
+.pass-band { padding: 10px 16px; font-weight: 600; font-size: 14px; letter-spacing: 0;
+    background: var(--sc-bg); color: var(--sc-text-2); border-bottom: 1px solid var(--sc-line); }
+.pass-band[data-state="boarding"] { background: var(--sc-primary-lt); color: var(--sc-primary-h); border-color: var(--sc-primary-lt2); }
+.pass-band[data-state="closing"], .pass-band[data-state="failed"] { background: var(--sc-err-bg); color: var(--sc-err); border-color: var(--sc-err-line); }
+.pass-band[data-state="boarded"] { background: var(--sc-ok-bg); color: var(--sc-ok); border-color: var(--sc-ok-line); }
+.pass-band[data-state="late"] { background: var(--sc-late-bg); color: var(--sc-late); border-color: var(--sc-late-line); }
+.pass-band[data-state="closed"], .pass-band[data-state="waiting"] { background: var(--sc-bg); color: var(--sc-text-3); }
+.pass-body { padding: 16px; }
+.pass-code { font-weight: 600; font-size: 24px; line-height: 1.35; color: var(--sc-text); }
+.pass-name { font-size: 15px; color: var(--sc-text-3); }
+.pass-grid { gap: 12px; margin-top: 16px; }
+.pass-grid small { font-size: 13px; color: var(--sc-text-3); }
+.pass-grid b { font-weight: 600; font-size: 18px; color: var(--sc-text); }
+/* No perforation or notches: a plain divider between body and footer. */
+.pass-perf { border-top: 1px solid var(--sc-line); }
+.pass-perf::before, .pass-perf::after { display: none; }
+.pass-foot { padding: 16px; }
+.pass-foot p { font-size: 14px; color: var(--sc-text-3); }
+
+.btn-board, .btn-gate { min-height: 48px; border-radius: var(--sc-radius); background: var(--sc-primary); color: #fff;
+    font-weight: 600; font-size: 16px; }
+.btn-board:hover, .btn-gate:hover { background: var(--sc-primary-h); }
+.btn-board:active, .btn-gate:active { background: var(--sc-primary-c); transform: none; opacity: 1; }
+.btn-board:disabled, .btn-board[aria-disabled="true"] { background: var(--sc-primary-line); }
+.btn-quiet { min-height: 48px; border-radius: var(--sc-radius); background: var(--sc-surface); border: 1px solid var(--sc-line-strong);
+    color: var(--sc-text); font-weight: 600; font-size: 16px; }
+.btn-quiet:hover { background: var(--sc-hover); }
+
+.seg span { border-radius: 8px; border: 1px solid var(--sc-line-strong); color: var(--sc-text); font-weight: 600; min-height: 44px; }
+.seg input:checked + span { background: var(--sc-primary); border-color: var(--sc-primary); color: #fff; }
+.seg input:focus-visible + span { outline: 2px solid var(--sc-primary); }
+.seg-legend { color: var(--sc-text-2); }
+
+/* Today list: each class is its own white row card. */
+.board-title { color: var(--sc-text-2); font-weight: 600; font-size: 15px; margin: 24px 2px 8px; }
+.board-title span { color: var(--sc-text-3); font-size: 14px; font-weight: 400; }
+.board-row { background: var(--sc-surface); color: var(--sc-text); border: 1px solid var(--sc-line); border-radius: var(--sc-radius);
+    padding: 12px 16px; margin-top: 8px; }
+a.board-row:hover { border-color: var(--sc-primary-line); }
+a.board-row:active { background: var(--sc-primary-lt); opacity: 1; }
+.board-row b { font-weight: 600; color: var(--sc-text); }
+.board-row .what small { color: var(--sc-text-3); }
+.board-empty { color: var(--sc-text-3); border-top: 0; background: var(--sc-surface); border: 1px dashed var(--sc-line-strong);
+    border-radius: var(--sc-radius); padding: 16px; margin-top: 8px; }
+
+/* Status chips: icon-free pills, colour plus the word (มา / สาย / เปิดอยู่). */
+.chip { font-weight: 600; font-size: 12px; letter-spacing: 0; padding: 3px 10px; border-radius: 999px;
+    background: var(--sc-hover); color: var(--sc-text-2); }
+.chip.boarding { background: var(--sc-primary-lt); color: var(--sc-primary-h); }
+.chip.boarded { background: var(--sc-ok-bg); color: var(--sc-ok); }
+.chip.late { background: var(--sc-late-bg); color: var(--sc-late); }
+.chip.closed, .chip.chip-muted { background: var(--sc-hover); color: var(--sc-text-2); }
+
+/* Weekly timetable */
+.tt { background: var(--sc-surface); border: 1px solid var(--sc-line); }
+.tt-head > span, .tt-dayname { background: var(--sc-surface); }
+.tt-hours span { color: var(--sc-text-3); }
+.tt-dayname { color: var(--sc-text-2); font-weight: 600; }
+.tt-row.today .tt-dayname { color: var(--sc-primary-h); }
+.tt-track { background: repeating-linear-gradient(to right, var(--sc-line) 0 1px, transparent 1px var(--tt-col)); }
+.tt-row.today .tt-track { background-color: var(--sc-primary-lt); }
+.tt-block { background: var(--sc-bg); color: var(--sc-text); border: 1px solid var(--sc-line-strong); }
+.tt-block small { color: var(--sc-text-3); }
+.tt-block.open { background: var(--sc-primary); color: #fff; border-color: var(--sc-primary); box-shadow: none; }
+.tt-block.open small { color: #fff; }
+.tt-block.boarded { background: var(--sc-ok-bg); color: var(--sc-ok); border-color: var(--sc-ok-line); }
+.tt-block.boarded small { color: var(--sc-ok); }
+.tt-block.closed { background: var(--sc-hover); color: var(--sc-text-2); border-color: var(--sc-line); }
+.tt-block.closed small { color: var(--sc-text-3); }
+a.tt-block:focus-visible { outline: 2px solid var(--sc-primary); }
+.tt-scroll:focus-visible { outline: 2px solid var(--sc-primary); }
+.tt-legend { color: var(--sc-text-3); }
+.tt-legend i { background: var(--sc-bg); border: 1px solid var(--sc-line-strong); }
+.tt-legend i.open { background: var(--sc-primary); border-color: var(--sc-primary); }
+.tt-legend i.boarded { background: var(--sc-ok-bg); border-color: var(--sc-ok-line); }
+.tt-legend i.closed { background: var(--sc-hover); }
+
+/* Notices, back link, help */
+.tarmac-note { background: var(--sc-primary-lt); border: 1px solid var(--sc-primary-lt2); color: var(--sc-text); border-radius: var(--sc-radius); }
+.tarmac-note small { color: var(--sc-text-2); }
+.tarmac-note svg { color: var(--sc-primary) !important; }
+.tarmac-link { color: var(--sc-primary-h); }
+.tarmac-back { color: var(--sc-text-2); }
+.tarmac-back:hover { color: var(--sc-text); }
+[data-world="pass"] details { background: var(--sc-surface) !important; border: 1px solid var(--sc-line) !important; border-radius: var(--sc-radius) !important; }
+[data-world="pass"] details summary { color: var(--sc-text); }
+[data-world="pass"] details ol, [data-world="pass"] [style*="255 255 255"] { color: var(--sc-text-2) !important; }
+
+/* Bottom tab bar */
+.tabbar { background: var(--sc-surface); border-top: 1px solid var(--sc-line); }
+.tabbar a { color: var(--sc-text-3); font-size: 12px; font-weight: 500; }
+.tabbar a[aria-current="page"] { color: var(--sc-primary-h); font-weight: 600; }
+.tabbar a:active { background: var(--sc-primary-lt); opacity: 1; }
+.tabbar a:focus-visible { outline: 2px solid var(--sc-primary); }
+html.is-navigating::before { background: var(--sc-primary); }
+
+/* ── Login: one centred card on the gray ground ───────────────────── */
+.login-layout { grid-template-columns: 1fr; }
+.login-intro { display: none; }
+.login-form-panel { background: var(--sc-bg); min-height: 100svh; }
+.login-form-panel .lg\:hidden { display: flex !important; }
+.login-form-panel .lg\:hidden .text-white { color: var(--sc-text) !important; }
+.login-form-panel .lg\:hidden svg { color: #fff !important; }
+.login-form-panel .pass-band { display: none; }
+.login-form-panel .pass-body { padding: 32px 24px 8px; }
+.login-title { color: var(--sc-text); font-size: 24px !important; font-weight: 600; }

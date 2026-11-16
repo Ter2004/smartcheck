@@ -939,6 +939,7 @@ class CheckinFlow {
         document.getElementById("stepBleRoom").style.display = "none";
         this._retryRoomCode = false;
         this._goToStep(3);
+        this._setPopup(false);   // the checking bar stays on the page
         document.getElementById('doneLoadingView').style.display  = 'block';
         const loadingMessage = document.querySelector('#doneLoadingView p');
         if (loadingMessage) loadingMessage.textContent = 'กำลังเปรียบเทียบใบหน้ากับข้อมูลที่ลงทะเบียน กรุณารอและอย่าปิดหน้านี้';
@@ -1146,9 +1147,28 @@ class CheckinFlow {
         // With no retry (or check), going back to today is the one thing left to do.
         const back = document.getElementById('doneBack');
         if (back) back.className = canRetry || state === 'unknown' ? 'btn-quiet' : 'btn-board';
+        // Not recorded / retake: pop up over the page (owner, 2026-11-16). Success stays on the page.
+        this._setPopup(state === 'error' || state === 'spoof');
         // Screen readers: land on the answer.
         titleEl.setAttribute('tabindex', '-1');
         titleEl.focus({preventScroll: true});
+    }
+
+    /** Shows the result view as a pop-up (dialog) over the page, or back in place. */
+    _setPopup(on) {
+        const box = document.getElementById('stepDone');
+        if (!box) return;
+        box.classList.toggle('ci-pop', on);
+        const view = document.getElementById('doneResultView');
+        if (!view) return;
+        if (on) {
+            view.setAttribute('role', 'alertdialog');
+            view.setAttribute('aria-modal', 'true');
+            view.setAttribute('aria-labelledby', 'doneTitle');
+            view.setAttribute('aria-describedby', 'doneMsg');
+        } else {
+            ['role', 'aria-modal', 'aria-labelledby', 'aria-describedby'].forEach(a => view.removeAttribute(a));
+        }
     }
 
     // ─── Helpers ─────────────────────────────────────────

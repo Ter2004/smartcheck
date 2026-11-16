@@ -5,59 +5,72 @@
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" integrity="sha384-nKiz5QrpRlMQLw5nrZcprT7N9vmmAcIgV8TuGuep4x91V4JIPsXa+D44Wxj0guoa" crossorigin="anonymous"></script>
 <script src="{{ url_for('static', filename='js/camera_guard.js') }}"></script>
 <style>
-    /* Figma "Student / Enroll face": consent card → camera with a five-part ring → result.
-       enrollment_v2.js drives .ev2-screen.active, .ev2-seg states, .ev2-arrow.show and the ids. */
-    /* !important: redesign.css (loaded later) gives .sc-card display:flex. */
-    .ev2-screen:not(.active) { display: none !important; }
-    .ev2-screen.active { display: flex; flex-direction: column; gap: 16px; animation: sc-rise .4s var(--sc-ease) both; }
+    .ev2-screen { display: none; }
+    .ev2-screen.active { display: block; }
+    .ev2-stage { position: relative; width: 100%; aspect-ratio: 3/4; max-height: 62vh;
+                 background: #0B1D3A; border-radius: 16px; overflow: hidden; }
+    /* Shown like a mirror; the frames sent to the server are drawn from the raw stream. */
+    .ev2-stage video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    /* Oval cut-out, a five-part ring (one part per pose) and the pose arrows, as an SVG on top of the video. */
     .ev2-overlay { position: absolute; inset: 0; pointer-events: none; }
-    .ev2-facts { display: flex; flex-direction: column; gap: 10px; }
-    .ev2-facts li { display: flex; align-items: flex-start; gap: 12px; font-size: 14px; line-height: 20px; color: var(--sc-text-2); }
-    .ev2-facts li i { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px;
-        background: var(--sc-primary-lt); color: var(--sc-primary); }
-    .ev2-facts li svg { width: 18px; height: 18px; }
-    .ev2-facts b { display: block; font-weight: 600; color: var(--sc-text); }
+    .ev2-seg { fill: none; stroke-width: 7; stroke-linecap: round; stroke: rgba(255,255,255,0.35); transition: stroke 0.2s; }
+    .ev2-seg.active { stroke: #FFB000; }
+    .ev2-seg.done { stroke: var(--go); }
+    .ev2-arrow { opacity: 0; fill: var(--gate); }
+    .ev2-arrow.show { animation: ev2blink 0.9s ease-in-out infinite; }
+    @keyframes ev2blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .ev2-arrow.show { animation: none; opacity: 1; } }
+    .ev2-instruction { min-height: 3.2em; }
+    /* Checking bar: an estimate that eases toward 90% while the server works, then jumps to 100%. */
+    .ev2-bar { height: 10px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 1.25rem 0 0.75rem; }
+    .ev2-bar-fill { height: 100%; width: 0; background: var(--go); border-radius: 999px; transition: width 0.25s linear; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="max-w-md mx-auto">
-    <div class="sc-topbar">
-        <a href="{{ url_for('student.dashboard') }}" class="sc-back" aria-label="กลับหน้าวันนี้">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-        </a>
-        <h1>ลงทะเบียนใบหน้า<small>ครั้งเดียว ใช้เช็คชื่อได้ทุกคาบ</small></h1>
-    </div>
+    <a href="{{ url_for('student.dashboard') }}" class="tarmac-back">
+        <svg class="w-4 h-4" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        กลับหน้าหลัก
+    </a>
+    <header class="pass-head">
+        <small>ครั้งเดียว ใช้เช็คชื่อได้ทุกคาบ</small>
+        <h1>ลงทะเบียนใบหน้า</h1>
+    </header>
 
     <!-- ── Screen 1: consent + start ── -->
-    <section class="ev2-screen active sc-card sc-hero" id="ev2Consent">
-        <ul class="ev2-facts">
-            <li><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3.5"/><path d="M4 20a8 8 0 0 1 16 0"/><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/></svg></i>
-                <span><b>เก็บอะไร</b>ค่าตัวเลขของใบหน้า 7 ชุด (หน้าตรง ซ้าย ขวา เงย ก้ม) และรูปหน้าตรง 1 รูป</span></li>
-            <li><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v5.5c0 4.4 3.2 8.3 7.5 9.5 4.3-1.2 7.5-5.1 7.5-9.5V6L12 3Z"/></svg></i>
-                <span><b>ใช้ทำอะไร</b>ยืนยันตัวตนตอนเช็คชื่อเท่านั้น อาจารย์ในรายวิชาของคุณเห็นรูปได้</span></li>
-            <li><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></i>
-                <span><b>ลบได้ไหม</b>ถอนความยินยอมและให้ลบได้ทุกเมื่อ โดยแจ้งผู้ดูแลระบบ</span></li>
+    <section class="ev2-screen active pass" id="ev2Consent">
+        <div class="pass-band" data-state="waiting"><span>ก่อนเริ่ม</span><span>PDPA</span></div>
+        <div class="pass-body">
+        <ul class="text-sm text-slate-600 space-y-1.5 mb-3 list-disc pl-5">
+            <li>ระบบเก็บ <b>ข้อมูลใบหน้าในรูปตัวเลข 7 ชุด</b> (หน้าตรง หันซ้าย หันขวา เงย ก้ม) และ <b>รูปหน้าตรง 1 รูป</b></li>
+            <li>ใช้เพื่อยืนยันตัวตนตอนเช็คชื่อเท่านั้น อาจารย์ในรายวิชาของคุณเห็นรูปได้</li>
+            <li>ถอนความยินยอมและให้ลบข้อมูลได้ทุกเมื่อ โดยแจ้งผู้ดูแลระบบ (admin)</li>
         </ul>
-        <a href="{{ url_for('student.pdpa_notice') }}" target="_blank" rel="noopener" class="sc-link" style="min-height:36px">อ่านประกาศความเป็นส่วนตัวฉบับเต็ม
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></a>
-        <label class="sc-check">
-            <input type="checkbox" id="ev2ConsentCheck">
-            <span>ข้าพเจ้ายินยอมให้ SmartCheck เก็บและใช้ข้อมูลใบหน้าตามประกาศข้างต้น</span>
+        <a href="{{ url_for('student.pdpa_notice') }}" target="_blank" rel="noopener"
+           class="inline-flex items-center min-h-[44px] text-sm text-indigo-600 underline underline-offset-4">อ่านประกาศความเป็นส่วนตัวฉบับเต็ม</a>
+        <label class="flex items-start gap-3 cursor-pointer my-3 py-2 rounded-xl">
+            <input type="checkbox" id="ev2ConsentCheck" class="w-5 h-5 mt-0.5 flex-shrink-0 accent-indigo-600">
+            <span class="text-sm text-slate-700">ข้าพเจ้ายินยอมให้ SmartCheck เก็บและใช้ข้อมูลใบหน้าตามประกาศข้างต้น</span>
         </label>
-        <button id="ev2Start" disabled class="btn-board disabled:opacity-40 disabled:cursor-not-allowed">เริ่มและเปิดกล้อง</button>
-        <p id="ev2ConsentError" class="text-sm text-rose-600" role="alert"></p>
+        <button id="ev2Start" disabled
+                class="btn-board disabled:opacity-40 disabled:cursor-not-allowed">
+            เริ่มและเปิดกล้อง
+        </button>
+        <p id="ev2ConsentError" class="text-sm text-rose-600 mt-3" role="alert"></p>
+        </div>
     </section>
 
     <!-- ── Screen 2: camera session (no buttons) ── -->
-    <section class="ev2-screen sc-card sc-hero" id="ev2Camera">
-        <p id="ev2Instruction" class="sc-instruction" style="margin:0" role="status" aria-live="polite">กำลังเปิดกล้อง...</p>
-        <div class="sc-stage">
+    <section class="ev2-screen pass" id="ev2Camera" style="padding:16px">
+        <p id="ev2Instruction" class="ev2-instruction text-center text-lg font-semibold text-slate-800 mb-3"
+           role="status" aria-live="polite">กำลังเปิดกล้อง...</p>
+        <div class="ev2-stage">
             <video id="ev2Video" autoplay playsinline muted></video>
             <svg class="ev2-overlay" viewBox="0 0 300 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
                 <defs><mask id="ev2Mask"><rect width="300" height="400" fill="white"/>
                     <ellipse cx="150" cy="190" rx="98" ry="130" fill="black"/></mask></defs>
-                <rect width="300" height="400" fill="rgba(18,24,38,0.62)" mask="url(#ev2Mask)"/>
+                <rect width="300" height="400" fill="rgba(15,23,42,0.55)" mask="url(#ev2Mask)"/>
                 <!-- Five copies of the same oval, starting at the top and running clockwise;
                      enrollment_v2.js dashes each one to show its own fifth. -->
                 {% for i in range(5) %}
@@ -70,37 +83,31 @@
                 <polygon class="ev2-arrow" data-pose="down"  points="150,376 128,352 172,352"/>
             </svg>
         </div>
-        <p id="ev2Hint" class="sc-hint"></p>
+        <p id="ev2Hint" class="text-center text-sm text-slate-500 mt-3"></p>
     </section>
 
     <!-- ── Screen 3: result ── -->
-    <section class="ev2-screen sc-card sc-hero" id="ev2Result">
+    <section class="ev2-screen pass text-center" id="ev2Result" style="padding:20px">
         <div id="ev2Checking">
-            <div class="sc-bar" role="progressbar" aria-label="กำลังตรวจสอบใบหน้า"><div class="sc-bar-fill" id="ev2Bar"></div></div>
-            <p class="sc-hint">กำลังตรวจสอบใบหน้า...</p>
+            <div class="ev2-bar" role="progressbar" aria-label="กำลังตรวจสอบใบหน้า"><div class="ev2-bar-fill" id="ev2Bar"></div></div>
+            <p class="text-sm text-slate-500">กำลังตรวจสอบใบหน้า...</p>
         </div>
         <div id="ev2Success" hidden>
-            <div class="sc-result">
-                <div class="sc-result-icon" data-tone="go" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path class="draw" d="m5 12.5 4.5 4.5L19 7.5"/></svg>
-                </div>
-                <h2 class="sc-result-title">ลงทะเบียนสำเร็จ</h2>
-                <p class="sc-hint">ใช้ใบหน้านี้เช็คชื่อได้แล้ว</p>
+            <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
-            <a href="{{ url_for('student.dashboard') }}" class="btn-board mt-4">กลับหน้าวันนี้</a>
+            <h2 class="text-base font-semibold text-slate-800 mb-1">ลงทะเบียนสำเร็จ</h2>
+            <p class="text-sm text-slate-500 mb-5">ใช้ใบหน้านี้เช็คชื่อได้แล้ว</p>
+            <a href="{{ url_for('student.dashboard') }}"
+               class="inline-flex items-center justify-center w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl">กลับหน้าหลัก</a>
         </div>
         <div id="ev2Failure" hidden>
-            <div class="sc-result">
-                <div class="sc-result-icon" data-tone="stop" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10M17 7 7 17"/></svg>
-                </div>
-                <h2 class="sc-result-title">ยังไม่สำเร็จ</h2>
-                <p id="ev2Fix" class="sc-hint whitespace-pre-line" style="color:var(--sc-err)"></p>
-            </div>
-            <div class="flex flex-col gap-2 mt-4">
-                <button id="ev2Retry" class="btn-board">ลองใหม่</button>
-                <a id="ev2Home" href="{{ url_for('student.dashboard') }}" hidden class="btn-quiet">กลับหน้าวันนี้</a>
-            </div>
+            <h2 class="text-base font-semibold text-slate-800 mb-2">ยังไม่สำเร็จ</h2>
+            <p id="ev2Fix" class="text-base text-rose-600 mb-5 whitespace-pre-line"></p>
+            <button id="ev2Retry"
+                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2.5 rounded-xl">ลองใหม่</button>
+            <a id="ev2Home" href="{{ url_for('student.dashboard') }}" hidden
+               class="inline-flex items-center justify-center w-full border border-slate-200 text-slate-600 text-sm font-medium py-2.5 rounded-xl">กลับหน้าหลัก</a>
         </div>
     </section>
 </div>

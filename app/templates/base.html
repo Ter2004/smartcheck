@@ -1,5 +1,9 @@
 <!DOCTYPE html>
-{% set page_ground = '#F6F7F8' %}
+{# Face check-in and face enrollment keep the pre-redesign look (owner, 2026-11-16). #}
+{# /student/checkin without session_id is the class list + timetable: that one gets the new look. #}
+{% set legacy_ui = request.endpoint == 'student.enroll_face'
+    or (request.endpoint == 'student.checkin' and request.args.get('session_id')) %}
+{% set page_ground = '#0B1D3A' if legacy_ui else '#F6F7F8' %}
 <html lang="th" style="background:{{ page_ground }}">
 <head>
     <meta charset="UTF-8">
@@ -11,14 +15,18 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    {% if legacy_ui %}
+    <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    {% else %}
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    {% endif %}
 
     <!-- Legacy styles (needed by camera pages only) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
     <style>
         * { box-sizing: border-box; }
-        body { font-family: 'IBM Plex Sans Thai', system-ui, sans-serif; }
+        body { font-family: {{ "'Noto Sans Thai'" if legacy_ui else "'IBM Plex Sans Thai'" }}, system-ui, sans-serif; }
         code, .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
         /* Sidebar transition */
@@ -38,7 +46,7 @@
         .toast-item { animation: toastIn 0.3s ease forwards; }
 
         /* Active nav link */
-        .nav-active { background: #EEF3FB; color: #2554B1 !important; }
+        .nav-active { {{ 'background: #12284D; color: #FFB000' if legacy_ui else 'background: #EEF3FB; color: #2554B1' }} !important; }
         .nav-active svg { stroke: currentColor; }
     </style>
 
@@ -52,7 +60,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pass.css') }}">
     <!-- 2026-11-16 redesign (white / gray / blue, IBM Plex Sans Thai). Last, so its
          tokens win over modern.css, Tailwind and pass.css. -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/redesign.css') }}">
+    {% if not legacy_ui %}<link rel="stylesheet" href="{{ url_for('static', filename='css/redesign.css') }}">{% endif %}
 </head>
 
 <body class="bg-slate-50 text-slate-800 antialiased"{% if session.get('user_role') == 'student' %} data-world="pass"{% endif %}>

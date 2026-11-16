@@ -761,6 +761,8 @@ class CheckinFlow {
         document.querySelector('.ci-radar')?.classList.remove('is-idle');
         document.getElementById('broadcastHint')?.removeAttribute('hidden');
         // Board first: no camera, no face scan until the phone is in the room's range.
+        this._timing = {page_ms: Math.round(performance.now())};
+        const scanStarted = performance.now();
         let result;
         try {
             result = await new BroadcastRoomScanner().findRoom(this.expectedRoom);
@@ -783,6 +785,7 @@ class CheckinFlow {
             return;
         }
         console.info('step=broadcast_scan result=pass details={}');
+        this._timing.scan_ms = Math.round(performance.now() - scanStarted);
         status.textContent = 'พบสัญญาณห้อง ' + result.room;
         // The camera opens now; the server checks the board code meanwhile.
         await this._verifyProximity(result.room, null, null, {broadcast_payload: result.payload}, true);
@@ -933,7 +936,9 @@ class CheckinFlow {
             return;
         }
         clearInterval(this._receiptTimer);
-        console.info('step=capture result=complete details=' + JSON.stringify({elapsed_ms: Math.round(performance.now() - this._proximity.captureStarted)}));
+        const captureMs = Math.round(performance.now() - this._proximity.captureStarted);
+        console.info('step=capture result=complete details=' + JSON.stringify({elapsed_ms: captureMs}));
+        if (this._timing) this._timing.capture_ms = captureMs;
         this._debug?.event('submit check-in');
         document.getElementById("stepRoomCode").style.display = "none";
         document.getElementById("stepBleRoom").style.display = "none";
@@ -969,6 +974,7 @@ class CheckinFlow {
                     liveness_nonce:       this._liveness?.nonce,
                     liveness_turn_frames: this._liveness?.turnFrames,
                     liveness_after:       this._liveness?.after,
+                    client_timing:        this._timing || null,
                 }),
             });
 

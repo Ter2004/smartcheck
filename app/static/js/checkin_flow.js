@@ -135,9 +135,11 @@ class CheckinFlow {
     // Step 2: Detect a steady frontal face, then (head_turn mode) one server-chosen
     // head turn and a look back, and submit automatically.
 
-    // Still frontal frames before the capture (~0.7 s at the 66 ms pump). The server
+    // At least this many still frontal frames before the capture. The server
     // still runs the face match and anti-spoof on the frame; this only picks a steady one.
-    static READY_FRAMES = 10;
+    static READY_FRAMES = 4;
+    // ...and for at least this long. Time, not a frame count alone, so a slow phone does not wait longer.
+    static READY_MS = 700;
 
     // Loaded in the background while the room board is found (it used to block the page
     // in <head>, so the scan could only start after it had downloaded). Same file + SRI.
@@ -223,7 +225,12 @@ class CheckinFlow {
         this._stopStream(this._camStream);
         const generation = this._captureGeneration;
         const active = () => generation === this._captureGeneration && !!this._proximity;
-        let faceReadyFrames = 0, countingDown = false, verified = false;
+        let faceReadyFrames = 0, readySince = 0, countingDown = false, verified = false;
+        // The steady count starts again; counted for the speed report.
+        const resetReady = () => {
+            if (faceReadyFrames && this._timing) this._timing.resets = (this._timing.resets || 0) + 1;
+            faceReadyFrames = 0;
+        };
         // head_turn phases: 'frontal' → 'turn' → 'return' → submit
         let phase = 'frontal', turnCount = 0, backCount = 0, beforeFrame = null, turnFrame = null;
         let baselineRoll = 0;
@@ -277,9 +284,8 @@ class CheckinFlow {
         try {
             if (this._meshCleanup) await this._meshCleanup;
             if (!active()) return;
-            const acquired = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'user', width: 640, height: 480 }
-            });
+            const acquired = await this._takePrewarmedCamera()
+                || await navigator.mediaDevices.getUserMedia({video: CheckinFlow.CAMERA});
             if (!active()) { acquired.getTracks().forEach(t => t.stop()); return; }
             this._camStream = acquired;
             if (this._timing) this._timing.camera_ms = Math.round(performance.now() - this._proximity.captureStarted);
@@ -367,6 +373,7 @@ class CheckinFlow {
             if (!active() || verified || countingDown) return;
             if (performance.now() >= captureDeadline) { expireCapture(); return; }
             if (!video.videoWidth || !video.videoHeight) return;
+            if (this._timing) this._timing.frames = (this._timing.frames || 0) + 1;
 
             // ─── ตรวจ brightness ─────────────────────────────
             // Average of a 32x24 copy of the frame. Reading the full 640x480 frame back
@@ -388,7 +395,7 @@ class CheckinFlow {
                     ready: 0, faces: results.multiFaceLandmarks?.length || 0,
                     failed: ['brightness (other gates not evaluated)']});
                 guide.classList.remove('ok');
-                faceReadyFrames = 0;
+                resetReady();
                 setProgress(0);
                 status.textContent = 'แสงน้อยเกินไป — กรุณาอยู่ในพื้นที่ที่มีแสงสว่างเพียงพอ';
                 return;
@@ -399,7 +406,7 @@ class CheckinFlow {
                 this._debug?.sample({width: video.videoWidth, height: video.videoHeight,
                     ready: 0, faces: 0, failed: ['hasFace (geometry not evaluated)']});
                 guide.classList.remove('ok', 'fail');
-                faceReadyFrames = 0;
+                resetReady();
                 setProgress(0);
                 status.textContent = 'ไม่พบใบหน้า — จัดหน้าให้อยู่ในกรอบ';
                 return;
@@ -484,18 +491,21 @@ class CheckinFlow {
             if (faceOk) {
                 guide.classList.remove('fail');
                 guide.classList.add('ok');
+                if (!faceReadyFrames) readySince = performance.now();
                 faceReadyFrames++;
-                setProgress(Math.min(100, faceReadyFrames / CheckinFlow.READY_FRAMES * 100));
+                const steadyMs = performance.now() - readySince;
+                const ready = faceReadyFrames >= CheckinFlow.READY_FRAMES && steadyMs >= CheckinFlow.READY_MS;
+                setProgress(Math.min(100, steadyMs / CheckinFlow.READY_MS * 100));
                 status.textContent = '✓ พบใบหน้า — กรุณานิ่งสักครู่...';
 
-                if (faceReadyFrames >= CheckinFlow.READY_FRAMES && this.livenessMode === 'head_turn') {
+                if (ready && this.livenessMode === 'head_turn') {
                     // The frontal frame the server matches; the turn follows.
                     this._debug?.event(`${faceReadyFrames} ready frames; head turn requested`);
                     beforeFrame = snapFrame();
                     baselineRoll = CheckinFlow.eyeRollDeg(lm, video.videoWidth, video.videoHeight);
                     phase = 'turn';
                     status.textContent = `${turnLabel} แล้วค้างไว้สักครู่`;
-                } else if (faceReadyFrames >= CheckinFlow.READY_FRAMES) {
+                } else if (ready) {
                     this._debug?.event(`${faceReadyFrames} ready frames; capture complete`);
                     countingDown = true;
                     clearTimeout(this._streamTimeoutId);
@@ -513,7 +523,7 @@ class CheckinFlow {
             } else {
                 guide.classList.remove('ok');
                 guide.classList.add('fail');
-                faceReadyFrames = 0;
+                resetReady();
                 setProgress(0);
                 if (!closeEnough)  status.textContent = 'เข้าใกล้กล้องอีกหน่อย';
                 else if (!mouthOk) status.textContent = 'กรุณาหุบปาก';
@@ -552,7 +562,7 @@ class CheckinFlow {
                     await resultsWork;
                 }
             } catch (_) { fail('frame'); return; }
-            if (active() && !verified) this._frameTimer = setTimeout(pump, 66);
+            if (active() && !verified) this._frameTimer = setTimeout(pump, 16);
         };
         try {
             await video.play();
@@ -769,6 +779,7 @@ class CheckinFlow {
         document.getElementById('broadcastHint')?.removeAttribute('hidden');
         // Board first: no camera, no face scan until the phone is in the room's range.
         this._timing = {page_ms: Math.round(performance.now())};
+        this._prewarmCamera();
         const scanStarted = performance.now();
         const scanner = new BroadcastRoomScanner();
         let result;
@@ -780,6 +791,7 @@ class CheckinFlow {
             this._broadcastScanning = false;
         }
         if (!result.ok) {
+            this._dropPrewarmedCamera();   // not in the room: the camera goes off
             console.info('step=broadcast_scan result=reject details=' + JSON.stringify({code: result.code || 'scan_error'}));
             status.textContent = result.code === 'not_found'
                 ? 'ไม่พบสัญญาณห้องเรียน — กรุณาอยู่ภายในระยะสัญญาณของห้องเรียน แล้วกด "ลองใหม่"'
@@ -1216,6 +1228,31 @@ class CheckinFlow {
     }
 
 
+
+    static CAMERA = {facingMode: 'user', width: 640, height: 480};
+
+    /** Start opening the camera while the room board is being found (the page head starts it earlier still). */
+    _prewarmCamera() {
+        if (window.__scCamera || typeof BroadcastRoomScanner === 'undefined' || !BroadcastRoomScanner.available()
+            || !navigator.mediaDevices) return;
+        window.__scCamera = navigator.mediaDevices.getUserMedia({video: CheckinFlow.CAMERA}).catch(() => null);
+    }
+
+    /** The camera opened during the scan if it is still live, else null (a normal open follows). */
+    async _takePrewarmedCamera() {
+        const warm = window.__scCamera;
+        window.__scCamera = null;
+        const stream = warm ? await warm : null;
+        if (stream && stream.getVideoTracks().some(t => t.readyState === 'live')) return stream;
+        stream?.getTracks().forEach(t => t.stop());
+        return null;
+    }
+
+    _dropPrewarmedCamera() {
+        const warm = window.__scCamera;
+        window.__scCamera = null;
+        warm?.then(stream => stream?.getTracks().forEach(t => t.stop()));
+    }
 
     _stopStream(stream) {
         this._captureGeneration = (this._captureGeneration || 0) + 1;

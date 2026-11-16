@@ -52,7 +52,7 @@ function harness(debug, options = {}) {
     if (flow._debug) flow._debug.receiptDue = 90000;
     return {flow, context, elements, timers, created: () => created, encodes: () => encodes, streams: () => streams,
         closes: () => closes, submits: () => submits, meshes: () => meshes, warmups: () => warmups, advance: t => now = t,
-        dark: () => brightness = 0, frame: lm => callback({multiFaceLandmarks: lm ? [lm] : []})};
+        dark: () => brightness = 0, frame: lm => {now += 100; return callback({multiFaceLandmarks: lm ? [lm] : []});}};
 }
 function landmarks(ear = .28) {
     const lm = Array.from({length: 468}, () => ({x: .5, y: .5}));
@@ -66,7 +66,10 @@ function landmarks(ear = .28) {
     return lm;
 }
 (async () => {
-    const N = harness(false).flow.constructor.READY_FRAMES;   // still frames before capture
+    // Steady frames before capture: the harness clock moves 100 ms per frame, and the
+    // capture needs READY_FRAMES frames over READY_MS.
+    const C = harness(false).flow.constructor;
+    const N = Math.max(C.READY_FRAMES, C.READY_MS / 100 + 1);
     const off = harness(false);
     assert.equal(off.created(), 0);
     await off.flow._startVerify(); await off.frame(landmarks());
@@ -103,7 +106,7 @@ function landmarks(ear = .28) {
     assert.equal(pre.meshes(), 1, 'reuse the preloaded model');
     const ring = pre.elements.get('faceProgressVerify');
     for (let i = 0; i < N / 2; i++) await pre.frame(landmarks());
-    assert.equal(ring.style.strokeDashoffset, '50');
+    assert.equal(ring.style.strokeDashoffset, String(100 - (N / 2 - 1) * 100 / C.READY_MS * 100));
     await pre.frame(null);
     assert.equal(ring.style.strokeDashoffset, '100', 'lost face empties the ring');
     const fresh = harness(false);

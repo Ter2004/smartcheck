@@ -2,6 +2,17 @@
 {% block title %}เช็คชื่อเข้าเรียน — SmartCheck{% endblock %}
 
 {% block head %}
+{% if session_data and not already_checked and config.CHECKIN_PROXIMITY_METHOD == 'broadcast' and not request.args.get('via') %}
+<script>
+    // The camera starts opening while the page loads and the room board is found, so it is
+    // ready the moment the board is. Nothing is captured or sent before the board is found;
+    // checkin_flow.js takes this stream (_takePrewarmedCamera) or stops it (_dropPrewarmedCamera).
+    if (window.Capacitor?.isNativePlatform?.() && navigator.mediaDevices) {
+        window.__scCamera = navigator.mediaDevices
+            .getUserMedia({video: {facingMode: 'user', width: 640, height: 480}}).catch(() => null);
+    }
+</script>
+{% endif %}
 {# MediaPipe face_mesh.js is loaded by checkin_flow.js (CheckinFlow.loadFaceMesh) while the
    room board is being found, instead of blocking the page here. #}
 <style>

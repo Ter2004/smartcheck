@@ -1158,6 +1158,14 @@ class CheckinFlow {
     _setPopup(on) {
         const box = document.getElementById('stepDone');
         if (!box) return;
+        // A transformed or clipped ancestor (the card's rise-in animation) would trap position:fixed,
+        // so the pop-up sits directly under <body> while shown and goes back to its marker after.
+        if (!this._doneMarker) {
+            this._doneMarker = document.createComment('stepDone');
+            box.parentNode.insertBefore(this._doneMarker, box);
+        }
+        if (on && box.parentNode !== document.body) document.body.appendChild(box);
+        if (!on && box.parentNode === document.body) this._doneMarker.parentNode.insertBefore(box, this._doneMarker.nextSibling);
         box.classList.toggle('ci-pop', on);
         const view = document.getElementById('doneResultView');
         if (!view) return;

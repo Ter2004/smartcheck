@@ -8,11 +8,15 @@
     <h1>สวัสดี {{ session.get('user_name', '').split()[0] }}</h1>
 </header>
 
+{% set ic_clock %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>{% endset %}
+{% set ic_room %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21h16M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17"/><circle cx="14.5" cy="12" r=".8" fill="currentColor"/></svg>{% endset %}
+{% set ic_timer %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4M9 2h6"/></svg>{% endset %}
+
 {% if not enrolled %}
-<div class="tarmac-note mb-4" role="status">
-    <svg class="w-5 h-5 flex-shrink-0 mt-0.5" style="color:var(--gate)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+<div class="sc-banner mb-4" role="status">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
     <div class="flex-1">
-        {% if needs_reenroll %}ระบบจดจำใบหน้าได้รับการปรับปรุง — ต้องลงทะเบียนใหม่
+        {% if needs_reenroll %}ระบบจดจำใบหน้าได้รับการปรับปรุง ต้องลงทะเบียนใหม่
         <small>ข้อมูลใบหน้าเดิมใช้กับระบบใหม่ไม่ได้ ลงทะเบียนใหม่ครั้งเดียวก่อนเช็คชื่อครั้งถัดไป</small>
         {% else %}ยังไม่ได้ลงทะเบียนใบหน้า
         <small>ลงทะเบียนครั้งเดียว แล้วเช็คชื่อด้วยใบหน้าได้ทุกคาบ</small>
@@ -24,79 +28,81 @@
 
 {% if hero %}
 {% set a = hero.attendance %}
-<article class="pass" aria-label="คาบ {{ hero.code }}">
-    {% if hero.state == 'boarding' %}
-    <div class="pass-band" data-state="{{ 'late' if hero.late_now else 'boarding' }}" data-until="{{ hero.on_time_until or '' }}">
-        <span class="flip" data-band-label>{{ 'เปิดอยู่ · ตอนนี้นับสาย' if hero.late_now else 'เปิดเช็คชื่อ' }}</span>
-        <span>{% if hero.on_time_until %}ทันเวลาถึง {{ hero.on_time_until | thai_time('%H:%M') }}{% endif %}</span>
-    </div>
-    {% elif hero.state == 'boarded' %}
-    <div class="pass-band" data-state="{{ 'late' if a.status == 'late' else 'boarded' }}">
-        <span>{{ 'เช็คชื่อแล้ว · มาสาย' if a.status == 'late' else 'เช็คชื่อแล้ว · มาเรียน' }}</span>
-        <span>{{ a.check_in_at | thai_time('%H:%M') }}</span>
-    </div>
-    {% elif hero.state == 'closed' %}
-    <div class="pass-band" data-state="closed"><span>ปิดแล้ว</span><span>ไม่ได้เช็คชื่อ</span></div>
-    {% else %}
-    <div class="pass-band" data-state="waiting"><span>รอเปิดคาบ</span><span>เริ่ม {{ hero.start_time | thai_time('%H:%M') }}</span></div>
-    {% endif %}
-    <div class="pass-body">
-        <p class="pass-code">{{ hero.code }}</p>
-        <p class="pass-name">{{ hero.name }}</p>
-        <div class="pass-grid">
-            <div><small>ห้อง</small><b>{{ (hero.room or '—') | replace('ห้อง ', '') }}</b></div>
-            <div><small>เริ่ม</small><b>{{ hero.start_time | thai_time('%H:%M') }}</b></div>
-            <div><small>{{ 'เหลือ' if hero.state == 'boarding' and hero.on_time_until else 'สถานะ' }}</small>
-                <b data-countdown>{% if hero.state == 'boarding' and hero.on_time_until %}—{% elif hero.state == 'boarded' %}{{ 'สาย' if a.status == 'late' else 'มา' }}{% elif hero.state == 'boarding' %}เปิด{% elif hero.state == 'closed' %}ปิด{% else %}รอ{% endif %}</b></div>
-        </div>
-    </div>
-    <div class="pass-perf" aria-hidden="true"></div>
-    <div class="pass-foot">
-        {% if hero.state == 'boarding' and enrolled %}
-        <a href="{{ url_for('student.checkin', session_id=hero.id) }}" class="btn-board">
-            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="11" r="3.5"/><path d="M7.5 18a5 5 0 0 1 9 0"/></svg>
-            สแกนหน้าเช็คชื่อ
-        </a>
-        {% elif hero.state == 'boarding' %}
-        <p>ลงทะเบียนใบหน้าก่อน จึงจะเช็คชื่อคาบนี้ได้</p>
+<article class="sc-card sc-hero{{ ' is-open' if hero.state == 'boarding' }}" aria-label="คาบ {{ hero.code }}">
+    <div class="sc-top">
+        {% if hero.state == 'boarding' %}
+        <span class="sc-eyebrow">เปิดเช็คชื่ออยู่ตอนนี้</span>
+        <span class="sc-badge" data-band data-state="{{ 'late' if hero.late_now else 'boarding' }}" data-until="{{ hero.on_time_until or '' }}"><span data-band-label>{{ 'ตอนนี้นับสาย' if hero.late_now else 'เปิดอยู่' }}</span></span>
         {% elif hero.state == 'boarded' %}
-        <p>บันทึกแล้ว ไม่ต้องทำอะไรเพิ่ม</p>
+        <span class="sc-eyebrow muted">คาบล่าสุด</span>
+        <span class="sc-badge" data-state="{{ 'late' if a.status == 'late' else 'boarded' }}">{{ 'มาสาย' if a.status == 'late' else 'มาเรียน' }} {{ a.check_in_at | thai_time('%H:%M') }}</span>
         {% elif hero.state == 'closed' %}
-        <p>คาบนี้ปิดการเช็คชื่อแล้ว</p>
+        <span class="sc-eyebrow muted">คาบล่าสุด</span>
+        <span class="sc-badge">ปิดแล้ว · ไม่ได้เช็คชื่อ</span>
         {% else %}
-        <p>เมื่ออาจารย์เปิดคาบ แอปจะแจ้งเตือนให้เช็คชื่อ</p>
+        <span class="sc-eyebrow muted">คาบถัดไป</span>
+        <span class="sc-badge">รอเปิดคาบ</span>
         {% endif %}
     </div>
+    <div>
+        <p class="sc-eyebrow">{{ hero.code }}</p>
+        <p class="sc-title">{{ hero.name }}</p>
+    </div>
+    <div class="sc-meta">
+        <span>{{ ic_clock }}เริ่ม {{ hero.start_time | thai_time('%H:%M') }}</span>
+        {% if hero.room %}<span>{{ ic_room }}{{ hero.room }}</span>{% endif %}
+        {% if hero.state == 'boarding' and hero.on_time_until %}<span>{{ ic_timer }}ทันเวลาอีก&nbsp;<b data-countdown>—</b></span>{% endif %}
+    </div>
+    {% if hero.state == 'boarding' and enrolled %}
+    <a href="{{ url_for('student.checkin', session_id=hero.id) }}" class="btn-board">เช็คชื่อเลย</a>
+    {% elif hero.state == 'boarding' %}
+    <p class="sc-note">ลงทะเบียนใบหน้าก่อน จึงจะเช็คชื่อคาบนี้ได้</p>
+    {% elif hero.state == 'boarded' %}
+    <p class="sc-note">บันทึกแล้ว ไม่ต้องทำอะไรเพิ่ม</p>
+    {% elif hero.state == 'closed' %}
+    <p class="sc-note">คาบนี้ปิดการเช็คชื่อแล้ว</p>
+    {% else %}
+    <p class="sc-note">เมื่ออาจารย์เปิดคาบ แอปจะแจ้งเตือนให้เช็คชื่อ</p>
+    {% endif %}
 </article>
 {% else %}
-<article class="pass" aria-label="วันนี้">
-    <div class="pass-band" data-state="closed"><span>วันนี้</span><span>ไม่มีคาบ</span></div>
-    <div class="pass-body"><p class="pass-code">ว่างทั้งวัน</p><p class="pass-name">ดูตารางทั้งสัปดาห์ได้ที่แท็บ "เช็คชื่อ"</p></div>
+<article class="sc-card sc-hero" aria-label="วันนี้">
+    <div class="sc-top"><span class="sc-eyebrow muted">วันนี้</span><span class="sc-badge">ไม่มีคาบ</span></div>
+    <p class="sc-title">ว่างทั้งวัน</p>
+    <p class="sc-note">ดูตารางทั้งสัปดาห์ได้ที่แท็บ "เช็คชื่อ"</p>
 </article>
 {% endif %}
 
 {% if board %}
-<h2 class="board-title" id="todayBoard" data-states='{{ (board_states or {}) | tojson }}' data-starts='{{ (board_starts or []) | tojson }}' data-url="{{ url_for('student.today_states') }}">คาบเรียน <span>{{ board | length }} คาบ</span></h2>
+<h2 class="sc-section" id="todayBoard" data-states='{{ (board_states or {}) | tojson }}' data-starts='{{ (board_starts or []) | tojson }}' data-url="{{ url_for('student.today_states') }}">คาบเรียนวันนี้ <span>{{ board | length }} คาบ</span></h2>
+<div class="sc-stack">
 {% for row in board %}
 {% set a = row.attendance %}
 {% set clickable = row.state == 'boarding' and enrolled %}
-<{{ 'a' if clickable else 'div' }} class="board-row"{% if clickable %} href="{{ url_for('student.checkin', session_id=row.id) }}"{% endif %}>
-    <b>{{ row.start_time | thai_time('%H:%M') }}</b>
-    <span class="what">{{ row.code }}<small>{{ row.name }}{% if row.room %} · {{ row.room }}{% endif %}</small></span>
-    {% if row.state == 'boarded' %}<span class="chip {{ 'late' if a.status == 'late' else 'boarded' }}">{{ 'สาย' if a.status == 'late' else 'มา' }} {{ a.check_in_at | thai_time('%H:%M') }}</span>
-    {% elif row.state == 'boarding' %}<span class="chip boarding">เปิดอยู่</span>
-    {% elif row.state == 'closed' %}<span class="chip closed">ปิดแล้ว</span>
-    {% else %}<span class="chip">รอเปิด</span>{% endif %}
+<{{ 'a' if clickable else 'div' }} class="sc-card"{% if clickable %} href="{{ url_for('student.checkin', session_id=row.id) }}"{% endif %}>
+    <div class="sc-top">
+        <span class="sc-eyebrow">{{ row.code }}</span>
+        {% if row.state == 'boarded' %}<span class="sc-badge" data-state="{{ 'late' if a.status == 'late' else 'boarded' }}">{{ 'สาย' if a.status == 'late' else 'มาเรียน' }} {{ a.check_in_at | thai_time('%H:%M') }}</span>
+        {% elif row.state == 'boarding' %}<span class="sc-badge open">เปิดอยู่</span>
+        {% elif row.state == 'closed' %}<span class="sc-badge">ปิดแล้ว</span>
+        {% else %}<span class="sc-badge">รอเปิด</span>{% endif %}
+    </div>
+    <p class="sc-title">{{ row.name }}</p>
+    <div class="sc-meta">
+        <span>{{ ic_clock }}{{ row.start_time | thai_time('%H:%M') }}</span>
+        {% if row.room %}<span>{{ ic_room }}{{ row.room }}</span>{% endif %}
+    </div>
 </{{ 'a' if clickable else 'div' }}>
 {% endfor %}
+</div>
 {% endif %}
 
-<details class="mt-6 rounded-2xl" style="background:var(--tarmac-2);border:1px solid var(--tarmac-line)">
+<details class="mt-6 rounded-2xl">
     <summary class="px-4 py-3.5 text-[15px] font-medium cursor-pointer">วิธีเช็คชื่อ</summary>
-    <ol class="px-4 pb-4 space-y-2 text-[15px]" style="color:rgb(255 255 255 / 80%)">
-        <li>1. อาจารย์เปิดคาบ — แอปแจ้งเตือน แถบบนบัตรขึ้นสีเหลือง "เปิดเช็คชื่อ"</li>
-        <li>2. อยู่ในห้องเรียน แตะ "สแกนหน้าเช็คชื่อ" — แอปหาสัญญาณห้องให้เอง</li>
-        <li>3. มองกล้องตรงๆ นิ่งไว้ครู่เดียว — แถบเปลี่ยนเป็นสีเขียว "เช็คชื่อแล้ว"</li>
+    <ol class="px-4 pb-4 space-y-2 text-[15px]">
+        <li>1. อาจารย์เปิดคาบ แอปแจ้งเตือน และป้ายบนการ์ดขึ้นว่า "เปิดอยู่"</li>
+        <li>2. อยู่ในห้องเรียน แตะ "เช็คชื่อเลย" แอปหาสัญญาณห้องให้เอง</li>
+        <li>3. มองกล้องตรงๆ นิ่งไว้ครู่เดียว ป้ายเปลี่ยนเป็นสีเขียว "มาเรียน"</li>
     </ol>
 </details>
 </div>
@@ -108,7 +114,7 @@
 // Gate display: the boarding band counts down to the end of the on-time window,
 // turns red "ใกล้สาย" in the last minute and orange "นับสาย" after it.
 (function () {
-    const band = document.querySelector('.pass-band[data-until]');
+    const band = document.querySelector('[data-band][data-until]');
     const out = document.querySelector('[data-countdown]');
     if (!band || !band.dataset.until || !out) return;
     const until = Date.parse(band.dataset.until), label = band.querySelector('[data-band-label]');
@@ -122,10 +128,10 @@
     }
     function tick() {
         const left = Math.max(0, Math.round((until - Date.now()) / 1000));
-        if (!left) { out.textContent = 'สาย'; set('เปิดอยู่ · ตอนนี้นับสาย', 'late'); return; }
+        if (!left) { out.textContent = 'หมดแล้ว'; set('ตอนนี้นับสาย', 'late'); return; }
         // Minutes while there is time, seconds only in the last minute ("3:04" read as hours).
         out.textContent = left > 60 ? Math.ceil(left / 60) + ' นาที' : left + ' วิ';
-        set(left <= 60 ? 'ใกล้สาย · รีบเช็คชื่อ' : 'เปิดเช็คชื่อ', left <= 60 ? 'closing' : 'boarding');
+        set(left <= 60 ? 'ใกล้สาย รีบเช็คชื่อ' : 'เปิดอยู่', left <= 60 ? 'closing' : 'boarding');
         setTimeout(tick, 1000);
     }
     tick();

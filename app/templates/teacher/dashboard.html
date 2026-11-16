@@ -4,64 +4,57 @@
 {% block content %}
 {% set today = today_str %}
 
-<!-- Page header -->
-<div class="flex items-center justify-between mb-8">
-    <div>
-        <h1 class="text-xl font-semibold text-slate-900">หน้าหลัก</h1>
-        <p class="text-sm text-slate-500 mt-0.5">อ.{{ session.get('user_name') }}</p>
-    </div>
+<!-- Page header (Figma "Teacher / Dashboard") -->
+<div class="mb-8">
+    <h1 class="font-semibold text-slate-900" style="font-size:24px;line-height:32px">สวัสดี อ.{{ session.get('user_name') }}</h1>
+    <p class="text-sm text-slate-500 mt-1">{{ today | thai_date }}</p>
 </div>
 
-<!-- ─── คาบวันนี้: each class is a gate the teacher opens ─────────── -->
+<!-- ─── คาบวันนี้: each class is a card the teacher opens ─────────── -->
 <div class="mb-8">
-    <div class="flex items-center gap-2 mb-3">
-        <h2 class="text-lg font-semibold text-slate-900">คาบวันนี้</h2>
-        <span class="text-sm text-slate-500">{{ today | thai_date }}</span>
-    </div>
+    <h2 class="text-lg font-semibold text-slate-900 mb-3">คาบวันนี้</h2>
     {% if today_sessions %}
-    <div class="grid gap-4 md:grid-cols-2">
+    <div class="grid gap-6 md:grid-cols-2">
         {% for s in today_sessions %}
-        <article class="pass pass-on-light" aria-label="คาบ {{ s.courses.code }}">
-            {% if s.is_open %}
-            <div class="pass-band" data-state="boarding"><span>เปิดเช็คชื่ออยู่</span><span>{% if s.on_time_until %}ทันเวลาถึง {{ s.on_time_until | thai_time('%H:%M') }}{% endif %}</span></div>
-            {% elif s.end_time %}
-            <div class="pass-band" data-state="closed"><span>ปิดแล้ว</span><span>เริ่ม {{ s.start_time | thai_time('%H:%M') }}</span></div>
-            {% else %}
-            <div class="pass-band" data-state="waiting"><span>รอเปิดคาบ</span><span>เริ่ม {{ s.start_time | thai_time('%H:%M') }}</span></div>
-            {% endif %}
-            <div class="pass-body">
-                <p class="pass-code">{{ s.courses.code }}</p>
-                <p class="pass-name">{{ s.courses.name }}{% if s.beacons %} · {{ s.beacons.room_name }}{% endif %}</p>
+        <article class="sc-card sc-hero{{ ' is-open' if s.is_open }}" style="padding:24px" aria-label="คาบ {{ s.courses.code }}">
+            <div class="sc-top">
+                <span class="sc-eyebrow">{{ s.courses.code }}</span>
+                {% if s.is_open %}<span class="sc-badge open">เปิดเช็คชื่ออยู่</span>
+                {% elif s.end_time %}<span class="sc-badge">ปิดแล้ว</span>
+                {% else %}<span class="sc-badge">รอเปิดคาบ</span>{% endif %}
             </div>
-            <div class="pass-perf" aria-hidden="true"></div>
-            <div class="pass-foot flex flex-col gap-2">
-                {% if open_mode_teacher and not s.is_open and not s.end_time %}
-                <form method="post" action="{{ url_for('teacher.session_open', session_id=s.id) }}" class="flex flex-col gap-2">
-                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
-                    {% set choices = ([5, 10, 15] + ([on_time_default] if on_time_default not in [5, 10, 15] and on_time_default <= on_time_max else [])) | sort %}
-                    <fieldset class="seg" aria-describedby="minutes-help-{{ s.id }}">
-                        <legend class="seg-legend">นับว่าทันเวลาภายใน</legend>
-                        {% for m in choices if m <= on_time_max %}
-                        <label><input type="radio" name="minutes" value="{{ m }}" {{ 'checked' if m == on_time_default }}><span>{{ m }} นาที</span></label>
-                        {% endfor %}
-                    </fieldset>
-                    <p id="minutes-help-{{ s.id }}" class="sr-only">หลังจากนี้ยังเช็คชื่อได้ แต่จะนับว่ามาสาย</p>
-                    {% if s.can_open %}
-                    <button type="submit" class="btn-board">เปิดคาบ</button>
-                    {% else %}
-                    <button type="button" disabled class="btn-quiet cursor-not-allowed" style="color:var(--pass-muted)">ยังไม่ถึงเวลา · เปิดได้ตั้งแต่ {{ s.opens_from | thai_time('%H:%M') }}</button>
-                    {% endif %}
-                </form>
+            <p class="sc-title">{{ s.courses.name }}</p>
+            <div class="sc-meta">
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>เริ่ม {{ s.start_time | thai_time('%H:%M') }}</span>
+                {% if s.beacons %}<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21h16M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17"/></svg>{{ s.beacons.room_name }}</span>{% endif %}
+                {% if s.is_open and s.on_time_until %}<span>ทันเวลาถึง {{ s.on_time_until | thai_time('%H:%M') }}</span>{% endif %}
+            </div>
+            {% if open_mode_teacher and not s.is_open and not s.end_time %}
+            <form method="post" action="{{ url_for('teacher.session_open', session_id=s.id) }}" class="flex flex-col gap-2">
+                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                {% set choices = ([5, 10, 15] + ([on_time_default] if on_time_default not in [5, 10, 15] and on_time_default <= on_time_max else [])) | sort %}
+                <fieldset class="seg" aria-describedby="minutes-help-{{ s.id }}">
+                    <legend class="seg-legend">นับว่าทันเวลาภายใน</legend>
+                    {% for m in choices if m <= on_time_max %}
+                    <label><input type="radio" name="minutes" value="{{ m }}" {{ 'checked' if m == on_time_default }}><span>{{ m }} นาที</span></label>
+                    {% endfor %}
+                </fieldset>
+                <p id="minutes-help-{{ s.id }}" class="sr-only">หลังจากนี้ยังเช็คชื่อได้ แต่จะนับว่ามาสาย</p>
+                {% if s.can_open %}
+                <button type="submit" class="btn-board">เปิดคาบ</button>
+                {% else %}
+                <button type="button" disabled class="btn-quiet cursor-not-allowed" style="color:var(--pass-muted)">ยังไม่ถึงเวลา · เปิดได้ตั้งแต่ {{ s.opens_from | thai_time('%H:%M') }}</button>
                 {% endif %}
-                <a href="{{ url_for('teacher.session_view', session_id=s.id) }}" class="btn-quiet">ดูผลการเช็คชื่อ</a>
-            </div>
+            </form>
+            {% endif %}
+            <a href="{{ url_for('teacher.session_view', session_id=s.id) }}" class="{{ 'btn-board' if s.is_open else 'btn-quiet' }}">{{ 'ดูผลแบบสด' if s.is_open else 'ดูผลการเช็คชื่อ' }}</a>
         </article>
         {% endfor %}
     </div>
     {% else %}
-    <div class="pass pass-on-light">
-        <div class="pass-band" data-state="closed"><span>วันนี้</span><span>ไม่มีคาบ</span></div>
-        <div class="pass-body"><p class="pass-code">ไม่มีคาบเรียนวันนี้</p><p class="pass-name">คาบที่ตั้งไว้ในตารางจะขึ้นที่นี่ในวันที่มีเรียน</p></div>
+    <div class="sc-card" style="padding:24px">
+        <p class="sc-title">ไม่มีคาบเรียนวันนี้</p>
+        <p class="sc-note">คาบที่ตั้งไว้ในตารางจะขึ้นที่นี่ในวันที่มีเรียน</p>
     </div>
     {% endif %}
 </div>
@@ -150,9 +143,9 @@
                 </td>
                 <td class="px-4 py-3.5 hidden sm:table-cell">
                     {% if s.is_open %}
-                    <span class="text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full">เปิดอยู่</span>
+                    <span class="sc-badge open">เปิดอยู่</span>
                     {% else %}
-                    <span class="text-xs font-medium bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full">ปิด</span>
+                    <span class="sc-badge">ปิดแล้ว</span>
                     {% endif %}
                 </td>
                 <td class="px-4 py-3.5 text-right">

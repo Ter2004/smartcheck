@@ -241,6 +241,61 @@ a.tt-block:focus-visible { outline: 2px solid var(--sc-primary); }
 .tabbar a:focus-visible { outline: 2px solid var(--sc-primary); }
 html.is-navigating::before { background: var(--sc-primary); }
 
+/* ── Figma components (Screens page): card, status badge, meta row, menu ── */
+.sc-card { background: var(--sc-surface); border: 1px solid var(--sc-line); border-radius: var(--sc-radius);
+    padding: 16px; display: flex; flex-direction: column; gap: 8px; color: var(--sc-text); }
+a.sc-card:hover { border-color: var(--sc-primary-line); }
+a.sc-card:active { background: var(--sc-primary-lt); }
+.sc-hero { border-radius: var(--sc-radius-lg); padding: 24px 16px; gap: 16px; }
+.sc-hero.is-open { border: 2px solid var(--sc-primary); }
+.sc-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sc-eyebrow { font-size: 12px; line-height: 16px; font-weight: 600; color: var(--sc-primary-h); }
+.sc-eyebrow.muted { color: var(--sc-text-3); }
+.sc-title { font-size: 16px; line-height: 24px; font-weight: 500; color: var(--sc-text); }
+.sc-hero .sc-title { font-size: 20px; line-height: 28px; }
+.sc-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; line-height: 20px; color: var(--sc-text-3); }
+.sc-meta > span { display: inline-flex; align-items: center; gap: 4px; }
+.sc-meta svg { width: 16px; height: 16px; flex-shrink: 0; }
+.sc-note { font-size: 14px; color: var(--sc-text-3); }
+.sc-section { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--sc-text-2); margin: 24px 2px 8px;
+    display: flex; justify-content: space-between; }
+.sc-section span { color: var(--sc-text-3); font-weight: 400; }
+.sc-stack > * + * { margin-top: 8px; }
+
+.sc-badge { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 2px 10px;
+    border-radius: 999px; font-size: 12px; line-height: 16px; font-weight: 600; background: var(--sc-hover); color: var(--sc-text-2); }
+.sc-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.sc-badge[data-state="boarding"], .sc-badge.open { background: var(--sc-primary-lt); color: var(--sc-primary-h); }
+.sc-badge[data-state="boarded"], .sc-badge.ok { background: var(--sc-ok-bg); color: var(--sc-ok); }
+.sc-badge[data-state="late"], .sc-badge.late { background: var(--sc-late-bg); color: var(--sc-late); }
+.sc-badge[data-state="closing"], .sc-badge.err { background: var(--sc-err-bg); color: var(--sc-err); }
+
+.sc-banner { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-radius: var(--sc-radius);
+    background: var(--sc-primary-lt); color: var(--sc-primary-c); font-size: 14px; line-height: 20px; }
+.sc-banner.ok { background: var(--sc-ok-bg); color: var(--sc-ok); align-items: center; }
+.sc-banner.late { background: var(--sc-late-bg); color: var(--sc-late); }
+.sc-banner svg { width: 20px; height: 20px; flex-shrink: 0; }
+.sc-banner small { display: block; color: var(--sc-text-2); margin-top: 2px; }
+
+.sc-profile { flex-direction: row; align-items: center; gap: 16px; }
+.sc-avatar { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+    background: var(--sc-primary-lt); color: var(--sc-primary); }
+.sc-avatar svg { width: 32px; height: 32px; }
+
+.sc-menu { background: var(--sc-surface); border: 1px solid var(--sc-line); border-radius: var(--sc-radius); overflow: hidden; }
+.sc-menu > * + * { border-top: 1px solid var(--sc-line); }
+.sc-menu :is(a, button) { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 12px 16px;
+    font-size: 16px; font-weight: 500; color: var(--sc-text); text-align: left; background: none; }
+.sc-menu :is(a, button):hover { background: var(--sc-bg); }
+.sc-menu svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--sc-text-2); }
+.sc-menu .grow { flex: 1; }
+.sc-menu .chev { width: 16px; height: 16px; color: var(--sc-text-3); }
+.sc-menu .danger, .sc-menu .danger svg { color: var(--sc-err); }
+.sc-menu form { margin: 0; }
+
+.sc-progress { height: 8px; border-radius: 999px; background: var(--sc-hover); overflow: hidden; }
+.sc-progress > i { display: block; height: 100%; background: var(--sc-primary); border-radius: 999px; }
+
 /* ── Login: one centred card on the gray ground ───────────────────── */
 .login-layout { grid-template-columns: 1fr; }
 .login-intro { display: none; }

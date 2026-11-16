@@ -8,53 +8,57 @@
     <h1>{{ user.full_name or session.get('user_name', '') }}</h1>
 </header>
 
-<!-- "Am I set up?" in one pass: face, notifications, then the account actions. -->
-<article class="pass" aria-label="สถานะบัญชี">
-    <div class="pass-band" data-state="{{ 'boarded' if enrolled else 'waiting' }}">
-        <span>{{ 'พร้อมเช็คชื่อ' if enrolled else 'ยังไม่พร้อมเช็คชื่อ' }}</span>
-        <span>{{ user.student_id or '' }}</span>
+<!-- Figma "Student / Account": profile, face status, then one menu list. -->
+<div class="sc-card sc-profile">
+    <span class="sc-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="10" r="3.2"/><path d="M6.2 18.5a7 7 0 0 1 11.6 0"/></svg></span>
+    <div class="min-w-0">
+        <p class="sc-title" style="font-size:18px">{{ user.full_name or session.get('user_name', '') }}</p>
+        <p class="sc-note" style="overflow-wrap:anywhere">{% if user.student_id %}{{ user.student_id }} · {% endif %}{{ user.email or '' }}</p>
     </div>
-    <div class="pass-body">
-        <p class="pass-name">{{ user.email or '' }}</p>
-        <dl class="acct-list">
-            <div>
-                <dt>ใบหน้า</dt>
-                <dd>
-                    {% if enrolled %}<span class="chip boarded">ลงทะเบียนแล้ว</span>
-                    {% elif enrolled is none %}<span class="chip-muted">ตรวจสอบไม่ได้ ลองโหลดหน้าใหม่</span>
-                    {% else %}<span class="chip closed">ยังไม่ลงทะเบียน</span>{% endif %}
-                </dd>
-            </div>
-            <div>
-                <dt>การแจ้งเตือน</dt>
-                <dd><span id="pushState" class="chip-muted">ใช้ได้ในแอป SmartCheck บน Android</span></dd>
-            </div>
-        </dl>
-    </div>
-    <div class="pass-perf" aria-hidden="true"></div>
-    <div class="pass-foot flex flex-col gap-2">
-        {% if enrolled is sameas false %}
-        <a href="{{ url_for('student.enroll_face') }}" class="btn-board">ลงทะเบียนใบหน้า</a>
-        {% endif %}
-        <a href="{{ url_for('auth.change_password') }}" class="btn-quiet">เปลี่ยนรหัสผ่าน</a>
-        <form method="POST" action="{{ url_for('auth.logout') }}">
-            <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
-            <button type="submit" class="btn-quiet">ออกจากระบบ</button>
-        </form>
-    </div>
-</article>
+</div>
 
-<p class="mt-4 text-sm text-center" style="color:rgb(255 255 255 / 72%)">ต้องการถอนความยินยอมและลบข้อมูลใบหน้า กรุณาติดต่อผู้ดูแลระบบ (admin)</p>
+{% if enrolled %}
+<div class="sc-banner ok mt-4" role="status">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.4 3.2 8.3 7.5 9.5 4.3-1.2 7.5-5.1 7.5-9.5V6L12 3Z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/></svg>
+    <span class="font-medium">ลงทะเบียนใบหน้าแล้ว พร้อมเช็คชื่อ</span>
+</div>
+{% elif enrolled is none %}
+<div class="sc-banner late mt-4" role="status"><span>ตรวจสอบสถานะใบหน้าไม่ได้ ลองโหลดหน้าใหม่</span></div>
+{% else %}
+<div class="sc-banner late mt-4" role="status">
+    <div class="flex-1">ยังไม่ได้ลงทะเบียนใบหน้า
+        <small>ลงทะเบียนครั้งเดียว แล้วเช็คชื่อด้วยใบหน้าได้ทุกคาบ</small>
+        <a href="{{ url_for('student.enroll_face') }}" class="btn-board mt-3">ลงทะเบียนใบหน้า</a>
+    </div>
+</div>
+{% endif %}
+
+<div class="sc-card mt-4" style="flex-direction:row;align-items:center;justify-content:space-between">
+    <span class="sc-note" style="color:var(--sc-text-2)">การแจ้งเตือน</span>
+    <span id="pushState" class="chip-muted text-right">ใช้ได้ในแอป SmartCheck บน Android</span>
+</div>
+
+<nav class="sc-menu mt-4" aria-label="เมนูบัญชี">
+    <a href="{{ url_for('student.pdpa_notice') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.4 3.2 8.3 7.5 9.5 4.3-1.2 7.5-5.1 7.5-9.5V6L12 3Z"/></svg>
+        <span class="grow">ประกาศความเป็นส่วนตัว</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a>
+    <a href="{{ url_for('auth.change_password') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        <span class="grow">เปลี่ยนรหัสผ่าน</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a>
+    <form method="POST" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+        <button type="submit" class="danger">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h10"/></svg>
+            <span class="grow">ออกจากระบบ</span></button>
+    </form>
+</nav>
+
+<p class="mt-4 text-sm text-center sc-note">ต้องการถอนความยินยอมและลบข้อมูลใบหน้า กรุณาติดต่อผู้ดูแลระบบ (admin)</p>
 </div>
 {% endblock %}
 
 {% block head %}
 <style>
-    .acct-list { margin-top: 14px; }
-    .acct-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-        padding: 12px 0; border-top: 1px solid var(--pass-rule); }
-    .acct-list dt { font-size: 15px; color: var(--pass-muted); }
-    .acct-list dd { text-align: right; }
     .chip-muted { font-size: 14px; color: var(--pass-muted); }
 </style>
 {% endblock %}

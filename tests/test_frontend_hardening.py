@@ -62,7 +62,7 @@ class FrontendHardeningTests(unittest.TestCase):
         # Fails when a template gains a Tailwind class and tools/tailwind was not
         # rebuilt (npm run build there). Classes may also come from the custom CSS.
         css = read("app/static/css/tailwind.css")
-        custom = read("app/static/css/style.css") + read("app/static/css/modern.css") + read("app/static/css/pass.css")
+        custom = read("app/static/css/style.css") + read("app/static/css/modern.css") + read("app/static/css/pass.css") + read("app/static/css/redesign.css")
         hooks = {"row-check", "todo"}   # JavaScript selectors/states, never styled
         escape = lambda t: re.sub(r'([:/.\[\]()%#!,=&@*+>~])', lambda m: chr(92) + m.group(1), t)
         missing = set()

@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 {# Face check-in and face enrollment keep the pre-redesign look (owner, 2026-11-16). #}
-{% set legacy_ui = request.endpoint in ('student.checkin', 'student.enroll_face') %}
+{# /student/checkin without session_id is the class list + timetable: that one gets the new look. #}
+{% set legacy_ui = request.endpoint == 'student.enroll_face'
+    or (request.endpoint == 'student.checkin' and request.args.get('session_id')) %}
 {% set page_ground = '#0B1D3A' if legacy_ui else '#F6F7F8' %}
 <html lang="th" style="background:{{ page_ground }}">
 <head>

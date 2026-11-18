@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 python run.py                    # Flask dev server on localhost:5000
 
 # Production (Railway / Docker)
-gunicorn "app:create_app()" --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+gunicorn "app:create_app()" --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300
 
 # Docker
 docker build -t smartcheck .

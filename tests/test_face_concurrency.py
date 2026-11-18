@@ -60,11 +60,20 @@ class FaceConcurrencyTests(unittest.TestCase):
                 with counter_lock:
                     active -= 1
 
-        face = SimpleNamespace(bbox=np.array([10., 10., 60., 70.]), kps=np.array([[25., 30.], [45., 30.], [35., 40.], [28., 55.], [42., 55.]]),
-                               det_score=.9, pose=np.array([0., 0., 0.]), normed_embedding=np.ones(512, np.float32) / np.sqrt(512))
-        fake = SimpleNamespace(get=lambda img: native([face]),
-                               det_model=SimpleNamespace(detect=lambda img, max_num=0, metric='default':
-                                                         native((np.array([[10., 10., 60., 70., .9]]), None))))
+        kps = np.array([[[25., 30.], [45., 30.], [35., 40.], [28., 55.], [42., 55.]]])
+
+        def landmark(img, face):
+            face.pose = native(np.array([0., 0., 0.]))
+
+        def recognition(img, face):
+            face.embedding = native(np.ones(512, np.float32))
+
+        fake = SimpleNamespace(
+            det_model=SimpleNamespace(detect=lambda img, max_num=0, metric='default':
+                                      native((np.array([[10., 10., 60., 70., .9]]), kps))),
+            models={'detection': None,
+                    'recognition': SimpleNamespace(get=recognition),
+                    'landmark_3d_68': SimpleNamespace(get=landmark)})
 
         def request(i):
             barrier.wait(timeout=5)
@@ -82,7 +91,9 @@ class FaceConcurrencyTests(unittest.TestCase):
     def test_failure_releases_guard_and_preserves_exception(self):
         from types import SimpleNamespace
         from app.services import face_engine
-        failing = SimpleNamespace(get=lambda img: (_ for _ in ()).throw(RuntimeError('model failed')))
+        def fail(*args, **kwargs):
+            raise RuntimeError('model failed')
+        failing = SimpleNamespace(det_model=SimpleNamespace(detect=fail), models={})
         with patch.object(face_engine, 'get_app', return_value=failing):
             with self.assertRaises(RuntimeError):
                 face_engine.analyze(np.zeros((8, 8, 3), np.uint8), clahe=False)

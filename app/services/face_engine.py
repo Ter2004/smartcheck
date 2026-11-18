@@ -211,21 +211,39 @@ def _padded(img):
     return cv2.copyMakeBorder(img, b, b, b, b, cv2.BORDER_CONSTANT, value=(0, 0, 0)), b
 
 
-def _get_faces(app, img):
-    """app.get on the frame, retried on a padded copy; coordinates in frame pixels."""
+def detect(img, channel_order="BGR"):
+    """SCRFD on the frame, retried on a padded copy when nothing is found.
+
+    Returns the raw detection for analyze()/detect_main(): boxes and keypoints in
+    the coordinates of "work" (the frame, or its padded copy), the padding, and the
+    frame itself so a detection is only reused for the same image object.
+    One detection serves both Fasnet and ArcFace in a check-in.
+    """
+    img = ensure_bgr(img, channel_order)
+    app = get_app()
     with _infer_lock:
-        faces = app.get(img)
-        if faces:
-            return faces
-        padded, b = _padded(img)
-        faces = app.get(padded)
-    for f in faces:
-        f.bbox = f.bbox - b
-        f.kps = f.kps - b
-    return faces
+        work, pad = img, 0
+        bboxes, kpss = app.det_model.detect(img, max_num=0, metric="default")
+        if bboxes is None or len(bboxes) == 0:
+            work, pad = _padded(img)
+            bboxes, kpss = app.det_model.detect(work, max_num=0, metric="default")
+    if bboxes is None:
+        bboxes = np.zeros((0, 5), dtype=np.float32)
+    return {"image": img, "work": work, "pad": pad, "bboxes": bboxes, "kpss": kpss}
 
 
-def analyze(img, channel_order="BGR", clahe=None, reject_multiple=True):
+def _ranked(detection):
+    """Indices of the detected faces, largest box first (stable, as before)."""
+    bboxes = detection["bboxes"]
+    return sorted(range(len(bboxes)), key=lambda i: _area(bboxes[i][:4]), reverse=True)
+
+
+def _second_large(detection, order):
+    bboxes = detection["bboxes"]
+    return len(order) > 1 and _area(bboxes[order[1]][:4]) >= SECOND_FACE_AREA_RATIO * _area(bboxes[order[0]][:4])
+
+
+def analyze(img, channel_order="BGR", clahe=None, reject_multiple=True, detection=None):
     """The single main face of a frame: embedding, detection score, size and pose.
 
     Raises NoFaceError, or MultipleFacesError when a second face is at least
@@ -234,21 +252,37 @@ def analyze(img, channel_order="BGR", clahe=None, reject_multiple=True):
     only, to match the facenet512 path's largest-face selection).
     """
     from app.services.face_service import normalize_illumination
+    from insightface.app.common import Face
 
     img = ensure_bgr(img, channel_order)
     if clahe is None:
         clahe = clahe_enabled()
     if clahe:
         img = normalize_illumination(img)
-    faces = _get_faces(get_app(), img)
-    if not faces:
+    # Reuse the caller's detection only for this very frame without CLAHE
+    # (a detection on the raw frame does not describe the CLAHE image).
+    if detection is None or clahe or detection.get("image") is not img:
+        detection = detect(img)
+    order = _ranked(detection)
+    if not order:
         raise NoFaceError()
-    ranked = sorted(faces, key=lambda f: _area(f.bbox), reverse=True)
-    main = ranked[0]
-    second_large = len(ranked) > 1 and _area(ranked[1].bbox) >= SECOND_FACE_AREA_RATIO * _area(main.bbox)
+    second_large = _second_large(detection, order)
     if second_large and reject_multiple:
         raise MultipleFacesError()
-    x1, y1, x2, y2 = (float(v) for v in main.bbox)
+    # Pose and embedding for the main face only: FaceAnalysis.get ran every model
+    # on every detected face, but only the main face's results are used; other
+    # faces count through their box size (the second-face rule) alone.
+    i = order[0]
+    bboxes, kpss, work, pad = detection["bboxes"], detection["kpss"], detection["work"], detection["pad"]
+    main = Face(bbox=bboxes[i, 0:4], kps=None if kpss is None else kpss[i], det_score=bboxes[i, 4])
+    app = get_app()
+    with _infer_lock:
+        for taskname, model in app.models.items():
+            if taskname != "detection":
+                model.get(work, main)
+    bbox = main.bbox - pad
+    kps = np.asarray(main.kps, dtype=float) - pad
+    x1, y1, x2, y2 = (float(v) for v in bbox)
     pitch, yaw, roll = (float(v) for v in main.pose)
     embedding = np.asarray(main.normed_embedding, dtype=np.float32)
     return {
@@ -256,39 +290,35 @@ def analyze(img, channel_order="BGR", clahe=None, reject_multiple=True):
         "det_score": float(main.det_score),
         "face_px": int(round(y2 - y1)),          # detection box height
         "bbox": (x1, y1, x2, y2),
-        "kps": np.asarray(main.kps, dtype=float),
+        "kps": kps,
         "yaw_deg": yaw, "pitch_deg": pitch, "roll_deg": roll,
-        "yaw_ratio": yaw_ratio_from_kps(main.kps),
-        "eye_roll_deg": roll_deg_from_kps(main.kps),
-        "faces": len(faces), "second_large_face": bool(second_large),
+        "yaw_ratio": yaw_ratio_from_kps(kps),
+        "eye_roll_deg": roll_deg_from_kps(kps),
+        "faces": len(order), "second_large_face": bool(second_large),
     }
 
 
-def detect_main(img, channel_order="BGR"):
+def detect_main(img, channel_order="BGR", detection=None):
     """SCRFD only (no embedding, no pose): bbox, 5 keypoints and score of the largest face.
 
     For callers that only need the face box, such as anti-spoof. Raises
     NoFaceError or MultipleFacesError under the same rules as analyze().
+    The result's "detection" can be passed to analyze() for the same frame so
+    SCRFD runs once.
     """
     img = ensure_bgr(img, channel_order)
-    app = get_app()
-    with _infer_lock:
-        bboxes, kpss = app.det_model.detect(img, max_num=0, metric="default")
-        if bboxes is None or len(bboxes) == 0:
-            padded, b = _padded(img)
-            bboxes, kpss = app.det_model.detect(padded, max_num=0, metric="default")
-            if bboxes is not None and len(bboxes):
-                bboxes = bboxes.copy()
-                bboxes[:, :4] -= b
-                kpss = None if kpss is None else kpss - b
-    if bboxes is None or len(bboxes) == 0:
+    if detection is None or detection.get("image") is not img:
+        detection = detect(img)
+    order = _ranked(detection)
+    if not order:
         raise NoFaceError()
-    order = sorted(range(len(bboxes)), key=lambda i: _area(bboxes[i][:4]), reverse=True)
-    main = order[0]
-    if len(order) > 1 and _area(bboxes[order[1]][:4]) >= SECOND_FACE_AREA_RATIO * _area(bboxes[main][:4]):
+    if _second_large(detection, order):
         raise MultipleFacesError()
-    return {"bbox": tuple(float(v) for v in bboxes[main][:4]), "det_score": float(bboxes[main][4]),
-            "kps": None if kpss is None else np.asarray(kpss[main], dtype=float)}
+    main = detection["bboxes"][order[0]]
+    kpss, pad = detection["kpss"], detection["pad"]
+    return {"bbox": tuple(float(v) - pad for v in main[:4]), "det_score": float(main[4]),
+            "kps": None if kpss is None else np.asarray(kpss[order[0]], dtype=float) - pad,
+            "detection": detection}
 
 
 def box_xywh(face, img_shape):

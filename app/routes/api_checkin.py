@@ -195,9 +195,11 @@ def checkin():
     _perf["temporal"] = round((time.perf_counter() - _t6) * 1000, 2); _t7 = time.perf_counter()
 
     # ─── 4b. Anti-spoofing via MiniFASNet ────────────────────────────────────
+    # Fasnet's face detection is kept and reused by ArcFace below (SCRFD runs once).
+    face_detection = {}
     try:
         with stage("antispoof"):
-            spoof_result = combined_spoof_score(raw_frame)
+            spoof_result = combined_spoof_score(raw_frame, detection_out=face_detection)
         is_real = spoof_result["is_real"]
         _spoof_timings = spoof_result.get("timings", {})
         _perf["fasnet"] = _spoof_timings.get("fasnet_ms", 0.0)
@@ -309,7 +311,8 @@ def checkin():
     # was never reachable (no device token is ever issued) and is not carried over.
 
     # ─── 6. Face verification (face_templates of the active model) ──────────
-    score, failure = _verify_face_v2(student_id, raw_frame, reads["enrollment"])
+    score, failure = _verify_face_v2(student_id, raw_frame, reads["enrollment"],
+                                     detection=face_detection.get("detection"))
     if failure is not None:
         return failure
     _perf["embed"] = round((time.perf_counter() - _t8) * 1000, 2)
@@ -319,7 +322,7 @@ def checkin():
                               device_id, _perf, _t0, _t10, duplicate_read=reads["duplicate"])
 
 
-def _verify_face_v2(student_id, raw_frame, enrollment_read=None):
+def _verify_face_v2(student_id, raw_frame, enrollment_read=None, detection=None):
     """(best similarity, None) or (None, error response): face_templates of the active model.
 
     A missing enrollment of the active model_version — including a student who
@@ -347,7 +350,7 @@ def _verify_face_v2(student_id, raw_frame, enrollment_read=None):
                                "error": "ข้อมูลชีวมาตรไม่สมบูรณ์ — กรุณาลงทะเบียนใบหน้าใหม่อีกครั้ง"}), 403)
     try:
         with stage("extraction"):
-            live = face_engine.analyze(raw_frame)["embedding"]
+            live = face_engine.analyze(raw_frame, detection=detection)["embedding"]
     except Exception as error:
         _log.warning(f"[FACE] arcface analyze failed: {type(error).__name__}")
         reject("extraction_failed")

@@ -349,7 +349,7 @@ class IntegratedTOTPTests(unittest.TestCase):
 
     def test_request_and_spoof_logs_share_id_without_sensitive_payload(self):
         from app.services import face_service
-        def spoof(_image):
+        def spoof(_image, **_kwargs):
             face_service._audit.info('[COMBINED_SPOOF] decision=real')
             return {'is_real': True}
         from app.services import face_engine, face_store
@@ -475,7 +475,7 @@ class IntegratedTOTPTests(unittest.TestCase):
                 process.communicate()
 
     def test_valid_code_does_not_bypass_face(self):
-        mismatch = lambda *args: (None, (route.jsonify({'ok': False, 'retry_face': True}), 400))
+        mismatch = lambda *args, **kwargs: (None, (route.jsonify({'ok': False, 'retry_face': True}), 400))
         with patch.object(route, '_verify_face_v2', side_effect=mismatch):
             self.assertEqual(self.post().status_code, 400)
         self.assertEqual(self.db.records, [])

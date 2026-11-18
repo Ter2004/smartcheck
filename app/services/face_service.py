@@ -210,17 +210,22 @@ def warm_up_antispoof():
     return seconds
 
 
-def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
+def _run_fasnet_antispoof(img_bgr: np.ndarray, detection_out: dict = None) -> tuple:
     """
     Fasnet (MiniVision Silent-Face, the weights DeepFace used) on ONNX Runtime,
     on the SCRFD box of the main face (app/services/fasnet_onnx.py).
     Returns (is_real: bool, spoof_score: float) where spoof_score ∈ [0,1]
     and 0 = definitely real, 1 = definitely spoof.
     On exception returns (None, None) — caller redistributes weight.
+    detection_out (optional dict) receives the SCRFD detection under "detection",
+    for face_engine.analyze on the same frame.
     """
     try:
         from app.services import face_engine, fasnet_onnx
-        box = face_engine.box_xywh(face_engine.detect_main(img_bgr), img_bgr.shape)
+        main = face_engine.detect_main(img_bgr)
+        if detection_out is not None:
+            detection_out["detection"] = main.get("detection")
+        box = face_engine.box_xywh(main, img_bgr.shape)
         is_real, raw_score = fasnet_onnx.analyze(img_bgr, box)
         is_real   = bool(is_real)
         raw_score = float(raw_score)
@@ -236,6 +241,7 @@ def _run_fasnet_antispoof(img_bgr: np.ndarray) -> tuple:
 def combined_spoof_score(
     img_bgr: np.ndarray,
     frames_for_temporal: list = None,
+    detection_out: dict = None,
 ) -> dict:
     """
     Run the anti-spoof layers (fasnet, temporal, onnx) and combine them into a
@@ -245,6 +251,8 @@ def combined_spoof_score(
         img_bgr: single frame (primary input for single-frame checks)
         frames_for_temporal: optional list of 2+ frames for temporal variance.
             If None or <2 frames, temporal layer is skipped (weight redistributed).
+        detection_out: optional dict; receives the face detection Fasnet used
+            (key "detection") so the caller can pass it to face_engine.analyze.
 
     Returns dict with keys: is_real, combined_score, threshold, layers,
     weights_used, disagreements.
@@ -292,7 +300,7 @@ def combined_spoof_score(
     # TEMP PERF: wall-clock this layer for docs/review/06-performance.md — remove after measurement
     _t0_fasnet = time.perf_counter()
     try:
-        fasnet_is_real, fasnet_spoof = _run_fasnet_antispoof(img_bgr)
+        fasnet_is_real, fasnet_spoof = _run_fasnet_antispoof(img_bgr, detection_out)
     except FaceNotDetectedError:
         return {
             "is_real": False, "combined_score": 1.0,

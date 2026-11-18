@@ -39,5 +39,5 @@ RUN python -c "import numpy, cv2, onnxruntime, insightface; print('numpy', numpy
     python -c "import importlib.util as u; assert u.find_spec('tensorflow') is None and u.find_spec('deepface') is None and u.find_spec('torch') is None, 'legacy stack present'" && \
     python -c "from app.runtime_check import check_face_runtime; check_face_runtime(); from app.services import face_engine; print('warm-up s', round(face_engine.warm_up(), 2))"
 
-RUN printf '#!/bin/sh\nexec gunicorn "app:create_app()" --bind "0.0.0.0:${PORT:-8080}" --workers 1 --timeout 300\n' > /start.sh && chmod +x /start.sh
+RUN printf '#!/bin/sh\nexec gunicorn "app:create_app()" --bind "0.0.0.0:${PORT:-8080}" --workers 1 --threads 4 --timeout 300\n' > /start.sh && chmod +x /start.sh
 ENTRYPOINT ["/start.sh"]
